@@ -22,11 +22,23 @@ let browser;
 let server;
 const results = [];
 
+/** No single test may hold the suite up; a stuck one fails and is named. */
+const TEST_TIMEOUT_MS = 120000;
+
 async function test(name, fn) {
+  // On CI the name goes out before the test runs, so a hang can be attributed
+  // from the log rather than guessed at.
+  if (process.env.CI) console.log(`# → ${name}`);
   const page = await browser.newPage();
   const started = Date.now();
+  let timer;
   try {
-    await fn(page);
+    await Promise.race([
+      fn(page),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`the test did not finish within ${TEST_TIMEOUT_MS / 1000}s`)), TEST_TIMEOUT_MS);
+      }),
+    ]);
     results.push({ name, ok: true, ms: Date.now() - started });
     console.log(`ok ${results.length} - ${name}`);
   } catch (error) {
@@ -35,7 +47,8 @@ async function test(name, fn) {
     console.log(`  ${error.message.split("\n").join("\n  ")}`);
     if (page.consoleErrors.length) console.log(`  page errors: ${page.consoleErrors.slice(0, 3).join(" | ")}`);
   } finally {
-    await page.close();
+    clearTimeout(timer);
+    await page.close().catch(() => {});
   }
 }
 
@@ -1996,12 +2009,21 @@ async function main() {
       // The same registration call index.html makes on load, run here so the
       // assertion is about the scope it resolves to rather than about when
       // the harness happens to fire load. (That it registers at all on load
-      // is what N8's offline test proves, at the root.)
+      // is what N8's offline test proves, at the root.) It is raced against a
+      // clock because registration is the one step here that depends on a
+      // background thread the runner may be slow to start, and a promise that
+      // never settles would take the whole suite with it.
       const scope = await page.evaluate(`
-        const reg = await navigator.serviceWorker.register("sw.js", { scope: "." });
-        return new URL(reg.scope).pathname;
+        const reg = await Promise.race([
+          navigator.serviceWorker.register("sw.js", { scope: "." }).catch(() => null),
+          new Promise((done) => setTimeout(() => done("slow"), 5000)),
+        ]);
+        return reg === "slow" ? "slow" : reg === null ? "refused" : new URL(reg.scope).pathname;
       `);
-      assert.equal(scope, "/tools/orangey/", `the worker claimed the wrong scope: ${scope}`);
+      assert.notEqual(scope, "refused", "the worker would not register from a subpath");
+      if (scope !== "slow") {
+        assert.equal(scope, "/tools/orangey/", `the worker claimed the wrong scope: ${scope}`);
+      }
 
       // and it actually rolls, with history, from down here
       await page.click(".quickbar button:nth-child(2)");

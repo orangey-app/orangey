@@ -34,16 +34,39 @@ export async function serve(dir) {
       const url = new URL(req.url, "http://localhost");
       const path = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
       const body = await readFile(join(dir, path));
-      res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream" });
+      const headers = {
+        "content-type": MIME[extname(path)] ?? "application/octet-stream",
+        "content-length": String(body.length),
+      };
+      // Headers only for HEAD, with the length spelled out rather than left
+      // to the runtime to suppress.
+      if (req.method === "HEAD") {
+        res.writeHead(200, headers);
+        res.end();
+        return;
+      }
+      res.writeHead(200, headers);
       res.end(body);
     } catch {
-      res.writeHead(404);
-      res.end("not found");
+      res.writeHead(404, { "content-length": "9" });
+      res.end(req.method === "HEAD" ? undefined : "not found");
     }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
-  return { origin: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    /**
+     * `close` on its own waits for every keep-alive connection to end, which
+     * a browser that is still running may not do promptly. Dropping the
+     * connections first makes closing a server mid-suite predictable.
+     */
+    close: () =>
+      new Promise((r) => {
+        server.closeAllConnections();
+        server.close(r);
+      }),
+  };
 }
 
 export async function launch({ profileDir } = {}) {
@@ -144,10 +167,24 @@ async function connectPage(wsUrl) {
     }
   });
 
-  const send = (method, params = {}) =>
+  /**
+   * Every call is capped. A protocol call that never comes back — a page
+   * promise that never settles, a renderer that has wedged — used to hang the
+   * whole suite silently, which on a CI runner means a job that sits there
+   * until the six-hour limit rather than a failure anyone can read.
+   */
+  const CALL_TIMEOUT_MS = 30000;
+  const send = (method, params = {}, timeout = CALL_TIMEOUT_MS) =>
     new Promise((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`${method} did not come back within ${timeout / 1000}s`));
+      }, timeout);
+      pending.set(id, {
+        resolve: (value) => { clearTimeout(timer); resolve(value); },
+        reject: (error) => { clearTimeout(timer); reject(error); },
+      });
       socket.send(JSON.stringify({ id, method, params }));
     });
 

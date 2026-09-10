@@ -2,6 +2,11 @@
 
 ## 0.3.0 — 2026-09-10
 
+- **The browser suite cannot hang any more.** Every protocol call is capped,
+  every test is capped, and on CI each test prints its name before it runs, so
+  a stall is attributable from the log instead of guessed at. The job and the
+  step have time limits too — a wedged browser used to mean a run sitting at
+  GitHub's six-hour ceiling with nothing to show for it.
 - **Full screen holds together.** A link with `present=1` opened in a tab that
   already had Orangey in it silently failed to fill the screen: the outgoing
   view was torn down after the incoming one had set itself up, and took the
