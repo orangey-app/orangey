@@ -1,0 +1,42 @@
+{
+  "format": "orangey",
+  "version": 1,
+  "randomizer": {
+    "id": "6bb50b85-29f3-4779-b9b9-3464047d4147",
+    "type": "list",
+    "name": "Minor Treasure",
+    "description": "Pockets, packs and small chests",
+    "view": "wheel",
+    "created": "2026-09-08T12:00:00.000Z",
+    "modified": "2026-09-08T12:00:00.000Z",
+    "items": [
+      {
+        "id": "f5758e09-6b5e-49d9-9fe8-f670770ecf9b",
+        "label": "2d6 × 10 gp",
+        "weight": 40
+      },
+      {
+        "id": "d77da4df-fcbc-426d-89f0-8522a1c8179d",
+        "label": "A silver ring",
+        "weight": 20,
+        "description": "Worth 25 gp"
+      },
+      {
+        "id": "eacef6b4-c013-45d9-8267-195e265a77df",
+        "label": "A map to somewhere else",
+        "weight": 15
+      },
+      {
+        "id": "8e6e1f4a-0f90-430f-b782-f647904c78fc",
+        "label": "A potion of healing",
+        "weight": 15
+      },
+      {
+        "id": "a8ec1e39-adc5-4d9a-801d-36d94327d83f",
+        "label": "A cursed copper coin",
+        "weight": 10,
+        "description": "It always lands on its edge"
+      }
+    ]
+  }
+}

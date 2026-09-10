@@ -1,0 +1,44 @@
+{
+  "format": "orangey",
+  "version": 1,
+  "randomizer": {
+    "id": "01e91022-1822-4248-8fce-12f47886dcad",
+    "type": "list",
+    "name": "Forest Encounters",
+    "description": "Daytime, levels 1–4",
+    "view": "wheel",
+    "created": "2026-09-08T12:00:00.000Z",
+    "modified": "2026-09-08T12:00:00.000Z",
+    "items": [
+      {
+        "id": "5061cb75-64ac-436c-aa49-c5e14ac7d876",
+        "label": "Goblin patrol",
+        "weight": 50,
+        "description": "Three goblins, one with a horn"
+      },
+      {
+        "id": "92bb139d-5345-4074-b20e-b5c72f710a7c",
+        "label": "Merchant",
+        "weight": 20,
+        "description": "Friendly, overpriced"
+      },
+      {
+        "id": "afa487ee-e707-48b2-a843-8530deea2c44",
+        "label": "Wolf pack",
+        "weight": 20,
+        "description": "2d4 wolves, hungry"
+      },
+      {
+        "id": "fff4be89-2c80-450f-b88b-297b264f9896",
+        "label": "Nothing",
+        "weight": 9
+      },
+      {
+        "id": "76a06c34-c7f5-46f8-b429-45613b40019c",
+        "label": "Young green dragon",
+        "weight": 1,
+        "description": "Run."
+      }
+    ]
+  }
+}

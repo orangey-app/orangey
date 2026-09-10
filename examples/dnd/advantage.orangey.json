@@ -1,0 +1,13 @@
+{
+  "format": "orangey",
+  "version": 1,
+  "randomizer": {
+    "id": "bf45ff49-97ce-4c21-9326-2fb29b04289f",
+    "type": "dice",
+    "name": "Advantage",
+    "description": "Roll twice, keep the higher",
+    "expression": "2d20kh1",
+    "created": "2026-09-08T12:00:00.000Z",
+    "modified": "2026-09-08T12:00:00.000Z"
+  }
+}

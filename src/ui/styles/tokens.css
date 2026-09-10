@@ -1,0 +1,139 @@
+/* Colour, spacing and type tokens.
+ *
+ * Every scheme defines the same names; components only ever use var(--…).
+ * No attribute means "follow the system": Orangey by day, Night in the dark.
+ * data-scheme on <html> picks one explicitly.
+ *
+ * Brand: orange #f3a257, black #253122. Bright, never neon.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --brand-orange: #f3a257;
+  --brand-black: #253122;
+
+  --accent: #f3a257;
+  --accent-ink: #253122;
+  --accent-soft: #fde5cc;
+  --accent-strong: #e0862f;
+
+  --bg: #fff8ef;
+  --bg-raised: #ffffff;
+  --bg-sunken: #fbeedc;
+  --border: #f0dcc3;
+  --border-strong: #d9b98e;
+  --ink: #253122;
+  --ink-soft: #55604e;
+  --ink-faint: #8a927f;
+
+  --ok: #3f9c5a;
+  --warn: #d38b1f;
+  --error: #d64545;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 1px 2px rgba(37, 49, 34, 0.08), 0 6px 18px rgba(37, 49, 34, 0.07);
+
+  --gap: 12px;
+  --pad: 16px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Night: the brand black as the ground. */
+:root[data-scheme="night"],
+:root:not([data-scheme]) {
+  @media (prefers-color-scheme: dark) {
+    --bg: #253122;
+    --bg-raised: #2f3d2c;
+    --bg-sunken: #1b2419;
+    --border: #3f4e3b;
+    --border-strong: #5d6e58;
+    --ink: #fff3e3;
+    --ink-soft: #c9cfbf;
+    --ink-faint: #8f9a88;
+    --accent-soft: #4c3a26;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+}
+
+:root[data-scheme="night"] {
+  --bg: #253122;
+  --bg-raised: #2f3d2c;
+  --bg-sunken: #1b2419;
+  --border: #3f4e3b;
+  --border-strong: #5d6e58;
+  --ink: #fff3e3;
+  --ink-soft: #c9cfbf;
+  --ink-faint: #8f9a88;
+  --accent-soft: #4c3a26;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-scheme="orangey"] {
+  /* Forces the light brand scheme even when the system is dark. Values are
+     the :root defaults; the block exists so the attribute wins. */
+  --bg: #fff8ef;
+  --bg-raised: #ffffff;
+  --bg-sunken: #fbeedc;
+  --border: #f0dcc3;
+  --border-strong: #d9b98e;
+  --ink: #253122;
+  --ink-soft: #55604e;
+  --ink-faint: #8a927f;
+  --accent-soft: #fde5cc;
+  --shadow: 0 1px 2px rgba(37, 49, 34, 0.08), 0 6px 18px rgba(37, 49, 34, 0.07);
+}
+
+/* Meadow: a fresh green accent on a pale mint ground. */
+:root[data-scheme="meadow"] {
+  --accent: #5cc46a;
+  --accent-ink: #163019;
+  --accent-soft: #d8f3dc;
+  --accent-strong: #3ea84e;
+  --bg: #f4fbf3;
+  --bg-raised: #ffffff;
+  --bg-sunken: #e6f4e5;
+  --border: #cfe6cf;
+  --border-strong: #a3cba6;
+  --ink: #1d2b1f;
+  --ink-soft: #4d5e4f;
+  --ink-faint: #849386;
+  --shadow: 0 1px 2px rgba(29, 43, 31, 0.08), 0 6px 18px rgba(29, 43, 31, 0.07);
+}
+
+/* Ocean: a clear blue accent on a pale sky ground. */
+:root[data-scheme="ocean"] {
+  --accent: #3fa7e0;
+  --accent-ink: #0f2a3a;
+  --accent-soft: #d6eefb;
+  --accent-strong: #2589c1;
+  --bg: #f3f9fd;
+  --bg-raised: #ffffff;
+  --bg-sunken: #e4f1f9;
+  --border: #cfe3f0;
+  --border-strong: #9fc4da;
+  --ink: #17262f;
+  --ink-soft: #4b5d68;
+  --ink-faint: #85959f;
+  --shadow: 0 1px 2px rgba(23, 38, 47, 0.08), 0 6px 18px rgba(23, 38, 47, 0.07);
+}
+
+/* Berry: a warm pink accent on a blush ground. */
+:root[data-scheme="berry"] {
+  --accent: #e8679a;
+  --accent-ink: #3a1224;
+  --accent-soft: #fbdde8;
+  --accent-strong: #cf477d;
+  --bg: #fff5f8;
+  --bg-raised: #ffffff;
+  --bg-sunken: #fbe6ee;
+  --border: #f1d2de;
+  --border-strong: #dba7bd;
+  --ink: #2c1b23;
+  --ink-soft: #5e4a53;
+  --ink-faint: #97858d;
+  --shadow: 0 1px 2px rgba(44, 27, 35, 0.08), 0 6px 18px rgba(44, 27, 35, 0.07);
+}

@@ -1,0 +1,20 @@
+{
+  "name": "orangey",
+  "version": "0.2.0",
+  "description": "A local-first randomizer for tabletop games: dice, coins, numbers and weighted wheels. No server, no account, works offline.",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test \"tests/unit/*.test.ts\"",
+    "test:browser": "node tests/browser/run.mjs",
+    "test:all": "npm run test && npm run test:browser",
+    "build": "node scripts/build.mjs",
+    "build:single": "node scripts/build.mjs --single",
+    "dev": "node scripts/dev.mjs"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

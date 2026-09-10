@@ -1,0 +1,13 @@
+{
+  "format": "orangey",
+  "version": 1,
+  "randomizer": {
+    "id": "473ceeba-da89-4a15-970e-7bf972880ff4",
+    "type": "dice",
+    "name": "Ability score",
+    "description": "Roll four, drop the lowest",
+    "expression": "4d6kh3",
+    "created": "2026-09-08T12:00:00.000Z",
+    "modified": "2026-09-08T12:00:00.000Z"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "format": "orangey",
+  "version": 1,
+  "randomizer": {
+    "id": "7e700f70-dad8-44a7-b78b-9d5eca6d8e46",
+    "type": "list",
+    "name": "Who goes first",
+    "description": "Add your players, then spin",
+    "view": "wheel",
+    "created": "2026-09-08T12:00:00.000Z",
+    "modified": "2026-09-08T12:00:00.000Z",
+    "items": [
+      {
+        "id": "f7f6657d-eb26-458c-a781-4c7c0586bd61",
+        "label": "Player 1",
+        "weight": 1
+      },
+      {
+        "id": "7fda7a9d-a225-43fe-b88a-b7b0713a726a",
+        "label": "Player 2",
+        "weight": 1
+      },
+      {
+        "id": "6a9c9ef6-c564-4768-9498-c5afdc8b9f7b",
+        "label": "Player 3",
+        "weight": 1
+      },
+      {
+        "id": "2f65f1b7-94f8-414d-9632-b296af5e1455",
+        "label": "Player 4",
+        "weight": 1
+      }
+    ]
+  }
+}

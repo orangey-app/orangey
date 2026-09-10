@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm run check && npm test
+      - run: npm run build:single
+      - name: Package the static site
+        run: cd dist && zip -r ../orangey-site.zip . -x orangey.html
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/orangey.html
+            orangey-site.zip
+          body: |
+            Download `orangey.html` and open it — that one file is the whole app.
+            `orangey-site.zip` is the same thing as a static site you can host yourself.
+          generate_release_notes: true
