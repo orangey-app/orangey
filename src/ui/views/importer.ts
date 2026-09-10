@@ -9,7 +9,8 @@
 import { detect, guessColumns, guessHeader, type Detection } from "../../import/detect.ts";
 import { buildItems, itemsFromJson, type ImportResult, type Mapping } from "../../import/map.ts";
 import { delimiterName, looksLikeJson, parseDelimited, type Delimiter } from "../../import/parse.ts";
-import { emptyRandomizer, type ListRandomizer } from "../../model/randomizer.ts";
+import { emptyRandomizer, type ListRandomizer, type Randomizer } from "../../model/randomizer.ts";
+import { decodeRandomizer } from "../../model/link.ts";
 import { parseFile } from "../../model/file.ts";
 import { FILE_SUFFIX } from "../../model/file.ts";
 import { readZip } from "../../storage/zip.ts";
@@ -29,6 +30,20 @@ export function createImportView(initialText = ""): View {
     "aria-label": "Data to import",
   });
   textarea.value = text;
+  // A pasted link is unmistakable, so it is read at once rather than waiting
+  // for "Read it" — nobody pastes a link expecting to press a button next.
+  textarea.addEventListener("paste", () => queueMicrotask(() => {
+    if (LINK_PATTERN.test(textarea.value)) analyse();
+  }));
+  textarea.addEventListener("input", () => {
+    if (LINK_PATTERN.test(textarea.value) && !linked && !linkProblem) analyse();
+  });
+
+  /** A link with a wheel inside it, pasted instead of a table. */
+  let linked: { randomizer: Randomizer; payload: string } | null = null;
+  let linkProblem: string | null = null;
+  /** Matches the payload in a link someone pasted, however it was wrapped. */
+  const LINK_PATTERN = /#\/roll\?(?:[^\s]*?&)?w=([A-Za-z0-9_-]+)/;
 
   const settings = h("div", { class: "card" });
   const preview = h("div", { class: "card" });
@@ -37,10 +52,32 @@ export function createImportView(initialText = ""): View {
 
   function analyse(): void {
     text = textarea.value;
+    linked = null;
+    linkProblem = null;
     if (!text.trim()) {
       detection = null;
       outcome = null;
       render();
+      return;
+    }
+    const asLink = LINK_PATTERN.exec(text.trim());
+    if (asLink) {
+      detection = null;
+      outcome = null;
+      const payload = asLink[1];
+      render();
+      void decodeRandomizer(payload).then(
+        (randomizer) => {
+          if (textarea.value.trim() !== text.trim()) return;
+          linked = { randomizer, payload };
+          render();
+        },
+        (error: unknown) => {
+          if (textarea.value.trim() !== text.trim()) return;
+          linkProblem = (error as Error).message;
+          render();
+        },
+      );
       return;
     }
     if (looksLikeJson(text)) {
@@ -78,6 +115,10 @@ export function createImportView(initialText = ""): View {
   function render(): void {
     setChildren(settings, );
     setChildren(preview, );
+    if (linked || linkProblem) {
+      settings.append(linkCard());
+      return;
+    }
     if (!outcome) {
       settings.append(h("p", { class: "faint", text: "Nothing to import yet." }));
       return;
@@ -150,6 +191,47 @@ export function createImportView(initialText = ""): View {
       ),
       button("Create and edit", () => void create(), { class: "primary", disabled: !outcome.usable }),
     );
+  }
+
+  /**
+   * What a pasted link offers: roll it now without keeping it, or keep it. A
+   * link is how a table reaches you from someone else's deck, so both are
+   * reasonable and neither is assumed.
+   */
+  function linkCard(): HTMLElement {
+    if (linkProblem) {
+      return h("div", { class: "link-import", role: "status" },
+        h("h2", { text: "That looks like an Orangey link, but it is damaged" }),
+        h("p", { class: "faint", text: linkProblem }),
+        h("p", { class: "faint", text: "Links are long, and a line break or a truncation on the way is usually the cause. Ask for it again, or paste the table itself." }),
+      );
+    }
+    const { randomizer, payload } = linked!;
+    const outcomes = randomizer.type === "list" ? `${randomizer.items.length} outcomes` : describeLinkType(randomizer);
+    return h("div", { class: "link-import", role: "status" },
+      h("h2", { text: "This is an Orangey link" }),
+      h("p", {}, h("strong", { text: randomizer.name }), h("span", { class: "faint", text: ` · ${outcomes}` })),
+      h("p", { class: "faint", text: "The randomizer is inside the link itself, so you can roll it without keeping it, or add it to your library and edit it like any other." }),
+      h("div", { class: "row tight" },
+        button("Add to my library", () => void saveLinked(), { class: "primary add-linked" }),
+        button("Just roll it", () => navigate(`#/roll?w=${payload}`), { class: "open-linked" }),
+      ),
+    );
+  }
+
+  function describeLinkType(r: Randomizer): string {
+    if (r.type === "dice") return r.expression;
+    if (r.type === "coin") return `${r.faces[0]} or ${r.faces[1]}`;
+    return `${r.min} to ${r.max}`;
+  }
+
+  async function saveLinked(): Promise<void> {
+    if (!linked) return;
+    const { randomizer } = linked;
+    const taken = state.library.findById(randomizer.id) !== null;
+    const path = await state.library.create("", { ...randomizer, id: taken ? crypto.randomUUID() : randomizer.id });
+    state.toast(`Added “${randomizer.name}” to your library`);
+    navigate(`#/edit/${encodeURIComponent(path)}`);
   }
 
   async function create(): Promise<void> {

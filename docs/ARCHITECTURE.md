@@ -75,6 +75,16 @@ table map it to a state. The vocabulary in the file is his behaviour, so a
 sixth pose never changes the format; the tag rows have ids like every other
 row, so Settings can switch them off.
 
+**A link is either a pointer or the thing itself.** `slideLink` names a
+randomizer by identity; `wheelLink` carries one. `src/model/link.ts` packs a
+randomizer minus its timestamps and its outcomes' ids, deflates it through the
+same compression the ZIP writer uses, and base64urls the result behind a
+one-character marker saying whether it is compressed — so a browser without
+compression streams still produces a working, longer link. Decoding runs the
+same `validateRandomizer` the file format uses, so a damaged link is explained
+by path rather than throwing. The payload lives in the fragment, which is
+never sent to a server.
+
 **Settings that travel are a file of their own.** `src/model/settings-file.ts`
 picks the portable part of the preferences — scheme, feel, seed, the
 reduced-motion choice, the user's colours — and refuses anything else, so a

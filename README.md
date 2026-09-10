@@ -109,13 +109,22 @@ months ago.
 
 ![The full-screen result a slide link opens](docs/screenshot-presenting.png)
 
-Two things worth knowing. The link has to point at a hosted copy of Orangey —
+There are two kinds of link, offered side by side. **With the wheel inside**
+carries the randomizer in the address itself, so the deck works for anyone who
+opens it, on any machine, with nothing installed — and it keeps rolling the
+same wheel whatever you do to your library afterwards. **To my library** is
+short and follows every edit you make, but only works on a device where that
+library is stored. A wheel that arrives in a link can be rolled without being
+kept, or saved to your library; pasting one into the Import page offers the
+same choice.
+
+Two things worth knowing about the library kind. The link has to point at a hosted copy of Orangey —
 browsers refuse to follow a link from a web page to a file on your disk, so a
 deck cannot open a downloaded `orangey.html`; the dialog tells you when the
 copy you are using cannot be linked to. And a link to your own library only
 works on a device where that library is stored: someone else opening your deck
-will be told the wheel is not in their browser. Sharing a deck with the wheels
-inside the links is a separate feature, not built yet.
+will be told the wheel is not in their browser — which is exactly what the
+other kind of link is for.
 
 Neither Google Slides nor PowerPoint can host a live, clickable randomizer on
 the slide itself: Slides has no way to embed live web content at all, and a

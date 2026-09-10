@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **A link can carry the wheel itself.** Beside the link to your library there
+  is now one with the randomizer inside it: name, outcomes, weights, colours,
+  Orangey's tags and the randomizer's own spin settings, compressed into the
+  address. It rolls on anyone's machine with nothing installed and nothing
+  shared in advance, and it keeps rolling whatever you do to your library
+  afterwards — a snapshot rather than a pointer. The payload is in the
+  fragment, which browsers never send to a server, so even the hosted copy
+  never sees your tables. A twenty-row encounter table comes to a few hundred
+  characters. The Link dialog offers both kinds side by side with what each
+  costs; the Import page takes a pasted link and offers to keep it; and a wheel
+  opened from a link can be saved to your library with the identity it arrived
+  with, so a link by id finds it afterwards.
+
 - **The card stops moving.** The result panel used to find its height one roll
   at a time: the detail line arrived with the first result, and a long outcome
   wrapped and pushed everything below it. It now reserves its height from the

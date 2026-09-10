@@ -7,7 +7,7 @@
  * home, so that a stray press cannot swap out what the table is rolling.
  */
 
-import { emptyRandomizer, type Randomizer } from "../../model/randomizer.ts";
+import { emptyRandomizer, newId, type Randomizer } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
 import { button, formatTime, h, setChildren } from "../dom.ts";
@@ -18,17 +18,28 @@ import { createResultPanel } from "../components/result.ts";
 import { longestOutcome, rollRandomizer, whyCannotRoll, type Outcome } from "../roll.ts";
 import { summarize } from "../mascot/events.ts";
 import { effectiveFeel, motionScale } from "../feel.ts";
-import { appBase, isLinkableBase, navigate, slideLink, type LinkParams } from "../router.ts";
+import { appBase, isLinkableBase, navigate, slideLink, wheelLink, type LinkParams } from "../router.ts";
+import { LINK_HARD_LIMIT, LINK_SOFT_LIMIT, encodeRandomizer } from "../../model/link.ts";
 import type { View } from "./editor.ts";
 import { displayPercents } from "../../core/weighted.ts";
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
 
-export function createPlayView(node: LibraryNode | null, params: LinkParams = { roll: false, present: false }): View {
-  let randomizer: Randomizer = node?.randomizer ?? adHocDice("d20");
+/**
+ * @param node     a randomizer from the library, or null
+ * @param linked   a randomizer that arrived inside a link, when there is one
+ */
+export function createPlayView(
+  node: LibraryNode | null,
+  params: LinkParams = { roll: false, present: false },
+  linked: Randomizer | null = null,
+): View {
+  let randomizer: Randomizer = node?.randomizer ?? linked ?? adHocDice("d20");
   let rolling = false;
+  /** Opened from the library or from a link: either way, one fixed randomizer. */
+  const fixed = node !== null || linked !== null;
 
-  const result = createResultPanel(node ? "Ready" : "Pick something to roll");
+  const result = createResultPanel(fixed ? "Ready" : "Pick something to roll");
   const stage = h("div", { class: "stage" });
   const rollButton = button("Roll", () => void doRoll(), { class: "primary roll-button", style: { width: "100%", minHeight: "52px", fontSize: "17px" } });
 
@@ -218,11 +229,17 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
   const editLink = button("Edit", () => node && navigate(`#/edit/${encodeURIComponent(node.path)}`), { class: "ghost edit-link" });
   editLink.style.display = node ? "" : "none";
 
-  const saveAdHoc = button("Save to library", async () => {
-    const path = await state.library.create("", { ...randomizer, id: crypto.randomUUID() });
+  // A wheel that arrived in a link is nobody's until it is saved. The button
+  // is one more quiet item in this row rather than anything that interrupts a
+  // game: it is not offered at all in full screen, where the row is hidden.
+  const saveAdHoc = button(linked ? "Save to my library" : "Save to library", async () => {
+    // Keep the identity it came with when nothing here already has it, so a
+    // slide link by id finds this copy afterwards.
+    const taken = state.library.findById(randomizer.id) !== null;
+    const path = await state.library.create("", { ...randomizer, id: taken ? newId() : randomizer.id });
     state.toast("Saved to your library");
     navigate(`#/r/${encodeURIComponent(path)}`);
-  }, { class: "ghost" });
+  }, { class: "ghost save-randomizer" });
 
   const historyList = h("ul", { class: "history-list" });
   function renderHistory(): void {
@@ -246,7 +263,7 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
   // the number without ever sitting on the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
   const el = h("div", { class: "play" },
-    node ? homeBar : quickbar,
+    fixed ? homeBar : quickbar,
     h("div", { class: "card play-card" },
       header,
       stage,
@@ -296,16 +313,69 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
   exitButton.hidden = true;
   const presentButton = button("Full screen", () => setPresenting(!presenting()), { class: "ghost present-button" });
 
-  function openLinkDialog(): void {
-    if (!node?.randomizer) return;
+  /**
+   * Two kinds of link, side by side.
+   *
+   * "With the wheel inside" carries the randomizer in the address, so it
+   * rolls on anyone's machine and keeps rolling whatever happens to the
+   * library — frozen at today's version, and longer. "To my library" is short
+   * and follows every edit, but only works where the library is. The first is
+   * offered first, because it is what most people pasting into a deck mean.
+   */
+  async function openLinkDialog(): Promise<void> {
+    if (!fixed) return;
     const base = appBase();
     const rollOnOpen = h("input", { type: "checkbox", checked: true });
     const fullScreen = h("input", { type: "checkbox", checked: true });
     const field = h("input", { type: "text", readonly: true, "aria-label": "Link to paste onto a slide", spellcheck: "false" });
+    const note = h("p", { class: "faint link-note" });
+    const sizeNote = h("p", { class: "warning link-size" });
+
+    let payload: string | null = null;
+    try {
+      payload = await encodeRandomizer(randomizer);
+    } catch {
+      payload = null;
+    }
+    const embeddedLength = payload === null ? Infinity : wheelLink(base, payload, { roll: true, present: true }).length;
+    const canEmbed = payload !== null && embeddedLength <= LINK_HARD_LIMIT;
+    const canLibrary = node?.randomizer != null;
+    if (!canEmbed && !canLibrary) {
+      state.toast("This randomizer is too big to put in a link, and it is not in your library.");
+      return;
+    }
+
+    let kind: "embedded" | "library" = canEmbed ? "embedded" : "library";
+    const kinds = h("div", { class: "segmented link-kinds", role: "group", "aria-label": "What the link carries" });
 
     const refresh = () => {
-      field.value = slideLink(base, node.randomizer!.id, { roll: rollOnOpen.checked, present: fullScreen.checked });
+      const opts = { roll: rollOnOpen.checked, present: fullScreen.checked };
+      field.value = kind === "embedded" && payload
+        ? wheelLink(base, payload, opts)
+        : slideLink(base, node!.randomizer!.id, opts);
+      note.textContent = kind === "embedded"
+        ? "The wheel travels inside the link, so it works for anyone who opens the deck, on any machine, with nothing installed. It is a snapshot: editing the wheel afterwards does not change decks you have already made."
+        : "Short, and it follows every edit you make. It points at the randomizer's identity rather than its file name, so renaming it or moving it to another folder will not break the deck — but it only works on a device where this library is stored.";
+      const tooLong = kind === "embedded" && field.value.length > LINK_SOFT_LIMIT;
+      sizeNote.hidden = !tooLong;
+      if (tooLong) {
+        sizeNote.textContent = `This link is ${field.value.length} characters. Slides and PowerPoint will take it, but it is unwieldy to handle;${canLibrary ? " a link to your library would be a few dozen." : " trimming the table would shorten it."}`;
+      }
+      for (const b of kinds.querySelectorAll("button")) {
+        b.setAttribute("aria-pressed", b.dataset.kind === kind ? "true" : "false");
+      }
     };
+
+    const kindButton = (value: "embedded" | "library", label: string) => {
+      const b = button(label, () => { kind = value; refresh(); }, { class: `link-kind-${value}` });
+      b.dataset.kind = value;
+      return b;
+    };
+    setChildren(kinds,
+      canEmbed ? kindButton("embedded", "With the wheel inside") : null,
+      canLibrary ? kindButton("library", "To my library") : null,
+    );
+
     rollOnOpen.addEventListener("change", refresh);
     fullScreen.addEventListener("change", refresh);
     refresh();
@@ -314,7 +384,8 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
     const dialog = h("dialog", { class: "link-dialog", "aria-label": "Link for a slide" },
       h("h2", { text: "Link for a slide" }),
       h("p", { class: "faint", text:
-        `Put this on a shape or an image in Google Slides or PowerPoint. Clicking it during the presentation opens ${node.randomizer.name} and rolls it; closing the tab returns you to the deck.` }),
+        `Put this on a shape or an image in Google Slides or PowerPoint. Clicking it during the presentation opens ${randomizer.name} and rolls it; closing the tab returns you to the deck.` }),
+      kinds.children.length > 1 ? kinds : null,
       field,
       h("div", { class: "row tight", style: { marginTop: "10px" } },
         h("label", { class: "row tight" }, rollOnOpen, "Roll as soon as it opens"),
@@ -324,8 +395,8 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
         ? null
         : h("p", { class: "warning", text:
             "This copy of Orangey is open from a file rather than a web address, so this link will not work from a slide — browsers refuse to follow a link from a web page to a local file. Open the published copy and make the link there." }),
-      h("p", { class: "faint", text:
-        "The link points at the randomizer's identity rather than its file name, so renaming it or moving it to another folder will not break the deck. It only works on a device where this library is stored." }),
+      sizeNote,
+      note,
       h("div", { class: "row", style: { marginTop: "14px" } },
         button("Copy", async () => {
           try {
@@ -347,8 +418,8 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
     field.select();
   }
 
-  const linkButton = button("Link…", openLinkDialog, { class: "ghost link-button" });
-  linkButton.hidden = !node;
+  const linkButton = button("Link…", () => void openLinkDialog(), { class: "ghost link-button" });
+  linkButton.hidden = !fixed;
 
   // Switch animation off for now without touching the settings — after the
   // fortieth roll of the evening nobody wants to watch the wheel.

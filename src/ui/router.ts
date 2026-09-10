@@ -12,6 +12,8 @@ export type Route =
   | { name: "play"; params: LinkParams }
   | { name: "randomizer"; path: string; params: LinkParams }
   | { name: "byId"; id: string; params: LinkParams }
+  /** A randomizer carried inside the link itself; `payload` is the `w` value. */
+  | { name: "linked"; payload: string; params: LinkParams }
   | { name: "edit"; path: string; params: LinkParams }
   | { name: "library"; params: LinkParams }
   | { name: "import"; params: LinkParams }
@@ -41,11 +43,18 @@ export function parseRoute(hash: string): Route {
   const clean = hash.replace(/^#\/?/, "");
   const queryAt = clean.indexOf("?");
   const withoutQuery = queryAt < 0 ? clean : clean.slice(0, queryAt);
-  const params = queryAt < 0 ? NO_PARAMS : readParams(clean.slice(queryAt + 1));
+  const query = queryAt < 0 ? "" : clean.slice(queryAt + 1);
+  const params = queryAt < 0 ? NO_PARAMS : readParams(query);
 
   const [head, ...rest] = withoutQuery.split("/");
   const arg = decodeURIComponent(rest.join("/"));
   switch (head) {
+    case "roll": {
+      // The payload is base64url, which URLSearchParams leaves alone, but a
+      // deck program may have escaped it on the way in.
+      const w = new URLSearchParams(query).get("w") ?? "";
+      return w ? { name: "linked", payload: w, params } : { name: "play", params };
+    }
     case "r":
       return arg ? { name: "randomizer", path: arg, params } : { name: "play", params };
     case "id":
@@ -96,6 +105,17 @@ export function slideLink(base: string, id: string, options: SlideLinkOptions = 
   if (options.present) query.push("present=1");
   const suffix = query.length ? `?${query.join("&")}` : "";
   return `${stripHash(base)}#/id/${encodeURIComponent(id)}${suffix}`;
+}
+
+/**
+ * A link with the wheel inside it. Longer than a library link and frozen at
+ * today's version, but it works for anyone, anywhere — see model/link.ts.
+ */
+export function wheelLink(base: string, payload: string, options: SlideLinkOptions = {}): string {
+  const query = [`w=${payload}`];
+  if (options.roll) query.push("roll=1");
+  if (options.present) query.push("present=1");
+  return `${stripHash(base)}#/roll?${query.join("&")}`;
 }
 
 function stripHash(url: string): string {

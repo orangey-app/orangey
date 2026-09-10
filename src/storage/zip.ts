@@ -25,7 +25,8 @@ export function crc32(bytes: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-async function deflate(bytes: Uint8Array): Promise<{ data: Uint8Array; method: number }> {
+/** Shared with the link encoder: method 8 is deflated, 0 is stored as-is. */
+export async function deflate(bytes: Uint8Array): Promise<{ data: Uint8Array; method: number }> {
   const CS = (globalThis as { CompressionStream?: typeof CompressionStream }).CompressionStream;
   if (!CS) return { data: bytes, method: 0 };
   try {
@@ -37,7 +38,7 @@ async function deflate(bytes: Uint8Array): Promise<{ data: Uint8Array; method: n
   }
 }
 
-async function inflate(bytes: Uint8Array, method: number): Promise<Uint8Array> {
+export async function inflate(bytes: Uint8Array, method: number): Promise<Uint8Array> {
   if (method === 0) return bytes;
   const DS = (globalThis as { DecompressionStream?: typeof DecompressionStream }).DecompressionStream;
   if (!DS) throw new Error("this browser cannot read compressed ZIP entries");

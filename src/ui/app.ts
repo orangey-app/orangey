@@ -12,6 +12,8 @@ import { createImportView } from "./views/importer.ts";
 import { createHistoryView } from "./views/history.ts";
 import { createSettingsView } from "./views/settings.ts";
 import { MascotHost } from "./mascot/host.ts";
+import { decodeRandomizer } from "../model/link.ts";
+import { ValidationError } from "../model/validate.ts";
 import { mascotLogoMarkup } from "./mascot/parts.ts";
 
 const SHORTCUTS: [string, string][] = [
@@ -105,6 +107,29 @@ export function mountApp(root: HTMLElement): MascotHost {
         void state.savePrefs({ lastPath: node.path });
         break;
       }
+      case "linked": {
+        // The wheel is in the address. Decoding is a decompression, so it is
+        // a promise; it takes about a millisecond, and the view swaps in when
+        // it lands — unless the reader has already gone somewhere else.
+        const { payload } = route;
+        const stillHere = () => {
+          const now = currentRoute();
+          return now.name === "linked" && now.payload === payload;
+        };
+        setMain({ el: h("div", { class: "card", "aria-busy": "true" }, h("p", { class: "faint", text: "Opening the link…" })) });
+        void decodeRandomizer(payload).then(
+          (randomizer) => {
+            if (!stillHere()) return;
+            setMain(createPlayView(null, route.params, randomizer));
+          },
+          (error: unknown) => {
+            if (!stillHere()) return;
+            setMain(brokenLink(error));
+            state.tell({ type: "link:fail", id: "embedded" });
+          },
+        );
+        break;
+      }
       case "edit": {
         const node = state.library.find(route.path);
         if (!node?.randomizer) {
@@ -132,7 +157,7 @@ export function mountApp(root: HTMLElement): MascotHost {
         break;
     }
     renderTabs(route);
-    back.hidden = route.name === "play" || route.name === "randomizer" || route.name === "byId";
+    back.hidden = route.name === "play" || route.name === "randomizer" || route.name === "byId" || route.name === "linked";
   }
 
   function missingId(id: string): View {
@@ -142,6 +167,25 @@ export function mountApp(root: HTMLElement): MascotHost {
         h("p", { class: "faint", text:
           "This link points at a randomizer that is not stored in this browser. Links to your own library only work on a device where you keep that library — ask whoever made the deck to send you the file, or import it here." }),
         h("p", { class: "faint", text: `Its identifier is ${id}.` }),
+        h("div", { class: "row" },
+          button("Open the library", () => navigate("#/library"), { class: "primary" }),
+          h("div", { class: "spacer" }),
+          h("div", { class: "mascot-slot mascot-slot-inline" }),
+        ),
+      ),
+    };
+  }
+
+  function brokenLink(error: unknown): View {
+    const why = error instanceof ValidationError
+      ? error.issues.map((i) => i.message).join("; ")
+      : (error as Error).message;
+    return {
+      el: h("div", { class: "card play-card broken-link" },
+        h("h1", { text: "This link did not survive the trip" }),
+        h("p", { class: "faint", text:
+          "The wheel is meant to travel inside the link itself, and this one arrived damaged — usually a line break or a truncation somewhere between the deck and here." }),
+        h("p", { class: "faint", text: why }),
         h("div", { class: "row" },
           button("Open the library", () => navigate("#/library"), { class: "primary" }),
           h("div", { class: "spacer" }),
@@ -171,7 +215,7 @@ export function mountApp(root: HTMLElement): MascotHost {
     setChildren(tabbar, 
       ...tabs.map(([label, glyph, hash]) => {
         const active =
-          (hash === "#/" && (route.name === "play" || route.name === "randomizer")) ||
+          (hash === "#/" && (route.name === "play" || route.name === "randomizer" || route.name === "linked" || route.name === "byId")) ||
           (hash === "#/library" && (route.name === "library" || route.name === "edit")) ||
           (hash === "#/history" && route.name === "history") ||
           (hash === "#/settings" && route.name === "settings");

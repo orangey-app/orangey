@@ -102,3 +102,24 @@ identifies it.
 A bare randomizer object without the `format` wrapper is accepted, because it
 is a natural thing to paste. The import wizard additionally accepts a JSON
 array of strings or of `{label, weight}` objects.
+
+## A randomizer inside a link
+
+`#/roll?w=…` carries a whole randomizer in the address instead of naming one
+in a library. What follows `w=` is a marker character — `1` deflated, `0`
+stored — then base64url of the randomizer as JSON, with three things left out:
+`created` and `modified`, which mean nothing to a stranger, and the outcomes'
+`id`s, which are library bookkeeping and would otherwise be the largest thing
+in the payload. All three are made afresh when the link is opened, so the
+wheel that arrives is a randomizer of its own, ready to be saved.
+
+Everything else travels, including per-outcome `reaction` tags and the
+randomizer's own `feel`. `feel` can only override the wheel, dice and coin
+sections, never `motion`, so an author's five-second spin arrives intact while
+the reader keeps authority over whether anything moves at all.
+
+The payload sits after the `#`, and browsers never send a fragment to a
+server: a link carries an encounter table past the host that serves Orangey
+without it ever seeing it. A twenty-row table comes to a few hundred
+characters. Past 2,000 the app says the link is unwieldy; past 8,000 it will
+not offer one.

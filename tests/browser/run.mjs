@@ -253,6 +253,9 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".link-button")`);
     await page.click(".link-button");
     await page.waitForFunction(`document.querySelector(".link-dialog")`);
+    // This test is about the library link; the dialog opens on the embedded
+    // one, which has a test of its own.
+    await page.click(".link-kind-library");
 
     const link = await page.evaluate(`return document.querySelector(".link-dialog input[type=text]").value`);
     assert.match(link, /#\/id\/Forest%20Encounters\?roll=1&present=1$/, link);
@@ -2164,6 +2167,211 @@ async function main() {
     await page.waitForFunction(`window.orangey.mascot.played.length === 1`);
     assert.deepEqual(await played(page), ["oops"]);
     assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- T: a wheel inside the link --------------------------------------------
+
+  /** Build a link in the app's own dialog, the way a game master would. */
+  const makeLink = async (page, path, kind = "embedded") => {
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".link-button")`);
+    await page.click(".link-button");
+    await page.waitForFunction(`document.querySelector(".link-dialog[open]")`);
+    if (kind === "library") await page.click(".link-kind-library");
+    const value = await page.evaluate(`return document.querySelector(".link-dialog input[type=text]").value`);
+    await page.evaluate(`document.querySelector(".link-dialog").close()`);
+    return value;
+  };
+  /** The randomizer the current link carries, decoded in the page. */
+  const linkedNow = (page) =>
+    page.evaluate(`
+      const query = location.hash.slice(location.hash.indexOf("?") + 1);
+      return await window.orangey.decodeRandomizer(new URLSearchParams(query).get("w"));
+    `);
+  /** The same link, pointed at this test server. */
+  const localise = (link) => `${server.origin}/index.html?debug&noseed${link.slice(link.indexOf("#"))}`;
+
+  const encounters = (page, extra = {}) =>
+    page.evaluate(`
+      const { state } = window.orangey;
+      return await state.library.create("", {
+        id: "enc-linked", type: "list", name: "Forest Encounters", view: "wheel",
+        created: new Date().toISOString(), modified: new Date().toISOString(),
+        ...${JSON.stringify(extra)},
+        items: [
+          { id: "a", label: "Goblin patrol", weight: 50 },
+          { id: "b", label: "Merchant", weight: 20 },
+          { id: "c", label: "Wolf pack", weight: 20, reaction: "wince" },
+          { id: "d", label: "Dragon", weight: 1, color: "#a33a30", reaction: "cheer" },
+        ],
+      });
+    `);
+
+  await test("T a link with the wheel inside rolls on a machine that has never seen it", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await encounters(page);
+    const link = await makeLink(page, path);
+    assert.match(link, /#\/roll\?w=/);
+
+    // a browser with an empty library
+    await open(page, "", { fresh: true });
+    await page.goto(localise(link));
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".play-card h1").textContent`), "Forest Encounters");
+    assert.equal(await page.evaluate(`return window.orangey.state.library.files().length`), 0, "opening a link must not put anything in the library");
+    // it is a fixed randomizer, like one from the library: no presets to press
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".quickbar .preset").length`), 0);
+    assert.equal(await page.evaluate(`return !!document.querySelector(".home-button")`), true);
+    // and it rolls
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".roll-button");
+    await page.waitForFunction(`window.orangey.state.history.length === 1`);
+    const text = await page.evaluate(`return document.querySelector(".result-value").textContent`);
+    assert.ok(["Goblin patrol", "Merchant", "Wolf pack", "Dragon"].includes(text), text);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("T the author's spin travels, and the reader's motion setting still wins", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await encounters(page, { feel: { wheel: { durationMs: 5200, turns: 9 } } });
+    const link = await makeLink(page, path);
+
+    await open(page, "", { fresh: true });
+    await page.goto(localise(link));
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    const carried = await page.evaluate(`
+      const { effectiveFeel, state, decodeRandomizer } = window.orangey;
+      const query = location.hash.slice(location.hash.indexOf("?") + 1);
+      const linked = await decodeRandomizer(new URLSearchParams(query).get("w"));
+      return effectiveFeel(state.prefs.feel, linked.feel).wheel;
+    `);
+    assert.equal(carried.durationMs, 5200, "the author's spin length did not travel");
+    assert.equal(carried.turns, 9);
+    // the reader's own choice is not a per-randomizer setting, so it still wins
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    const started = Date.now();
+    await page.click(".roll-button");
+    await page.waitForFunction(`window.orangey.state.history.length === 1`);
+    assert.ok(Date.now() - started < 1500, "instant mode should not sit through the author's five-second spin");
+  });
+
+  await test("T Orangey's tags travel with the wheel", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await encounters(page);
+    const link = await makeLink(page, path);
+    await open(page, "", { fresh: true });
+    await page.goto(localise(link));
+    await page.waitForFunction(`window.orangey && document.querySelector(".play-card")`);
+    // The link says roll=1, so it is already rolling; let that finish or the
+    // next press would be read as "skip".
+    await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
+    await mascotShow(page, "always", "instant");
+    for (const [want, expect] of [["Dragon", "happy"], ["Wolf pack", "oops"]]) {
+      const seed = await page.evaluate(`
+        const { state, rollRandomizer, decodeRandomizer } = window.orangey;
+        const query = location.hash.slice(location.hash.indexOf("?") + 1);
+        const r = await decodeRandomizer(new URLSearchParams(query).get("w"));
+        for (let i = 0; i < 5000; i++) {
+          await state.savePrefs({ seed: "t" + i });
+          state.resetSeedSequence();
+          if (rollRandomizer(r, state.source()).text === ${JSON.stringify(want)}) { state.resetSeedSequence(); return "t" + i; }
+        }
+        throw new Error("no seed found");
+      `);
+      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
+      await page.click(".roll-button");
+      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
+      assert.equal(await hostState(page), expect, `landed on ${want}`);
+    }
+  });
+
+  await test("T saving a linked wheel keeps the identity it arrived with", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await encounters(page);
+    const link = await makeLink(page, path);
+    await open(page, "", { fresh: true });
+    await page.goto(localise(link));
+    await page.waitForFunction(`document.querySelector(".save-randomizer")`);
+    await page.click(".save-randomizer");
+    await page.waitForFunction(`location.hash.startsWith("#/r/")`);
+    const saved = await page.evaluate(`
+      const files = window.orangey.state.library.files();
+      return { count: files.length, id: files[0].randomizer.id, name: files[0].randomizer.name, items: files[0].randomizer.items.length };
+    `);
+    assert.equal(saved.count, 1);
+    assert.equal(saved.id, "enc-linked", "a link by id should find this copy afterwards");
+    assert.equal(saved.name, "Forest Encounters");
+    assert.equal(saved.items, 4);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("T the dialog offers both kinds, embedded first, and the library one still works", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await encounters(page);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".link-button")`);
+    await page.click(".link-button");
+    await page.waitForFunction(`document.querySelector(".link-dialog[open]")`);
+    const kinds = await page.evaluate(`
+      return [...document.querySelectorAll(".link-kinds button")].map((b) => [b.textContent, b.getAttribute("aria-pressed")]);
+    `);
+    assert.deepEqual(kinds, [["With the wheel inside", "true"], ["To my library", "false"]]);
+    const embedded = await page.evaluate(`return document.querySelector(".link-dialog input[type=text]").value`);
+    await page.click(".link-kind-library");
+    const library = await page.evaluate(`return document.querySelector(".link-dialog input[type=text]").value`);
+    await page.evaluate(`document.querySelector(".link-dialog").close()`);
+    assert.match(embedded, /#\/roll\?w=/);
+    assert.match(library, /#\/id\/enc-linked/);
+    assert.ok(embedded.length > library.length, "the embedded link is the longer one");
+    // the library link still opens the library copy
+    await page.goto(localise(library));
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".play-card h1").textContent`), "Forest Encounters");
+  });
+
+  await test("T the Import page takes a pasted link, and explains a damaged one", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await encounters(page);
+    const link = await makeLink(page, path);
+
+    await open(page, "#/import", { fresh: true });
+    await page.waitForFunction(`document.querySelector("textarea")`);
+    await page.evaluate(`
+      const t = document.querySelector("textarea");
+      t.value = ${JSON.stringify(link)};
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+    `);
+    await page.waitForFunction(`document.querySelector(".link-import")`);
+    assert.match(await page.evaluate(`return document.querySelector(".link-import").textContent`), /This is an Orangey link/);
+    assert.match(await page.evaluate(`return document.querySelector(".link-import").textContent`), /Forest Encounters/);
+    await page.click(".add-linked");
+    await page.waitForFunction(`location.hash.startsWith("#/edit/")`);
+    assert.equal(await page.evaluate(`return window.orangey.state.library.files().length`), 1);
+
+    // a payload with a hole in it is explained rather than opened
+    await open(page, "#/import", { fresh: true });
+    await page.waitForFunction(`document.querySelector("textarea")`);
+    const damaged = link.replace(/w=(.{10})(.{10})/, "w=$1");
+    await page.evaluate(`
+      const t = document.querySelector("textarea");
+      t.value = ${JSON.stringify("__DAMAGED__")}.replace("__DAMAGED__", ${JSON.stringify(damaged)});
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+    `);
+    await page.waitForFunction(`document.querySelector(".link-import")`);
+    assert.match(await page.evaluate(`return document.querySelector(".link-import").textContent`), /damaged/);
+    assert.equal(await page.evaluate(`return window.orangey.state.library.files().length`), 0);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("T a link that arrives broken says so, and Orangey winces", async (page) => {
+    await open(page, "", { fresh: true });
+    await mascotShow(page, "triggers", "instant");
+    await page.goto(`${server.origin}/index.html?debug&noseed#/roll?w=1NotAValidPayloadAtAll`);
+    await page.waitForFunction(`document.querySelector(".broken-link")`);
+    const text = await page.evaluate(`return document.querySelector(".broken-link").textContent`);
+    assert.match(text, /did not survive/);
+    await page.waitForFunction(`window.orangey.mascot.played.length === 1`);
+    assert.deepEqual(await played(page), ["oops"]);
   });
 
   // ---- report --------------------------------------------------------------

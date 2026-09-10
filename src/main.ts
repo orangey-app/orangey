@@ -1,6 +1,8 @@
 import { mountApp } from "./ui/app.ts";
 import { state } from "./ui/state.ts";
 import { rollRandomizer } from "./ui/roll.ts";
+import { effectiveFeel } from "./ui/feel.ts";
+import { decodeRandomizer } from "./model/link.ts";
 import { navigate } from "./ui/router.ts";
 import { IndexedDbBackend } from "./storage/idb.ts";
 import { MemoryBackend } from "./storage/memory.ts";
@@ -26,6 +28,8 @@ async function start(): Promise<void> {
     (globalThis as unknown as Record<string, unknown>).orangey = {
       state,
       rollRandomizer,
+      effectiveFeel,
+      decodeRandomizer,
       navigate,
       backends: { IndexedDbBackend, MemoryBackend },
       mascot,
