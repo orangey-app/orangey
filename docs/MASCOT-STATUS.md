@@ -18,12 +18,13 @@ The resume file. A session picking this up reads this first, then
 | R  | The mark is Orangey; the app moves to a subpath | done |
 | S  | A card that does not move, a way home, a Storage card, quieter defaults | done |
 | T  | A link that carries the wheel itself | done |
+| U  | Wheel labels along the radius, the pointer on the right | done |
 
-All stages complete. At 0.3.0: `npm run check` (60 source files),
-`npm test` (284) and `npm run test:browser` (92) are green.
+All stages complete. At 0.3.1: `npm run check` (60 source files),
+`npm test` (294) and `npm run test:browser` (94) are green.
 
-Test names carry their stage's letter, so `P …`, `Q …`, `R …`, `S …` and
-`T …` in `tests/browser/run.mjs` are that stage's browser tests.
+Test names carry their stage's letter, so `P …`, `Q …`, `R …`, `S …`, `T …`
+and `U …` in `tests/browser/run.mjs` are that stage's browser tests.
 
 ## Where things are
 
@@ -49,7 +50,7 @@ Test names carry their stage's letter, so `P …`, `Q …`, `R …`, `S …` and
 
 ## Beyond the mascot
 
-Stages R, S and T were not about him, but they are recorded here because
+Stages R to U were not about him, but they are recorded here because
 this is the file a session reads first:
 
 - **R** — the top bar, the favicon and the installed icon are his head,
@@ -63,6 +64,10 @@ this is the file a session reads first:
 - **T** — `src/model/link.ts` puts a whole randomizer in the address
   (`#/roll?w=…`), the Link dialog offers that and the library link side by
   side, and the Import page accepts a pasted one.
+- **U** — wheel labels run along the radius and the pointer sits at three
+  o'clock (`POINTER_ANGLE` in `src/core/wheel-geometry.ts`), so every winner
+  arrives horizontal; `radialLabelRoom` and `fitLabelToWidth` size and cut the
+  labels; wheels are labelled up to 48 outcomes.
 
 ## Not done, by decision
 

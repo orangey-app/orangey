@@ -2212,6 +2212,15 @@ async function main() {
     await page.evaluate(`document.querySelector(".link-dialog").close()`);
     return value;
   };
+  /**
+   * A link from the dialog carries roll=1, so the linked wheel rolls by itself
+   * one animation frame after it appears. Wait until that roll has landed, or
+   * a test's own press can arrive first and make two rolls (or skip this one).
+   */
+  const autoRollLanded = (page) =>
+    page.waitForFunction(
+      `window.orangey.state.history.length === 1 && document.querySelector(".roll-button").textContent === "Roll"`,
+    );
   /** The randomizer the current link carries, decoded in the page. */
   const linkedNow = (page) =>
     page.evaluate(`
@@ -2252,10 +2261,13 @@ async function main() {
     // it is a fixed randomizer, like one from the library: no presets to press
     assert.equal(await page.evaluate(`return document.querySelectorAll(".quickbar .preset").length`), 0);
     assert.equal(await page.evaluate(`return !!document.querySelector(".home-button")`), true);
-    // and it rolls
+    // it rolls by itself, because the link says roll=1…
+    assert.match(link, /[?&]roll=1(&|$)/);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await autoRollLanded(page);
+    // …and again when asked
     await page.click(".roll-button");
-    await page.waitForFunction(`window.orangey.state.history.length === 1`);
+    await page.waitForFunction(`window.orangey.state.history.length === 2`);
     const text = await page.evaluate(`return document.querySelector(".result-value").textContent`);
     assert.ok(["Goblin patrol", "Merchant", "Wolf pack", "Dragon"].includes(text), text);
     assert.deepEqual(page.consoleErrors, []);
@@ -2264,7 +2276,10 @@ async function main() {
   await test("T the author's spin travels, and the reader's motion setting still wins", async (page) => {
     await open(page, "", { fresh: true });
     const path = await encounters(page, { feel: { wheel: { durationMs: 5200, turns: 9 } } });
-    const link = await makeLink(page, path);
+    // Without roll=1: an automatic roll would already be spinning the author's
+    // five seconds, and pressing the button would only skip it.
+    const link = (await makeLink(page, path)).replace(/&roll=1(?=&|$)/, "");
+    assert.doesNotMatch(link, /roll=1/);
 
     await open(page, "", { fresh: true });
     await page.goto(localise(link));
@@ -2292,9 +2307,9 @@ async function main() {
     await open(page, "", { fresh: true });
     await page.goto(localise(link));
     await page.waitForFunction(`window.orangey && document.querySelector(".play-card")`);
-    // The link says roll=1, so it is already rolling; let that finish or the
-    // next press would be read as "skip".
-    await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
+    // The link says roll=1; let that roll land, or the next press would be
+    // read as "skip" — or, a frame too early, come first and be followed by it.
+    await autoRollLanded(page);
     await mascotShow(page, "always", "instant");
     for (const [want, expect] of [["Dragon", "happy"], ["Wolf pack", "oops"]]) {
       const seed = await page.evaluate(`

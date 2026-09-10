@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-09-10
 
 - **Wheel labels run along the radius, and the pointer is on the right.**
   Labels used to follow the rim, so a slice could only carry as many letters
@@ -22,6 +22,9 @@
 - The labels' sizes now take effect: a stylesheet rule had been overriding
   every label to 11 px. And a slice thinner than the gap between slices no
   longer ends before it starts.
+- Three browser tests no longer race the roll a slide link starts by itself
+  one frame after it opens; about one run in thirty, a test's own press got in
+  first and made two rolls.
 
 ## 0.3.0 — 2026-09-10
 
