@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A wedged browser used to mean a job sitting at GitHub's six-hour limit.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,9 +19,14 @@ jobs:
       - run: npm test
       - run: npm run build:single
       - name: Browser tests
+        timeout-minutes: 12
         run: |
-          CHROME_PATH="$(which google-chrome || which chromium-browser || which chromium)"
-          echo "using $CHROME_PATH"
+          CHROME_PATH="$(which google-chrome || which chromium-browser || which chromium || true)"
+          if [ -z "$CHROME_PATH" ]; then
+            echo "No Chrome or Chromium on this runner; the browser suite needs one." >&2
+            exit 1
+          fi
+          echo "using $CHROME_PATH ($("$CHROME_PATH" --version))"
           CHROME_PATH="$CHROME_PATH" npm run test:browser
       - uses: actions/upload-artifact@v4
         with:
