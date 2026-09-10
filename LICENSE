@@ -1,6 +1,25 @@
+Orangey is two works under two licences.
+
+  1. THE SOFTWARE — the source code, build scripts, tests, documentation and
+     example files — is released under the MIT License below.
+
+  2. THE ORANGEY CHARACTER AND ARTWORK are NOT covered by the MIT License.
+     The mascot "Orangey" — the orange character with the stem and face, in
+     every pose — is Copyright (c) 2026 Amogh Kinikar, all rights reserved.
+     That covers the drawings in assets/mascot/, the geometry derived from
+     them in src/ui/mascot/parts.ts, the app icon and logo, and the same
+     artwork as it appears inside any built file (dist/, orangey.html,
+     app.js). It may not be copied, modified, redistributed or used outside
+     this application without the author's written permission. Running,
+     forking or redistributing the software with the artwork left in place,
+     unmodified and as the mascot of this application, is permitted. A fork
+     that wants to change the character or use it elsewhere must first
+     remove it: delete assets/mascot/ and src/ui/mascot/, and the software
+     still builds and runs. See assets/mascot/README.md.
+
 MIT License
 
-Copyright (c) 2026 Orangey contributors
+Copyright (c) 2026 Amogh Kinikar and Orangey contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,5 +1,13 @@
 # Orangey — source drawings
 
+**Copyright (c) 2026 Amogh Kinikar. All rights reserved.** These drawings, the
+character they depict, the geometry derived from them in
+`src/ui/mascot/parts.ts`, the app icon, and the same artwork inside any built
+file are not part of the MIT-licensed software — see the top of `LICENSE`.
+They may stay in place, unmodified, as the mascot of this application when it
+is run, forked or redistributed; any other use, alteration or redistribution
+of the character needs the author's written permission.
+
 The owner's Illustrator exports, unmodified. `src/ui/mascot/parts.ts` is
 derived from these: every path there is one of these paths translated into
 the logo's coordinate space (the body starts at 133.13, 53.04).

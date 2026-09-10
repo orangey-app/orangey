@@ -1,6 +1,10 @@
 /**
  * Orangey's anatomy, as the owner drew it.
  *
+ * Copyright (c) 2026 Amogh Kinikar. All rights reserved. The geometry in
+ * this file is the Orangey character and is NOT under the MIT licence that
+ * covers the rest of the software — see LICENSE and assets/mascot/README.md.
+ *
  * Every constant here is lifted from one of six SVG files — the logo and the
  * five poses — normalised into the logo's own coordinate space. The body is
  * the same curve in all six (maximum deviation 0.0005 units), so there is one

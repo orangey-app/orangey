@@ -189,4 +189,10 @@ code depends on, and why there is no framework.
 
 ## Licence
 
-MIT.
+The software is MIT. **Orangey himself is not**: the mascot — the drawings in
+`assets/mascot/`, the geometry in `src/ui/mascot/parts.ts`, the icon, and the
+same artwork inside any built file — is © 2026 Amogh Kinikar, all rights
+reserved. You may run, fork and redistribute the app with him in it, as he is,
+as its mascot; you may not reuse, alter or redistribute the character on its
+own. A fork that wants a different mascot removes `assets/mascot/` and
+`src/ui/mascot/` and still builds. The full terms are in [LICENSE](LICENSE).

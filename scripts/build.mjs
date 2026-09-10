@@ -28,6 +28,9 @@ const css = ["src/ui/styles/tokens.css", "src/ui/styles/app.css"]
 const js = bundle(join(root, "src/main.ts"), { root });
 
 const page = ({ inlineAssets, scriptTag, styleTag, head = "" }) => `<!doctype html>
+<!-- Orangey. The software is MIT-licensed; the Orangey character and artwork
+     in this file are Copyright (c) 2026 Amogh Kinikar, all rights reserved.
+     https://github.com/orangey-app/orangey-app.github.io/blob/main/LICENSE -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
