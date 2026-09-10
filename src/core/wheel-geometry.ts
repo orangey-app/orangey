@@ -1,9 +1,10 @@
 /**
  * Wheel geometry: weights in, arcs out (plan C4).
  *
- * Angles are degrees measured clockwise from twelve o'clock, because that is
- * where the pointer sits and it makes the spin maths readable. The wheel
- * rotates; the pointer never moves.
+ * Angles are degrees measured clockwise from twelve o'clock. The pointer sits
+ * at three o'clock, because labels are written along the radius, reading
+ * outwards: whatever lands under a pointer on the right arrives horizontal and
+ * reads left to right towards it. The wheel rotates; the pointer never moves.
  */
 
 import type { RandomSource } from "./rng.ts";
@@ -44,13 +45,27 @@ export function layout(items: readonly Weighted[], opts: LayoutOptions = {}): Se
   const out: Segment[] = [];
   for (const index of live) {
     const span = shares[index] * 360;
-    const start = angle + usePad / 2;
-    const end = angle + span - usePad / 2;
+    // A slice thinner than the gap would otherwise end before it starts; the
+    // gap never takes more than half of it.
+    const gap = Math.min(usePad, span / 2);
+    const start = angle + gap / 2;
+    const end = angle + span - gap / 2;
     out.push({ index, startAngle: start, endAngle: end, midAngle: (start + end) / 2, share: shares[index] });
     angle += span;
   }
   return out;
 }
+
+/** Where the pointer sits, in the same degrees as the segments: three o'clock. */
+export const POINTER_ANGLE = 90;
+
+/**
+ * The most a winning label may lean away from horizontal when the wheel stops.
+ * Only an outcome taking nearly half the wheel or more is affected: its
+ * landing point is kept this close to the segment's middle, so the label under
+ * the pointer never tips over past vertical.
+ */
+export const MAX_LANDING_TILT = 75;
 
 const rad = (deg: number) => ((deg - 90) * Math.PI) / 180;
 
@@ -95,7 +110,8 @@ export interface SpinPlan {
  * choose a pleasant-looking way to arrive there. The landing point is drawn
  * uniformly within the segment but kept clear of both edges, so the pointer
  * never appears to sit exactly on a boundary — which looks like a bug even
- * when it is not.
+ * when it is not — and within MAX_LANDING_TILT of the middle, so the winning
+ * label arrives readable.
  */
 export function planSpin(
   segment: Segment,
@@ -105,23 +121,81 @@ export function planSpin(
   const turns = Math.max(0, Math.round(opts.turns ?? 6));
   const margin = opts.edgeMargin ?? 0.06;
   const span = segment.endAngle - segment.startAngle;
-  const inset = span * margin;
-  const landing = segment.startAngle + inset + rng.float() * Math.max(0, span - 2 * inset);
+  // Half the window the landing may fall in, measured from the middle: clear
+  // of both edges, and never so far from the middle that the label tips over.
+  const half = Math.min(span / 2 - span * margin, MAX_LANDING_TILT);
+  const landing = segment.midAngle - half + rng.float() * Math.max(0, 2 * half);
 
   const current = opts.currentRotation ?? 0;
   // Rotation that brings `landing` under the pointer, then whole turns on top,
   // always forwards from where the wheel is now.
-  const base = ((-landing - current) % 360 + 360) % 360;
+  const base = ((POINTER_ANGLE - landing - current) % 360 + 360) % 360;
   return { rotation: current + base + turns * 360, landingAngle: landing, segment };
 }
 
 /** Which segment is under the pointer at a given rotation. For tests. */
 export function segmentAtPointer(segments: readonly Segment[], rotation: number): Segment | null {
-  const at = ((-rotation % 360) + 360) % 360;
+  const at = (((POINTER_ANGLE - rotation) % 360) + 360) % 360;
   for (const s of segments) {
     const start = ((s.startAngle % 360) + 360) % 360;
     const end = start + (s.endAngle - s.startAngle);
     if ((at >= start && at <= end) || (at + 360 >= start && at + 360 <= end)) return s;
   }
   return null;
+}
+
+/** Room for one label written along a segment's radius. */
+export interface RadialLabelRoom {
+  fontSize: number;
+  /** Where the text ends, next to the rim; it is anchored here and runs inwards. */
+  outer: number;
+  /** How far towards the hub the text may reach before the slice is too narrow for it. */
+  inner: number;
+  /** outer − inner: the most text the slice can carry, in viewBox units. */
+  length: number;
+}
+
+/**
+ * How much text a slice can carry along its radius.
+ *
+ * Along the radius the length is bounded by the wheel, not by the slice; the
+ * slice only has to be as wide as the letters are tall. A slice narrows towards
+ * the hub, so the text is anchored at the rim and may run inwards only as far
+ * as the slice is still `lineHeight` × the font size wide. Returns null when not
+ * even a few letters would fit — the list and the result panel name the slice
+ * instead.
+ */
+export function radialLabelRoom(
+  span: number,
+  opts: { outer: number; hub: number; lineHeight?: number; minChars?: number },
+): RadialLabelRoom | null {
+  const lineHeight = opts.lineHeight ?? 1.15;
+  const fontSize = span >= 40 ? 13 : span >= 20 ? 12 : span >= 12 ? 11 : span >= 8.5 ? 10 : 9;
+  // Chord width of the slice at radius r is 2 r sin(span / 2); past a half
+  // circle the slice is wider than its chord, so cap the half-angle at 90°.
+  const halfSine = Math.sin((Math.min(span, 180) * Math.PI) / 360);
+  const narrowest = halfSine > 0 ? (lineHeight * fontSize) / (2 * halfSine) : Infinity;
+  const inner = Math.max(opts.hub, narrowest);
+  const length = opts.outer - inner;
+  // A rough average advance for a semibold sans is 0.6 em.
+  if (length < (opts.minChars ?? 3) * 0.6 * fontSize) return null;
+  return { fontSize, outer: opts.outer, inner, length };
+}
+
+/**
+ * The longest start of `label` that fits in `width`, with an ellipsis when
+ * anything had to go. `measure` returns a string's advance at the font in use.
+ */
+export function fitLabelToWidth(label: string, width: number, measure: (text: string) => number): string {
+  if (measure(label) <= width) return label;
+  const chars = Array.from(label);
+  let lo = 0;
+  let hi = chars.length;
+  // Binary search on the kept prefix length; `lo` always fits.
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (measure(`${chars.slice(0, mid).join("").trimEnd()}…`) <= width) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo === 0 ? "…" : `${chars.slice(0, lo).join("").trimEnd()}…`;
 }

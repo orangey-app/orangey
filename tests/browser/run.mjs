@@ -1071,7 +1071,7 @@ async function main() {
 
   await test("N7 large data × wheel modes", async (page) => {
     await open(page, "", { fresh: true });
-    for (const [count, expected] of [[33, "unlabelled"], [201, "ticker"], [500, "ticker"]]) {
+    for (const [count, expected] of [[49, "unlabelled"], [201, "ticker"], [500, "ticker"]]) {
       const items = Array.from({ length: count }, (_, i) => ({ label: `Outcome ${i + 1}`, weight: 1 }));
       const path = await createList(page, `Big ${count}`, items);
       await open(page, `#/r/${encodeURIComponent(path)}`);
@@ -1086,9 +1086,9 @@ async function main() {
       const result = await page.evaluate(`return document.querySelector(".result-value").textContent`);
       assert.match(result, /^Outcome \d+$/);
     }
-    // A 32-outcome wheel still carries labels.
-    const items = Array.from({ length: 32 }, (_, i) => ({ label: `L${i}`, weight: 1 }));
-    const path = await createList(page, "Exactly 32", items);
+    // A 48-outcome wheel still carries labels.
+    const items = Array.from({ length: 48 }, (_, i) => ({ label: `L${i}`, weight: 1 }));
+    const path = await createList(page, "Exactly 48", items);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     assert.ok(await page.evaluate(`return Boolean(document.querySelector(".wheel-label"))`));
   });
@@ -2451,6 +2451,71 @@ async function main() {
       assert.ok(box.rollTop + 52 <= box.height + 1, `${w}×${h}: the button is off the bottom`);
     }
     await page.setViewport(1280, 900);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- U: labels along the radius, the pointer on the right ----------------
+
+  await test("U the slice under the pointer is the answer, and its label arrives the right way up", async (page) => {
+    await open(page, "", { fresh: true });
+    const labels = ["Goblin patrol", "Wolf pack", "Merchant", "Nothing", "Bandits", "Owlbear", "Young green dragon"];
+    const path = await createList(page, "Pointer", labels.map((label, i) => ({ label, weight: [30, 20, 15, 12, 10, 8, 5][i] })));
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".wheel-pointer")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    for (let k = 0; k < 25; k++) {
+      await page.click(".roll-button");
+      await page.waitForFunction(`window.orangey.state.history.length === ${k + 1}`);
+      const seen = await page.evaluate(`
+        const pointer = document.querySelector(".wheel-pointer").getBoundingClientRect();
+        const svg = document.querySelector(".wheel-svg").getBoundingClientRect();
+        const tip = { x: pointer.left, y: pointer.top + pointer.height / 2 };
+        const under = document.elementFromPoint(tip.x - 6, tip.y);
+        const index = under && under.getAttribute("data-index");
+        const label = document.querySelector('.wheel-label[data-index="' + index + '"]');
+        const m = label.getScreenCTM();
+        const end = new DOMPoint(Number(label.getAttribute("x")), Number(label.getAttribute("y"))).matrixTransform(m);
+        return {
+          result: document.querySelector(".result-value").textContent,
+          index: Number(index),
+          lean: (Math.atan2(m.b, m.a) * 180) / Math.PI,
+          endX: end.x, tipX: tip.x,
+          pointerRight: pointer.right, svgRight: svg.right, pointerMidY: tip.y, svgMidY: svg.top + svg.height / 2,
+        };
+      `);
+      assert.equal(labels[seen.index], seen.result, `roll ${k}: the pointer shows ${labels[seen.index]}, the answer is ${seen.result}`);
+      assert.ok(Math.abs(seen.lean) <= 75.5, `roll ${k}: ${seen.result}'s label leans ${seen.lean.toFixed(1)}°`);
+      assert.ok(seen.endX < seen.tipX, `roll ${k}: the label ends at ${seen.endX}, under the pointer's tip at ${seen.tipX}`);
+      assert.ok(Math.abs(seen.pointerMidY - seen.svgMidY) < 1 && seen.svgRight - seen.pointerRight < 4, "the pointer is not at three o'clock");
+    }
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("U labels fit their slice as the browser draws them, up to 48 outcomes", async (page) => {
+    await open(page, "", { fresh: true });
+    for (const n of [2, 6, 12, 32, 48]) {
+      const items = Array.from({ length: n }, (_, i) => ({ label: `The lost travellers of the old road, number ${i + 1}`, weight: 1 }));
+      const path = await createList(page, `Fit ${n}`, items);
+      await open(page, `#/r/${encodeURIComponent(path)}`);
+      await page.waitForFunction(`document.querySelector(".wheel-svg")`);
+      const drawn = await page.evaluate(`
+        const size = document.querySelector(".wheel-svg").viewBox.baseVal.width;
+        return { size, labels: [...document.querySelectorAll(".wheel-label")].map((el) => ({
+          text: el.textContent, length: el.getComputedTextLength(), font: Number(el.getAttribute("font-size")),
+        })) };
+      `);
+      assert.equal(drawn.labels.length, n, `${n} outcomes: ${drawn.labels.length} labels`);
+      // The component's own numbers: labels end 25 short of the centre-to-edge
+      // distance, the hub is 16 with a margin of 6, and a line needs 1.15 em.
+      const end = drawn.size / 2 - 25;
+      const span = 360 / n - 0.4;
+      for (const label of drawn.labels) {
+        const inner = Math.max(22, (1.15 * label.font) / (2 * Math.sin((Math.min(span, 180) * Math.PI) / 360)));
+        assert.ok(label.length <= end - inner + 0.5, `${n} outcomes: "${label.text}" is ${label.length.toFixed(1)} long, room ${(end - inner).toFixed(1)}`);
+        assert.ok(label.text.endsWith("…"), `${n} outcomes: "${label.text}" should have been cut`);
+        assert.ok(label.text.length >= 7, `${n} outcomes: only "${label.text}" fits`);
+      }
+    }
     assert.deepEqual(page.consoleErrors, []);
   });
 

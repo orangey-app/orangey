@@ -2,8 +2,13 @@
  * The wheel.
  *
  * Three modes, chosen by outcome count (decision D9): labelled segments up to
- * 32, unlabelled segments up to 200, and above that a ticker — a 250-slice pie
+ * 48, unlabelled segments up to 200, and above that a ticker — a 250-slice pie
  * is unreadable, and encounter tables that long are common.
+ *
+ * Labels are written along the radius, reading outwards, and the pointer sits
+ * at three o'clock, so whatever wins arrives horizontal and reads towards it.
+ * Labels on the left half read upside down while the wheel is still; flipping
+ * them would turn half of all winners upside down instead.
  *
  * The spin is fitted to a result that has already been decided, so skipping is
  * always safe and the wheel can never disagree with the announcement.
@@ -11,17 +16,49 @@
 
 import { assignColors, toCandidate, type ColorCandidate } from "../../core/palette-assign.ts";
 import { labelFor } from "../../core/color.ts";
-import { arcPath, layout, planSpin, type Segment } from "../../core/wheel-geometry.ts";
+import {
+  arcPath,
+  fitLabelToWidth,
+  layout,
+  planSpin,
+  pointOnCircle,
+  POINTER_ANGLE,
+  radialLabelRoom,
+  type Segment,
+} from "../../core/wheel-geometry.ts";
 import { CryptoSource } from "../../core/rng.ts";
 import type { ListItem } from "../../model/randomizer.ts";
 import { SEGMENT_POOL } from "../styles/palette.ts";
 import { easeSpin, motionScale, overshootFraction, settleForSpin, wheelDuration, type FeelSettings } from "../feel.ts";
 import { h, s, setChildren } from "../dom.ts";
 
-export const LABEL_LIMIT = 32;
+export const LABEL_LIMIT = 48;
 export const TICKER_LIMIT = 200;
+/** The disc at the centre; labels stop short of it. */
+const HUB_RADIUS = 16;
 
 const POOL: ColorCandidate[] = SEGMENT_POOL.map((c) => toCandidate(c.hex));
+
+/** Weight of the wheel's labels; the same value is in .wheel-label in app.css. */
+const WHEEL_LABEL_WEIGHT = 600;
+
+let labelCanvas: CanvasRenderingContext2D | null | undefined;
+let labelFamily = "";
+
+/**
+ * A string's advance at the wheel's label font. Canvas measures without the
+ * SVG being in the document; where there is no canvas, 0.6 em a character.
+ */
+function measureWheelLabel(text: string, fontSize: number): number {
+  if (labelCanvas === undefined) {
+    labelCanvas = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
+    // The --font token is fixed for the life of the page, so it is read once.
+    if (labelCanvas) labelFamily = getComputedStyle(document.documentElement).getPropertyValue("--font").trim();
+  }
+  if (!labelCanvas) return Array.from(text).length * 0.6 * fontSize;
+  labelCanvas.font = `${WHEEL_LABEL_WEIGHT} ${fontSize}px ${labelFamily || "system-ui, sans-serif"}`;
+  return labelCanvas.measureText(text).width;
+}
 
 export interface WheelView {
   el: HTMLElement;
@@ -49,6 +86,10 @@ export function createWheel(opts: WheelOptions): WheelView {
   const cx = size / 2;
   const cy = size / 2;
   const radius = size / 2 - 6;
+  // The pointer overlaps the rim; labels end a little short of its tip, or the
+  // winner's last letters would sit underneath it.
+  const pointerTip = size / 2 - 20;
+  const labelEnd = pointerTip - 5;
 
   const el = h("div", { class: "wheel-wrap" });
   let segments: Segment[] = [];
@@ -99,30 +140,26 @@ export function createWheel(opts: WheelOptions): WheelView {
     const labels = showLabels
       ? segments.flatMap((seg) => {
           const item = items[seg.index];
-          const span = seg.endAngle - seg.startAngle;
           // A sliver cannot carry a readable label; the list beside the wheel
           // and the result panel say what it is instead.
-          if (span < 7) return [];
+          const room = radialLabelRoom(seg.endAngle - seg.startAngle, { outer: labelEnd, hub: HUB_RADIUS + 6 });
+          if (!room) return [];
           const { ink } = labelFor(colorByIndex[seg.index] ?? "#888888");
-          const r = radius * 0.66;
-          const angle = ((seg.midAngle - 90) * Math.PI) / 180;
-          const x = cx + r * Math.cos(angle);
-          const y = cy + r * Math.sin(angle);
-          const maxChars = Math.max(3, Math.floor(span / 3.2));
-          const text = item.label.length > maxChars ? `${item.label.slice(0, maxChars - 1)}…` : item.label;
-          const fontSize = span < 14 ? 9 : span < 24 ? 10 : 11;
-          // Flip the labels on the left of the wheel so none reads upside down.
-          const flip = seg.midAngle > 90 && seg.midAngle < 270;
+          const text = fitLabelToWidth(item.label, room.length, (t) => measureWheelLabel(t, room.fontSize));
+          // Anchored at the rim and running inwards along the radius, reading
+          // outwards — horizontal once the slice is under the pointer.
+          const [x, y] = pointOnCircle(cx, cy, room.outer, seg.midAngle);
           return [
             s("text", {
               class: "wheel-label",
+              "data-index": String(seg.index),
               x: String(x),
               y: String(y),
               fill: ink,
-              "font-size": String(fontSize),
-              "text-anchor": "middle",
+              "font-size": String(room.fontSize),
+              "text-anchor": "end",
               "dominant-baseline": "middle",
-              transform: `rotate(${seg.midAngle + (flip ? 180 : 0)} ${x} ${y})`,
+              transform: `rotate(${seg.midAngle - POINTER_ANGLE} ${x} ${y})`,
               text,
             }),
           ];
@@ -132,9 +169,10 @@ export function createWheel(opts: WheelOptions): WheelView {
     rotor = s("g", { class: "wheel-rotor" }, ...paths, ...labels);
     applyRotation();
 
+    // At three o'clock, pointing in at the centre (POINTER_ANGLE).
     const pointer = s("path", {
       class: "wheel-pointer",
-      d: `M ${cx - 11} 2 L ${cx + 11} 2 L ${cx} 26 Z`,
+      d: `M ${size - 2} ${cy - 10} L ${size - 2} ${cy + 10} L ${cx + pointerTip} ${cy} Z`,
       fill: "var(--accent)",
       stroke: "var(--bg-raised)",
       "stroke-width": "1.5",
@@ -151,7 +189,7 @@ export function createWheel(opts: WheelOptions): WheelView {
       },
       s("circle", { cx: String(cx), cy: String(cy), r: String(radius + 2), fill: "var(--border)" }),
       rotor,
-      s("circle", { cx: String(cx), cy: String(cy), r: "16", fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
+      s("circle", { cx: String(cx), cy: String(cy), r: String(HUB_RADIUS), fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
       pointer,
     );
     return h("div", { class: "wheel-holder" }, svg);

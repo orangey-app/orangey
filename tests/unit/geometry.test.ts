@@ -1,6 +1,15 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { arcPath, layout, planSpin, segmentAtPointer } from "../../src/core/wheel-geometry.ts";
+import {
+  arcPath,
+  fitLabelToWidth,
+  layout,
+  MAX_LANDING_TILT,
+  planSpin,
+  POINTER_ANGLE,
+  radialLabelRoom,
+  segmentAtPointer,
+} from "../../src/core/wheel-geometry.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 
 describe("wheel geometry", () => {
@@ -34,6 +43,12 @@ describe("wheel geometry", () => {
     assert.equal(segs.length, 7);
     const total = segs.reduce((a, s) => a + (s.endAngle - s.startAngle), 0);
     assert.ok(Math.abs(total - 360) < 1e-9, `total ${total}`);
+  });
+
+  test("a slice thinner than the gap keeps a positive width", () => {
+    const segs = layout([{ weight: 5000 }, { weight: 1 }, { weight: 5000 }], { padAngle: 0.4 });
+    for (const s of segs) assert.ok(s.endAngle > s.startAngle, `slice ${s.index}: ${s.startAngle}..${s.endAngle}`);
+    assert.ok(segs[1].midAngle > segs[0].endAngle && segs[1].midAngle < segs[2].startAngle);
   });
 
   test("nothing rollable produces no segments", () => {
@@ -100,5 +115,119 @@ describe("wheel geometry", () => {
     assert.match(pie, /^M 100 100 L .* A 90 90 0 1 1 .* Z$/);
     assert.match(ring, /^M .* A 90 90 0 1 1 .* L .* A 40 40 0 1 0 .* Z$/);
     assert.ok(!pie.includes("NaN") && !ring.includes("NaN"));
+  });
+
+  test("the pointer sits at three o'clock", () => {
+    assert.equal(POINTER_ANGLE, 90);
+    const segs = layout([{ weight: 1 }, { weight: 1 }, { weight: 1 }], { padAngle: 0 });
+    // Unturned, 90° is inside the first slice (0–120°).
+    assert.equal(segmentAtPointer(segs, 0)?.index, 0);
+    // Turning the wheel 60° anticlockwise brings 150° round to the pointer.
+    assert.equal(segmentAtPointer(segs, -60)?.index, 1);
+    // And 180° clockwise brings 270°, the third slice.
+    assert.equal(segmentAtPointer(segs, 180)?.index, 2);
+  });
+
+  test("every winner's label arrives the right way up under the pointer", () => {
+    // A label is drawn at rotate(mid − 90), reading outwards. After the spin
+    // its lean from horizontal is mid − 90 + rotation; it must never pass
+    // MAX_LANDING_TILT, whatever the weights.
+    const rng = new SeededSource("upright");
+    for (let wheel = 0; wheel < 200; wheel++) {
+      const n = 1 + Math.floor(rng.float() * 40);
+      const items = Array.from({ length: n }, () => ({ weight: 1 + Math.floor(rng.float() * 60) }));
+      const segs = layout(items, { padAngle: 0.4 });
+      let rotation = 0;
+      for (const target of segs) {
+        const plan = planSpin(target, rng, { turns: 6, currentRotation: rotation });
+        const lean = ((((target.midAngle - 90 + plan.rotation) % 360) + 540) % 360) - 180;
+        assert.ok(Math.abs(lean) <= MAX_LANDING_TILT + 1e-9, `wheel ${wheel}: lean ${lean.toFixed(1)}°`);
+        assert.ok(Math.abs(lean) <= (target.endAngle - target.startAngle) / 2, "landed outside its own slice");
+        rotation = plan.rotation;
+      }
+    }
+  });
+
+  test("a slice of more than half the wheel still lands near its middle", () => {
+    const segs = layout([{ weight: 9 }, { weight: 1 }], { padAngle: 0 });
+    const rng = new SeededSource("big");
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 0; i < 4000; i++) {
+      const { landingAngle } = planSpin(segs[0], rng, { turns: 1 });
+      lo = Math.min(lo, landingAngle - segs[0].midAngle);
+      hi = Math.max(hi, landingAngle - segs[0].midAngle);
+    }
+    assert.ok(lo >= -MAX_LANDING_TILT && hi <= MAX_LANDING_TILT, `${lo} .. ${hi}`);
+    // …and still uses the whole window rather than one spot.
+    assert.ok(lo < -MAX_LANDING_TILT + 2 && hi > MAX_LANDING_TILT - 2, `${lo} .. ${hi}`);
+  });
+});
+
+describe("radial labels", () => {
+  // The wheel component's numbers: a 320 viewBox, labels ending at 135 (short
+  // of the pointer's tip at 140), the hub at 16 plus a margin.
+  const room = (span: number) => radialLabelRoom(span, { outer: 135, hub: 22 });
+  const chars = (r: NonNullable<ReturnType<typeof room>>) => Math.floor(r.length / (0.6 * r.fontSize));
+
+  test("a 48-slice wheel carries nine or more characters per label", () => {
+    const r = room(360 / 48 - 0.4);
+    assert.ok(r, "48 slices should be labelled");
+    assert.ok(chars(r) >= 9, `${chars(r)} characters`);
+  });
+
+  test("a 32-slice wheel carries about four times what arc labels did", () => {
+    const span = 360 / 32 - 0.4;
+    const r = room(span);
+    assert.ok(r);
+    const before = Math.max(3, Math.floor(span / 3.2));
+    assert.ok(chars(r) >= 4 * before - 1, `${chars(r)} characters, was ${before}`);
+  });
+
+  test("the text never reaches where the slice is narrower than a line", () => {
+    for (let span = 3; span <= 360; span += 0.5) {
+      const r = room(span);
+      if (!r) continue;
+      const half = (Math.min(span, 180) * Math.PI) / 360;
+      assert.ok(2 * r.inner * Math.sin(half) >= 1.15 * r.fontSize - 1e-9, `span ${span}`);
+      assert.ok(r.inner >= 22, `span ${span} reaches into the hub`);
+      assert.ok(r.length > 0);
+    }
+  });
+
+  test("a sliver carries no label, and bigger slices never lose theirs", () => {
+    assert.equal(room(2), null);
+    let labelled = false;
+    for (let span = 1; span <= 360; span += 0.25) {
+      const has = room(span) !== null;
+      assert.ok(!labelled || has, `span ${span} lost its label after a smaller one had one`);
+      labelled ||= has;
+    }
+    assert.ok(labelled);
+  });
+
+  test("bigger slices get a font at least as big", () => {
+    let last = 0;
+    for (let span = 5; span <= 360; span += 0.5) {
+      const r = room(span);
+      if (!r) continue;
+      assert.ok(r.fontSize >= last, `span ${span}`);
+      last = r.fontSize;
+    }
+  });
+
+  test("labels are cut to fit, with an ellipsis", () => {
+    const mono = (s: string) => Array.from(s).length * 10;
+    assert.equal(fitLabelToWidth("Goblin patrol", 200, mono), "Goblin patrol");
+    assert.equal(fitLabelToWidth("Goblin patrol", 130, mono), "Goblin patrol");
+    assert.equal(fitLabelToWidth("Goblin patrol", 129, mono), "Goblin patr…");
+    // Trailing spaces go before the ellipsis, not after it.
+    assert.equal(fitLabelToWidth("Goblin patrol", 80, mono), "Goblin…");
+    assert.equal(fitLabelToWidth("Goblin", 5, mono), "…");
+    // A surrogate pair is one character and is never split.
+    assert.equal(fitLabelToWidth("🐺🐺🐺 wolves", 40, mono), "🐺🐺🐺…");
+    for (let w = 10; w < 200; w += 7) {
+      assert.ok(mono(fitLabelToWidth("The lost travellers of the old road", w, mono)) <= w, `width ${w}`);
+    }
   });
 });

@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **Wheel labels run along the radius, and the pointer is on the right.**
+  Labels used to follow the rim, so a slice could only carry as many letters
+  as it was wide: about three on a 32-outcome wheel. Written from the rim
+  towards the hub, a label is limited by the radius instead, and the slice only
+  needs to be as wide as the letters are tall — twelve or so characters at 32
+  outcomes. Each label is sized to its slice and measured at the font actually
+  in use, then cut with an ellipsis where it has to be.
+- **The winner always arrives the right way up.** Labels on the lower half
+  used to be flipped so they read upright at rest, but the flip travelled with
+  the wheel, so any outcome from that half reached the pointer upside down.
+  With the pointer at three o'clock and labels reading outwards, whatever wins
+  arrives horizontal and reads towards it. A slice of nearly half the wheel
+  or more now lands within 75° of its middle, so even its label never tips past
+  vertical. Labels on the left read upside down while the wheel is still; that
+  is the price, and the list beside the wheel is there for reading.
+- **Wheels carry labels up to 48 outcomes** (was 32); unlabelled up to 200 and
+  the ticker above that are unchanged.
+- The labels' sizes now take effect: a stylesheet rule had been overriding
+  every label to 11 px. And a slice thinner than the gap between slices no
+  longer ends before it starts.
+
 ## 0.3.0 — 2026-09-10
 
 - **The browser suite cannot hang any more.** Every protocol call is capped,

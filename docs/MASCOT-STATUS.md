@@ -15,9 +15,15 @@ The resume file. A session picking this up reads this first, then
 | Q2 | Editor controls: wheel rows, bulk bar, coin faces; browser tests | done |
 | Q3 | Back, settings file, my colours, download a copy | done |
 | Q4 | Publishing pass: workflows on `main`, docs, one public commit | done |
+| R  | The mark is Orangey; the app moves to a subpath | done |
+| S  | A card that does not move, a way home, a Storage card, quieter defaults | done |
+| T  | A link that carries the wheel itself | done |
 
-All stages complete. `npm run check`, `npm test` (260) and
-`npm run test:browser` (74) are green at the public commit.
+All stages complete. At 0.3.0: `npm run check` (60 source files),
+`npm test` (284) and `npm run test:browser` (92) are green.
+
+Test names carry their stage's letter, so `P …`, `Q …`, `R …`, `S …` and
+`T …` in `tests/browser/run.mjs` are that stage's browser tests.
 
 ## Where things are
 
@@ -40,6 +46,23 @@ All stages complete. `npm run check`, `npm test` (260) and
 - **A new animation**: `registerMascotState(name, { pose, enter, drive,
   limbs })` before the app mounts, then name it in a row. A pose needs its
   parts in `parts.ts` and its visibility rules in the CSS.
+
+## Beyond the mascot
+
+Stages R, S and T were not about him, but they are recorded here because
+this is the file a session reads first:
+
+- **R** — the top bar, the favicon and the installed icon are his head,
+  rasterised in `scripts/icon.mjs` from the constants in
+  `src/ui/mascot/parts.ts`; the app moved from the organisation's root to
+  `orangey-app.github.io/orangey/`.
+- **S** — the result panel reserves its height from `longestOutcome()`
+  rather than discovering it per roll; the dice presets give way to a Home
+  button when a randomizer from the library is open; Settings has a Storage
+  card; four of the ten reactions ship switched off.
+- **T** — `src/model/link.ts` puts a whole randomizer in the address
+  (`#/roll?w=…`), the Link dialog offers that and the library link side by
+  side, and the Import page accepts a pasted one.
 
 ## Not done, by decision
 
