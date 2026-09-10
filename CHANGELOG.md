@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-09-10
+
+- **Full screen holds together.** A link with `present=1` opened in a tab that
+  already had Orangey in it silently failed to fill the screen: the outgoing
+  view was torn down after the incoming one had set itself up, and took the
+  full-screen class with it. The app owns that now. And in full screen the
+  wheel is sized by the height it is given rather than the width of the
+  window, so a two-line answer can no longer be drawn over by it.
 
 - **A link can carry the wheel itself.** Beside the link to your library there
   is now one with the randomizer inside it: name, outcomes, weights, colours,

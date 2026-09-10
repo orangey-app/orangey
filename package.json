@@ -1,6 +1,6 @@
 {
   "name": "orangey",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A local-first randomizer for tabletop games: dice, coins, numbers and weighted wheels. No server, no account, works offline.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",

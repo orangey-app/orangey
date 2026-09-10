@@ -78,6 +78,9 @@ export function mountApp(root: HTMLElement): MascotHost {
 
   function renderRoute(): void {
     const route: Route = currentRoute();
+    // Full screen is chrome, so the app owns it: clear it here, before the
+    // incoming view is built, and whatever that view asks for survives.
+    document.body.classList.remove("presenting");
     ensureSide();
 
     switch (route.name) {

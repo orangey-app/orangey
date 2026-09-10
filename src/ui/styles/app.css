@@ -527,11 +527,33 @@ body.presenting .play > .card {
   gap: 10px;
   padding: clamp(12px, 3vw, 40px);
 }
-body.presenting .stage { display: flex; justify-content: center; min-height: 0; }
-body.presenting .wheel-holder { max-width: min(44vh, 420px); }
-body.presenting .result-panel { min-height: 0; padding: 4px; }
+/* The stage gives way, not the result: the panel keeps the height it has
+   reserved for two lines of the largest type, and the wheel takes what is
+   left. Squeezing the panel instead let the answer overlap the wheel. */
+body.presenting .stage { display: flex; justify-content: center; min-height: 0; flex: 1 1 auto; }
+/* Full screen the wheel is sized by the height it is given, not by the width
+   of the window: a width-driven square overflowed the space left above the
+   result and drew over it. */
+body.presenting .wheel-wrap { display: flex; align-items: stretch; justify-content: center; min-height: 0; padding: 0; }
+body.presenting .wheel-holder {
+  /* Stretched to the height the stage was given — a definite size, unlike a
+     percentage against a flex-sized parent — and squared from there. */
+  align-self: stretch;
+  width: auto;
+  height: auto;
+  aspect-ratio: 1;
+  max-height: min(44vh, 420px);
+  max-width: 100%;
+}
+body.presenting .wheel-svg { height: 100%; width: 100%; }
+body.presenting .result-panel { min-height: 0; padding: 4px; flex: none; }
 body.presenting .result-slot { font-size: clamp(40px, 11vw, 150px); }
 body.presenting .result-slot.small { font-size: clamp(30px, 7vw, 96px); }
+/* Two reserved lines at the full-screen size would take a third of a laptop
+   screen, so it steps down: still the largest thing on the wall, with the
+   wheel above it left room to be seen. */
+body.presenting .result-panel.two-lines .result-slot { font-size: min(clamp(36px, 8vw, 112px), 17vh); }
+body.presenting .result-panel.two-lines .result-slot.small { font-size: min(clamp(28px, 6vw, 84px), 15vh); }
 body.presenting .result-detail { font-size: clamp(13px, 1.5vw, 20px); }
 body.presenting .roll-button { min-height: 60px; font-size: 20px; flex: none; }
 body.presenting .leave-presenting {

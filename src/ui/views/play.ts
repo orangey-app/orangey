@@ -457,7 +457,9 @@ export function createPlayView(
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
-      document.body.classList.remove("presenting");
+      // The full-screen class belongs to the app, which clears it before each
+      // render: a view being torn down must not undo what the view replacing
+      // it has already set up.
       unsubscribe();
     },
   };

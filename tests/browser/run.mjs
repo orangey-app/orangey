@@ -1677,6 +1677,14 @@ async function main() {
     await page.waitForFunction(`window.orangey.state.prefs.feel.mascot.rules["outcome-cheer"] === false`);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await mascotShow(page, "always", "instant");
+    // Say the precondition out loud rather than inheriting it: what he does
+    // with the shipped defaults has its own test, and the suite shares one
+    // browser profile, so a previous test's preferences can outlive a clear.
+    await page.evaluate(`
+      const { state } = window.orangey;
+      const rules = { ...state.prefs.feel.mascot.rules, "roll-land": false };
+      state.setFeel({ mascot: { ...state.prefs.feel.mascot, rules } });
+    `);
     const seed = await seedForPath(page, path, "Crit");
     await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
     await page.click(".roll-button");
@@ -2372,6 +2380,56 @@ async function main() {
     assert.match(text, /did not survive/);
     await page.waitForFunction(`window.orangey.mascot.played.length === 1`);
     assert.deepEqual(await played(page), ["oops"]);
+  });
+
+  await test("T a link with present=1 fills the screen even when the app is already open", async (page) => {
+    // Following a slide link inside a tab that already has Orangey open goes
+    // through hashchange: the outgoing view is torn down after the incoming
+    // one is built, and it used to take the full-screen class with it.
+    await open(page, "", { fresh: true });
+    const path = await createList(page, "Deck", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
+    assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), false);
+    await page.evaluate(`location.hash = "#/r/${encodeURIComponent(path)}?present=1"`);
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), true, "the link did not fill the screen");
+    // and leaving that randomizer leaves full screen behind
+    await page.evaluate(`location.hash = "#/settings"`);
+    await page.waitForFunction(`document.querySelector(".storage-card")`);
+    assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), false);
+  });
+
+  await test("S full screen: the wheel, the answer and the button never draw over each other", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await createList(page, "Projector", [
+      { label: "Goblin patrol", weight: 50 },
+      { label: "Young green dragon", weight: 1 },
+      { label: "Nothing", weight: 9 },
+    ]);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".present-button");
+    await page.waitForFunction(`document.body.classList.contains("presenting")`);
+    // a laptop, a small projector and a big one
+    for (const [w, h] of [[900, 640], [1280, 800], [1920, 1080]]) {
+      await page.setViewport(w, h);
+      await page.click(".roll-button");
+      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
+      const box = await page.evaluate(`
+        const rect = (sel) => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect() : null; };
+        const wheel = rect(".wheel-svg"), slot = rect(".result-slot"), roll = rect(".roll-button");
+        return {
+          wheelBottom: wheel.bottom, slotTop: slot.top, slotBottom: slot.bottom, rollTop: roll.top,
+          height: window.innerHeight, wheelHeight: wheel.height,
+        };
+      `);
+      assert.ok(box.wheelBottom <= box.slotTop + 1, `${w}×${h}: the wheel reaches ${box.wheelBottom}, the answer starts at ${box.slotTop}`);
+      assert.ok(box.slotBottom <= box.rollTop + 1, `${w}×${h}: the answer reaches ${box.slotBottom}, the button starts at ${box.rollTop}`);
+      assert.ok(box.wheelHeight > 120, `${w}×${h}: the wheel was squeezed to ${box.wheelHeight}px`);
+      assert.ok(box.rollTop + 52 <= box.height + 1, `${w}×${h}: the button is off the bottom`);
+    }
+    await page.setViewport(1280, 900);
+    assert.deepEqual(page.consoleErrors, []);
   });
 
   // ---- report --------------------------------------------------------------
