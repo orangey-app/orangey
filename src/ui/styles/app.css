@@ -37,10 +37,10 @@ body {
   color: var(--ink);
   text-decoration: none;
 }
+/* The mark is Orangey's head — the artwork of the logo tile without the
+   tile, so it sits on any scheme's top bar. */
 .brand .mark {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: conic-gradient(var(--brand-orange) 0 30%, #5cc46a 0 52%, #3fa7e0 0 74%, #e8679a 0 100%);
-  box-shadow: inset 0 0 0 2px var(--bg-raised), 0 0 0 2px var(--brand-black);
+  display: block; width: 26px; height: 23px; flex: none;
 }
 
 .panes { display: flex; flex: 1; min-height: 0; }
@@ -171,21 +171,45 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
   min-height: 128px;
   justify-content: center;
 }
-.result-value {
+/* The slot carries the type size and the reserved height; the value inside it
+   is clamped to that many lines and clipped with an ellipsis beyond. Both are
+   set once per randomizer from its longest possible outcome, so a roll can
+   never change the card's height. */
+.result-slot {
   font-size: clamp(38px, 11vw, 76px);
+  height: calc(var(--result-lines, 1) * 1.05em);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.result-slot.small { font-size: clamp(24px, 6vw, 40px); }
+.result-value {
+  font-size: inherit;
   font-weight: 680;
   line-height: 1.05;
   letter-spacing: -0.02em;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--result-lines, 1);
+  line-clamp: var(--result-lines, 1);
+  overflow: hidden;
+  max-width: 100%;
 }
-.result-value.small { font-size: clamp(24px, 6vw, 40px); }
-.result-detail { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); }
+/* The detail line arrives with the first roll, so its room is kept from the
+   start; the seed line only when a seed is set. */
+.result-detail { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); min-height: 1.35em; }
 .result-meta { font-size: 13px; color: var(--ink-faint); }
+.result-panel.seeded .result-meta { min-height: 1.35em; }
 .result-value.is-max { color: var(--ok); }
 .result-value.is-min { color: var(--error); }
 
 .quickbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
 .quickbar button { min-width: 54px; font-variant-numeric: tabular-nums; }
+/* The same row, holding the way home instead of the presets, so opening a
+   randomizer from the library does not shift everything below it. */
+.home-bar .home-button { min-width: 0; }
 
 /* ---- wheel ---------------------------------------------------------------- */
 
@@ -506,8 +530,8 @@ body.presenting .play > .card {
 body.presenting .stage { display: flex; justify-content: center; min-height: 0; }
 body.presenting .wheel-holder { max-width: min(44vh, 420px); }
 body.presenting .result-panel { min-height: 0; padding: 4px; }
-body.presenting .result-value { font-size: clamp(40px, 11vw, 150px); }
-body.presenting .result-value.small { font-size: clamp(30px, 7vw, 96px); }
+body.presenting .result-slot { font-size: clamp(40px, 11vw, 150px); }
+body.presenting .result-slot.small { font-size: clamp(30px, 7vw, 96px); }
 body.presenting .result-detail { font-size: clamp(13px, 1.5vw, 20px); }
 body.presenting .roll-button { min-height: 60px; font-size: 20px; flex: none; }
 body.presenting .leave-presenting {
@@ -573,9 +597,11 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .mascot-svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .mascot-svg .l { fill: none; stroke: #253122; stroke-width: 1.35; stroke-linecap: round; stroke-miterlimit: 10; }
 .mascot-svg .d { fill: #253122; }
-.mascot-svg .body { fill: #f3a257; }
-.mascot-svg .stem { fill: #a49533; }
-.mascot-svg .eye { fill: #f5ecc2; }
+.mascot-svg .body, .logo-svg .body { fill: #f3a257; }
+.mascot-svg .stem, .logo-svg .stem { fill: #a49533; }
+.mascot-svg .eye, .logo-svg .eye { fill: #f5ecc2; }
+/* The mark in the top bar: the same artwork, standing still. */
+.logo-svg { display: block; width: 100%; height: 100%; }
 .mascot-svg .mouth { fill: #f48067; }
 .mascot-svg .arm, .mascot-svg .mouth, .mascot-svg .eyeLopen, .mascot-svg .eyeLsquint { opacity: 0; transition: opacity 90ms linear; }
 .mascot-svg[data-pose="neutral"] .armE, .mascot-svg[data-pose="neutral"] .armF, .mascot-svg[data-pose="neutral"] .mIdle,

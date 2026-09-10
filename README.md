@@ -13,14 +13,14 @@ you can copy, share, back up or keep in Git.
 
 ## Try it
 
-**[orangey-app.github.io](https://orangey-app.github.io)** — that is the whole
-installation. On a phone or on a desktop, your browser will offer to install it
+**[orangey-app.github.io/orangey](https://orangey-app.github.io/orangey/)** —
+that is the whole installation. On a phone or on a desktop, your browser will offer to install it
 as an app; say yes and it gets its own icon and opens without a browser bar.
 
-Or keep a copy: **[orangey.html](https://orangey-app.github.io/orangey.html)**
+Or keep a copy: **[orangey.html](https://orangey-app.github.io/orangey/orangey.html)**
 is the whole app in one file that opens from your own disk, with no server and
 no network. It is also under **Settings → About → Download**, and attached to
-every [release](https://github.com/orangey-app/orangey-app.github.io/releases).
+every [release](https://github.com/orangey-app/orangey/releases).
 
 There is nothing to install and nothing to sign up for. The first time you open
 it, it works; every time after that, it works with the network switched off.

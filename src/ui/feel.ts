@@ -20,7 +20,17 @@ export const DEFAULT_FEEL: FeelSettings = {
   dice: { style: "flat", tumbleMs: 900, bounces: 2, spread: 0.5 },
   coin: { flips: 5, durationMs: 1100, arc: 1.2 },
   haptics: false,
-  mascot: { presence: "triggers", wobble: 1.8, rules: {} },
+  // Out of the box he speaks up only for the moments that carry something:
+  // an extreme, an outcome the game master tagged, a link that points nowhere,
+  // an import that worked. Watching every roll and reacting to every ordinary
+  // landing is available in Settings, off by default, because at the fortieth
+  // roll of the evening it is noise. A rule is stored only when it is off, so
+  // anyone who has already chosen keeps their choice.
+  mascot: {
+    presence: "triggers",
+    wobble: 1.8,
+    rules: { "roll-start": false, "roll-land": false, "roll-fail": false, "import-warn": false },
+  },
 };
 
 /** The wobble control's three stops: none, soft, and the drawn maximum. */
@@ -106,9 +116,14 @@ function normalizeCoin(raw: unknown, base: CoinFeel): CoinFeel {
 
 function normalizeMascot(raw: unknown, base: MascotFeel): MascotFeel {
   const m = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  // A rules object that is there is taken as it stands, empty included: that
+  // is someone who has switched everything on. Only a missing one falls back
+  // to what Orangey ships with.
   const rules: Record<string, boolean> = {};
   if (typeof m.rules === "object" && m.rules !== null) {
     for (const [id, on] of Object.entries(m.rules as Record<string, unknown>)) if (on === false) rules[id] = false;
+  } else {
+    Object.assign(rules, base.rules);
   }
   return {
     presence: oneOf(m.presence, ["hidden", "triggers", "always"] as const, base.presence),

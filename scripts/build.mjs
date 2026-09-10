@@ -30,7 +30,7 @@ const js = bundle(join(root, "src/main.ts"), { root });
 const page = ({ inlineAssets, scriptTag, styleTag, head = "" }) => `<!doctype html>
 <!-- Orangey. The software is MIT-licensed; the Orangey character and artwork
      in this file are Copyright (c) 2026 Amogh Kinikar, all rights reserved.
-     https://github.com/orangey-app/orangey-app.github.io/blob/main/LICENSE -->
+     https://github.com/orangey-app/orangey/blob/main/LICENSE -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -69,12 +69,15 @@ const manifest = {
   icons: [
     { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
     { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-    { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    // The maskable copy is inset, so a phone cropping it to a circle never
+    // clips the sides of his head.
+    { src: "icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
 };
 writeFileSync(join(dist, "manifest.webmanifest"), JSON.stringify(manifest, null, 2));
 writeFileSync(join(dist, "icon-192.png"), makeIcon(192));
 writeFileSync(join(dist, "icon-512.png"), makeIcon(512));
+writeFileSync(join(dist, "icon-512-maskable.png"), makeIcon(512, { inset: 0.78 }));
 
 const sw = `// Orangey service worker: precache the shell so the app opens offline.
 const CACHE = "orangey-v${version}";

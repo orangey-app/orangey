@@ -2,8 +2,9 @@
  * The play surface: the screen a GM keeps open during a game.
  *
  * One tap to roll, the result in the largest type on screen, and nothing that
- * can be pressed by accident. Quick presets sit at the top so a d20 is always
- * one press away even when a wheel is open.
+ * can be pressed by accident. The quick presets belong to the plain play
+ * screen; with a randomizer open from the library they are replaced by a way
+ * home, so that a stray press cannot swap out what the table is rolling.
  */
 
 import { emptyRandomizer, type Randomizer } from "../../model/randomizer.ts";
@@ -14,7 +15,7 @@ import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { createCoin, createDiceTray } from "../components/dice.ts";
 import { createResultPanel } from "../components/result.ts";
-import { rollRandomizer, whyCannotRoll, type Outcome } from "../roll.ts";
+import { longestOutcome, rollRandomizer, whyCannotRoll, type Outcome } from "../roll.ts";
 import { summarize } from "../mascot/events.ts";
 import { effectiveFeel, motionScale } from "../feel.ts";
 import { appBase, isLinkableBase, navigate, slideLink, type LinkParams } from "../router.ts";
@@ -190,13 +191,26 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
     expressionError,
   );
 
+  // With a randomizer open from the library the quick presets are replaced by
+  // a way back to them: pressing one used to swap out the randomizer the table
+  // was in the middle of, which is never what a press meant.
+  const homeBar = h("div", { class: "quickbar home-bar" },
+    button("← Home", () => navigate("#/"), { class: "ghost home-button", title: "Dice, coins and numbers" }),
+  );
+
   function setRandomizer(next: Randomizer): void {
     randomizer = next;
     title.textContent = next.type === "dice" ? (next as { expression: string }).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
     editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    reserveResult();
     result.clear("Ready");
     buildStage();
+  }
+
+  /** Fix the result panel's height from what this randomizer can produce. */
+  function reserveResult(): void {
+    result.reserve(longestOutcome(randomizer), { seed: state.prefs.seed !== null });
   }
 
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer as { expression: string }).expression : randomizer.name });
@@ -232,7 +246,7 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
   // the number without ever sitting on the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
   const el = h("div", { class: "play" },
-    quickbar,
+    node ? homeBar : quickbar,
     h("div", { class: "card play-card" },
       header,
       stage,
@@ -249,9 +263,15 @@ export function createPlayView(node: LibraryNode | null, params: LinkParams = { 
     ),
   );
 
+  reserveResult();
   buildStage();
   renderHistory();
-  const unsubscribe = state.subscribe(renderHistory);
+  // Settings can change the seed while this view is alive, and the seed line
+  // is part of what the panel reserves room for.
+  const unsubscribe = state.subscribe(() => {
+    renderHistory();
+    reserveResult();
+  });
 
   /* ---- presenting, and links for slides -------------------------------- */
 

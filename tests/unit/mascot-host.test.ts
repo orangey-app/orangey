@@ -4,7 +4,7 @@ import { DEFAULT_REACTIONS, mayInterrupt, pickReaction, MASCOT_SALIENCE } from "
 import { MascotHost, type MascotTimers } from "../../src/ui/mascot/host.ts";
 import { emitMascotEvent, type MascotEvent } from "../../src/ui/mascot/events.ts";
 import type { Mascot, MascotOptions } from "../../src/ui/mascot/mascot.ts";
-import { DEFAULT_FEEL, LIMITS, MASCOT_HOLD_MS, MASCOT_ANTICIPATE_MIN_MS, mascotHoldMs, normalizeFeel, type FeelSettings } from "../../src/ui/feel.ts";
+import { DEFAULT_FEEL, LIMITS, MASCOT_HOLD_MS, MASCOT_ANTICIPATE_MIN_MS, mascotHoldMs, mascotRuleOn, normalizeFeel, type FeelSettings } from "../../src/ui/feel.ts";
 
 const land = (extreme: "max" | "min" | null, mood: "cheer" | "wince" | null = null): MascotEvent => ({
   type: "roll:land", source: "dice", summary: { kind: "dice", extreme, mood, text: "x" },
@@ -61,9 +61,34 @@ describe("reactions table", () => {
 });
 
 describe("mascot settings", () => {
-  test("defaults: present on triggers, the drawn maximum wobble, every rule on", () => {
-    assert.deepEqual(DEFAULT_FEEL.mascot, { presence: "triggers", wobble: 1.8, rules: {} });
+  test("defaults: present on triggers, the drawn maximum wobble, and only the reactions that carry something", () => {
+    assert.equal(DEFAULT_FEEL.mascot.presence, "triggers");
+    assert.equal(DEFAULT_FEEL.mascot.wobble, 1.8);
+    // Off out of the box: watching every roll, reacting to every ordinary
+    // landing, wincing at a roll that cannot happen, and wincing at an import
+    // that merely had warnings.
+    assert.deepEqual(DEFAULT_FEEL.mascot.rules, {
+      "roll-start": false,
+      "roll-land": false,
+      "roll-fail": false,
+      "import-warn": false,
+    });
+    const on = (id: string) => mascotRuleOn(DEFAULT_FEEL, id);
+    for (const id of ["outcome-cheer", "outcome-wince", "roll-max", "roll-min", "link-fail", "import-ok"]) {
+      assert.equal(on(id), true, `${id} should be on out of the box`);
+    }
+    for (const id of ["roll-start", "roll-land", "roll-fail", "import-warn"]) {
+      assert.equal(on(id), false, `${id} should be off out of the box`);
+    }
+    // every row in the table is accounted for above
+    assert.equal(DEFAULT_REACTIONS.length, 10);
     assert.deepEqual(normalizeFeel(undefined).mascot, DEFAULT_FEEL.mascot);
+  });
+
+  test("an empty rules object means someone switched everything on, and survives loading", () => {
+    const all = normalizeFeel({ mascot: { ...DEFAULT_FEEL.mascot, rules: {} } });
+    assert.deepEqual(all.mascot.rules, {});
+    for (const r of DEFAULT_REACTIONS) assert.equal(mascotRuleOn(all, r.id), true, r.id);
   });
 
   test("a hand-edited preference is clamped: wobble 99 → 1.8, presence 'loud' → triggers", () => {
@@ -141,7 +166,9 @@ function fakeMascot(): Mascot & { log: string[]; classes: Set<string> } {
 function makeHost(over: Partial<FeelSettings["mascot"]> = {}, motion: FeelSettings["motion"] = "full") {
   const bus = new EventTarget();
   const timers = fakeTimers();
-  let feel: FeelSettings = normalizeFeel({ ...DEFAULT_FEEL, motion, mascot: { ...DEFAULT_FEEL.mascot, ...over } });
+  // Every rule on unless a test says otherwise: these are about what the host
+  // does with a reaction, not about which reactions Orangey ships with.
+  let feel: FeelSettings = normalizeFeel({ ...DEFAULT_FEEL, motion, mascot: { ...DEFAULT_FEEL.mascot, rules: {}, ...over } });
   let mascot = fakeMascot();
   let created = 0;
   const host = new MascotHost({ bus, feel: () => feel, timers, factory: (_o: MascotOptions) => { created++; return (mascot = fakeMascot()); } });
@@ -250,10 +277,10 @@ describe("mascot host", () => {
   test("changing presence to hidden destroys him; back to triggers recreates him idle and invisible", () => {
     const h = makeHost({ presence: "always" });
     const first = h.mascot;
-    h.setFeel({ mascot: { ...DEFAULT_FEEL.mascot, presence: "hidden" } });
+    h.setFeel({ mascot: { ...DEFAULT_FEEL.mascot, rules: {}, presence: "hidden" } });
     assert.ok(first.log.includes("destroy"));
     assert.equal(h.host.el, null);
-    h.setFeel({ mascot: { ...DEFAULT_FEEL.mascot, presence: "triggers" } });
+    h.setFeel({ mascot: { ...DEFAULT_FEEL.mascot, rules: {}, presence: "triggers" } });
     assert.notEqual(h.host.el, null);
     assert.equal(h.host.visible, false);
     assert.equal(h.host.state, "idle");
@@ -261,7 +288,7 @@ describe("mascot host", () => {
 
   test("wobble and motion changes reach the mascot", () => {
     const h = makeHost({ presence: "always" });
-    h.setFeel({ motion: "quick", mascot: { ...DEFAULT_FEEL.mascot, presence: "always", wobble: 1 } });
+    h.setFeel({ motion: "quick", mascot: { ...DEFAULT_FEEL.mascot, rules: {}, presence: "always", wobble: 1 } });
     assert.ok(h.mascot.log.includes("wobble:1"));
     assert.ok(h.mascot.log.includes("motion:quick"));
   });

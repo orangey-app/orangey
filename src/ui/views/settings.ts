@@ -23,6 +23,7 @@ import { download } from "./library.ts";
 import { SETTINGS_FILE_NAME, MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS } from "../../model/settings-file.ts";
 import { ValidationError } from "../../model/validate.ts";
 import { SINGLE_FILE_NAME, isSingleFile, releasesUrl } from "../single.ts";
+import { askToPersist, canUseFolder, describeStorage, exportLibraryZip, isPersisted, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import type { View } from "./editor.ts";
 
 const PREVIEW_ITEMS = ["Goblin patrol", "Merchant", "Wolf pack", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
@@ -35,6 +36,8 @@ export function createSettingsView(): View {
   const previewTray = createDiceTray();
   const previewCoin = createCoin();
   let previewMascot: Mascot | null = null;
+  /** null until the browser has answered, and on browsers that cannot say. */
+  let persisted: boolean | null = null;
 
   const feel = (): FeelSettings => state.prefs.feel;
   const setFeel = (patch: Partial<FeelSettings>) => {
@@ -86,6 +89,8 @@ export function createSettingsView(): View {
           ),
         ),
       ),
+
+      storageCard(),
 
       h("div", { class: "card" },
         h("h2", { text: "Feel" }),
@@ -265,6 +270,60 @@ export function createSettingsView(): View {
     );
   }
 
+  /* ---- storage ----------------------------------------------------------- */
+
+  function storageCard(): HTMLElement {
+    const kind = state.library.backend.kind;
+    const label = state.library.backend.label;
+    const folderRow = canUseFolder()
+      ? h("div", { class: "row tight" },
+          button(kind === "fsa" ? "Use a different folder…" : "Use a folder on this computer…",
+            async () => { if (await useFolder()) render(); }, { class: "use-folder" }),
+          kind === "fsa"
+            ? button("Stop using that folder", () => void stopUsingFolder(), { class: "ghost stop-folder" })
+            : null,
+        )
+      : h("p", { class: "field-hint", text: "This browser has no folder picker, so the library stays in browser storage. Chrome and Edge can point it at a folder instead." });
+
+    return h("div", { class: "card storage-card" },
+      h("h2", { text: "Storage" }),
+      h("p", { class: "faint" },
+        h("strong", { text: label }),
+        ". ",
+        describeStorage(kind),
+      ),
+      h("p", { class: "field-hint", text: "Clearing your browser's cache does not touch any of this — that only holds the app's own files. What removes a library kept by the browser is clearing this site's data." }),
+      h("div", { class: "field" },
+        h("span", { class: "field-label", text: "When space runs short" }),
+        persisted === null
+          ? h("span", { class: "faint persist-state", text: "This browser will not say whether it keeps the library when the disk fills." })
+          : persisted
+            ? h("span", { class: "faint persist-state", text: "The browser has promised to keep this library rather than evict it." })
+            : h("div", { class: "row tight" },
+                h("span", { class: "faint persist-state", text: "The browser may clear the library if the disk fills." }),
+                button("Ask it not to", async () => {
+                  const granted = await askToPersist();
+                  persisted = granted;
+                  state.toast(granted ? "The browser will keep your library." : "The browser did not agree; a folder or a ZIP export is the safer answer.");
+                  render();
+                }, { class: "persist-button" }),
+              ),
+      ),
+      h("div", { class: "field" },
+        h("span", { class: "field-label", text: "Where the library lives" }),
+        folderRow,
+        h("span", { class: "field-hint", text: "A folder is the sturdiest option: the files there are the library, so they survive anything the browser does and can be synced or kept in Git." }),
+      ),
+      h("div", { class: "field" },
+        h("span", { class: "field-label", text: "A copy of everything" }),
+        h("div", { class: "row tight" },
+          button("Export library as ZIP", () => void exportLibraryZip(), { class: "export-library" }),
+        ),
+        h("span", { class: "field-hint", text: "Every randomizer as ordinary JSON files in one archive. The Import page takes it back." }),
+      ),
+    );
+  }
+
   /* ---- Orangey ---------------------------------------------------------- */
 
   function mascotCard(f: FeelSettings): HTMLElement {
@@ -348,6 +407,11 @@ export function createSettingsView(): View {
   }
 
   render();
+  void isPersisted().then((value) => {
+    if (value === persisted) return;
+    persisted = value;
+    render();
+  });
   return {
     el: container,
     destroy() {

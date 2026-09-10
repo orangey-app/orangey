@@ -16,7 +16,7 @@ import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { openSwatchPicker } from "../components/swatch.ts";
 import { reactionControl } from "../components/reaction.ts";
-import { rollRandomizer, whyCannotRoll } from "../roll.ts";
+import { longestOutcome, rollRandomizer, whyCannotRoll } from "../roll.ts";
 import { createResultPanel } from "../components/result.ts";
 import { navigate } from "../router.ts";
 import { effectiveFeel, normalizeOverride, type FeelOverride } from "../feel.ts";
@@ -446,6 +446,9 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
   // ---- try it --------------------------------------------------------------
 
   async function rollNow(): Promise<void> {
+    // The labels change as they are typed, so the preview re-reserves its
+    // height on every try rather than once at the start.
+    result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null });
     const problem = whyCannotRoll(model);
     if (problem) {
       result.clear(problem);

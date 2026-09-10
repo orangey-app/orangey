@@ -14,9 +14,9 @@ import { serialize, wrap } from "../../model/file.ts";
 import { emptyRandomizer, type RandomizerType } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { basename, parent } from "../../storage/paths.ts";
-import { canPickFolder, forgetFolder, pickFolder, regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
-import { createZip } from "../../storage/zip.ts";
+import { regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
 import { LibraryService } from "../../storage/library.ts";
+import { canUseFolder, describeStorage, exportLibraryZip, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import { askConfirm, askFolder, askText, button, h, iconButton, openMenu, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { navigate } from "../router.ts";
@@ -37,12 +37,7 @@ export function createLibraryView(): View {
     const kind = state.library.backend.kind;
     storageBadge.textContent = state.library.backend.label;
     storageBadge.className = `storage-badge ${kind}`;
-    storageBadge.title =
-      kind === "memory"
-        ? "Nothing is being saved. This browser gave Orangey no storage."
-        : kind === "fsa"
-          ? "A folder on this computer. Files there are the library."
-          : "Kept by this browser, on this device.";
+    storageBadge.title = describeStorage(kind);
   }
   storageBadge.addEventListener("click", (e) => openStorageMenu(e.currentTarget as HTMLElement));
 
@@ -76,9 +71,9 @@ export function createLibraryView(): View {
 
   function openStorageMenu(anchor: HTMLElement): void {
     const items = [
-      { label: "Export library as ZIP", onSelect: () => void exportLibrary() },
+      { label: "Export library as ZIP", onSelect: () => void exportLibraryZip() },
     ];
-    if (canPickFolder()) {
+    if (canUseFolder()) {
       items.push({ label: "Use a folder on this computer…", onSelect: () => void openFolder() });
       if (state.library.backend.kind === "fsa") {
         items.push({ label: "Stop using that folder", onSelect: () => void stopUsingFolder() });
@@ -89,43 +84,7 @@ export function createLibraryView(): View {
   }
 
   async function openFolder(): Promise<void> {
-    const backend = await pickFolder().catch(() => null);
-    if (!backend) return;
-    const previous = state.library;
-    const next = new LibraryService(backend);
-    await next.refresh();
-    if (next.files().length === 0 && previous.files().length > 0) {
-      const copy = await askConfirm("Copy your library into this folder?",
-        `The folder is empty. Copy the ${previous.files().length} randomizers you have now into it?`, { confirm: "Copy" });
-      if (copy) {
-        for (const file of previous.files()) {
-          if (!file.randomizer) continue;
-          const folder = parent(file.path);
-          if (folder) await backend.mkdir(folder);
-          await backend.write(file.path, serialize(wrap(file.randomizer)));
-        }
-        await next.refresh();
-      }
-    }
-    state.library = next;
-    state.folderNeedsPermission = false;
-    void state.savePrefs({ backend: "fsa" });
-    state.toast(`Library is now the folder “${backend.label}”`);
-    render();
-  }
-
-  async function stopUsingFolder(): Promise<void> {
-    await forgetFolder();
-    state.toast("Reload to go back to browser storage.");
-  }
-
-  async function exportLibrary(): Promise<void> {
-    const entries = state.library.files()
-      .filter((f) => f.randomizer)
-      .map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer!)) }));
-    const zip = await createZip(entries);
-    downloadBytes("orangey-library.zip", zip);
-    state.toast(`Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}`);
+    if (await useFolder()) render();
   }
 
   /* ---- tree ------------------------------------------------------------- */

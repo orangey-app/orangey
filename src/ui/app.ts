@@ -12,6 +12,7 @@ import { createImportView } from "./views/importer.ts";
 import { createHistoryView } from "./views/history.ts";
 import { createSettingsView } from "./views/settings.ts";
 import { MascotHost } from "./mascot/host.ts";
+import { mascotLogoMarkup } from "./mascot/parts.ts";
 
 const SHORTCUTS: [string, string][] = [
   ["Space or Enter", "Roll"],
@@ -45,7 +46,7 @@ export function mountApp(root: HTMLElement): MascotHost {
   const back = button("← Back", () => navigate(backTarget(currentRoute(), state.prefs.lastPath, (p) => state.library.find(p)?.randomizer != null)), { class: "ghost back", title: "Back to play" });
 
   const topbar = h("div", { class: "topbar" },
-    h("a", { class: "brand", href: "#/" }, h("span", { class: "mark" }), "Orangey"),
+    h("a", { class: "brand", href: "#/" }, h("span", { class: "mark", html: mascotLogoMarkup() }), "Orangey"),
     back,
     h("div", { class: "spacer" }),
     button("Library", () => navigate("#/library"), { class: "ghost" }),

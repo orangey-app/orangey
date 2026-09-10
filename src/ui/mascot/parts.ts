@@ -45,6 +45,9 @@ export const MASCOT_EYES: Record<EyePlacement, Record<EyeSide, readonly [number,
 export const MASCOT_EYE_RX = 7.09;
 export const MASCOT_EYE_RY = 9.92;
 
+/** The stem nub on top of the head, the same in every drawing. */
+export const MASCOT_STEM = { cx: 75.82, cy: 37.82, rx: 7.09, ry: 4.25 } as const;
+
 export type LimbKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "L" | "R";
 
 /** Where each limb hinges: the drawn shoulder or hip. */
@@ -171,7 +174,7 @@ const MASCOT_FRONT_LIMBS =
   `<g class="legL"><path class="l" d="M72.7,127.2c3.68,13.11-6.4,29.54-6.4,29.54,0,0,12.08,3.03,14.23,3.52"/></g>`;
 
 const MASCOT_FACE =
-  `<g class="stem"><ellipse cx="75.82" cy="37.82" rx="7.09" ry="4.25"/></g>` +
+  `<g class="stem"><ellipse cx="${MASCOT_STEM.cx}" cy="${MASCOT_STEM.cy}" rx="${MASCOT_STEM.rx}" ry="${MASCOT_STEM.ry}"/></g>` +
   `<g class="eyeR"><g class="lid"><ellipse class="eye eyeR-el" cx="120.02" cy="77.95" rx="${MASCOT_EYE_RX}" ry="${MASCOT_EYE_RY}"/></g></g>` +
   `<g class="eyeL"><g class="lid"><ellipse class="eye eyeLopen eyeL-el" cx="87.78" cy="87.76" rx="${MASCOT_EYE_RX}" ry="${MASCOT_EYE_RY}"/></g>` +
   `<polygon class="eyeLsquint eye" points="72.55,85.86 79.62,82.69 72.99,77.91 88.49,83.70"/></g>` +
@@ -192,6 +195,40 @@ export function mascotMarkup(): string {
 /** The body at rest, exactly as drawn — the invariant every test pins. */
 export function mascotRestingBodyPath(): string {
   return bodyPathFrom(MASCOT_BODY.map(([x, y]) => [x, y] as [number, number]));
+}
+
+/**
+ * The app's mark: his head alone, tight to the drawn outline plus two units
+ * of air. The logo tile in assets/mascot/logo.svg is this artwork on the
+ * brand black square; the square belongs to the icons, which are square
+ * canvases, not to a mark sitting on a coloured bar.
+ */
+export const MASCOT_LOGO_VIEWBOX = "12.59 23.85 130.71 116.09";
+
+/** The tile the icons are drawn on, from logo.svg. */
+export const MASCOT_LOGO_TILE = 155.91;
+
+/**
+ * Orangey's head as the logo: the same body, stem and three-quarter eyes as
+ * every pose, with no mouth and no limbs. It is built from the constants
+ * above rather than from a second copy of the paths, so redrawing him
+ * reaches the top bar, the favicon and the installed icon at once.
+ *
+ * It is deliberately not a `mascot-svg`: that class means an animated
+ * Orangey, and counting them is how the tests prove there is only ever one.
+ */
+export function mascotLogoMarkup(): string {
+  const eye = (side: EyeSide) => {
+    const [cx, cy, rot] = MASCOT_EYES.tq[side];
+    return `<ellipse class="eye" cx="${cx}" cy="${cy}" rx="${MASCOT_EYE_RX}" ry="${MASCOT_EYE_RY}" transform="rotate(${rot} ${cx} ${cy})"/>`;
+  };
+  return (
+    `<svg class="logo-svg" viewBox="${MASCOT_LOGO_VIEWBOX}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">` +
+    `<path class="body" d="${mascotRestingBodyPath()}"/>` +
+    `<ellipse class="stem" cx="${MASCOT_STEM.cx}" cy="${MASCOT_STEM.cy}" rx="${MASCOT_STEM.rx}" ry="${MASCOT_STEM.ry}"/>` +
+    eye("R") + eye("L") +
+    `</svg>`
+  );
 }
 
 export function bodyPathFrom(points: readonly (readonly [number, number])[]): string {

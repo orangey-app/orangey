@@ -11,7 +11,7 @@ import { flip } from "../core/coin.ts";
 import { rollDice } from "../core/dice/evaluate.ts";
 import { formatResult, speakResult } from "../core/dice/format.ts";
 import { drawNumbers, formatNumbers } from "../core/number.ts";
-import type { RandomSource } from "../core/rng.ts";
+import { SeededSource, type RandomSource } from "../core/rng.ts";
 import { pickWeightedIndex } from "../core/weighted.ts";
 import type { ListRandomizer, OutcomeReaction, Randomizer } from "../model/randomizer.ts";
 import type { RollResult } from "../core/dice/evaluate.ts";
@@ -105,4 +105,41 @@ export function whyCannotRoll(r: Randomizer): string | null {
     return "No outcomes can come up: they are all disabled or weigh nothing.";
   }
   return null;
+}
+
+/**
+ * The longest text this randomizer could ever put in the result panel.
+ *
+ * The panel reserves its height from this once, when the randomizer loads, so
+ * that no roll ever changes the layout — we know every outcome in advance, so
+ * there is no reason to discover the height one roll at a time. It is an upper
+ * bound, not a prediction: dice report their widest total, a number draw its
+ * widest row, a list its longest label.
+ */
+export function longestOutcome(r: Randomizer): string {
+  const longest = (texts: string[]) => texts.reduce((a, b) => (b.length > a.length ? b : a), "");
+  switch (r.type) {
+    case "list": {
+      // Disabled outcomes cannot come up, but enabling one must not resize
+      // the panel, so every label counts.
+      return longest(r.items.map((i) => i.label));
+    }
+    case "coin":
+      return longest([...r.faces]);
+    case "number": {
+      const width = (v: number) => (r.integer ? String(Math.trunc(v)) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, ""));
+      const widest = longest([width(r.min), width(r.max)]);
+      return Array.from({ length: Math.max(1, Math.min(r.count, 100)) }, () => widest).join(", ");
+    }
+    case "dice": {
+      // The bounds come from the expression, so one throwaway roll on its own
+      // source tells us them without touching the app's sequence or history.
+      try {
+        const result = rollDice(r.expression, new SeededSource("fit"));
+        return longest([String(result.min), String(result.max)]);
+      } catch {
+        return r.expression;
+      }
+    }
+  }
 }

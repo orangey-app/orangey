@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+- **The card stops moving.** The result panel used to find its height one roll
+  at a time: the detail line arrived with the first result, and a long outcome
+  wrapped and pushed everything below it. It now reserves its height from the
+  longest outcome the open randomizer can produce — we know them all in
+  advance — keeping the large type and one line for short outcomes, dropping
+  to the smaller type and two lines for long ones, and clipping anything
+  longer with an ellipsis. The spoken announcement is always the whole thing.
+- **The dice presets step aside.** With a randomizer open from the library the
+  quick presets are replaced by a way home, because pressing one used to swap
+  out the randomizer the table was in the middle of.
+- **Orangey says less by default.** Watching every roll, reacting to every
+  ordinary landing, wincing at a roll that cannot happen and wincing at an
+  import that merely had warnings are all off out of the box; what remains is
+  the maximum, the minimum, an outcome you tagged, a slide link that points
+  nowhere, and a clean import. Every one of them is still a checkbox in
+  Settings, and a choice already made is kept.
+- **A Storage section in Settings.** Where the library is kept and what that
+  means, whether the browser has promised not to evict it (and a button to
+  ask), the folder picker, and the ZIP export — all in one place. "About
+  storage" in the library now leads somewhere that answers the question.
+- **The mark is Orangey.** The top bar, the browser tab and the installed-app
+  icon were a placeholder wheel of coloured arcs from 0.1, drawn before the
+  mascot existed. They are now his head, as `assets/mascot/logo.svg` draws
+  it: the top-bar mark is the head alone so it reads on every scheme, and the
+  icons are the head on the brand black tile. `scripts/icon.mjs` rasterises
+  the same constants the app animates, so redrawing him reaches all three at
+  once, and the maskable icon is inset so a phone cropping it to a circle
+  never clips his sides.
+
 ## 0.2.0 — 2026-09-10
 
 - **Orangey on wheels and coins.** A wheel has no maximum, so the game master
