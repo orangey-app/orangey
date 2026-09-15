@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **The roll-back is part of the spin now, not something added to the end of
+  it.** The wheel used to follow its curve to the finish and then, from exactly
+  three-quarters of the way through, have a bounce added on top. That addition
+  starts at a speed of its own, so it always stepped the wheel up by about half
+  a degree per frame. Gentle and standard are still turning at 7.3 and
+  3.1°/frame there and swallowed it; snappy is down to 0.4°/frame with 3° of a
+  2340° spin left, so it read as a halt, a jump forwards, and then the
+  roll-back. The speed profile the curve is built from now takes a single dip
+  below zero instead: the wheel decelerates, carries past where it will stop,
+  turns once, and eases back. Measured on a real spin, the worst speed jump
+  goes from ×1.83 to none.
+- **The roll-back is now the number of degrees you asked for.** It was whatever
+  the curve happened to be doing when the bounce arrived: the same 11° setting
+  gave about 4° on gentle and 10° on snappy. All three curves now pass the
+  target by the setting, within a fortieth of a degree.
+- **Snappy winds down a little less abruptly** — `(1-t)^3` rather than
+  `(1-t)^4`. At the old exponent a six-turn snappy spin was 2337° of 2340° done
+  by 70 % of its duration, so the last third was a wheel standing still. It is
+  still much the sharpest of the three.
+
 ## 0.3.1 — 2026-09-10
 
 - **Wheel labels run along the radius, and the pointer is on the right.**

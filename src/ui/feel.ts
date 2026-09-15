@@ -215,9 +215,14 @@ export function coinDuration(feel: FeelSettings): number {
   return feel.coin.durationMs * motionScale(feel.motion);
 }
 
-/** Ease-out exponent for each curve; higher means a sharper wind-down. */
+/**
+ * Ease-out exponent for each curve; higher means a sharper wind-down.
+ *
+ * Snappy was 5, which wound down so hard that a six-turn spin had 3° of 2340°
+ * left by 70 % of its duration: the last third was a wheel standing still.
+ */
 export function curveExponent(curve: SpinCurve): number {
-  return curve === "gentle" ? 2 : curve === "snappy" ? 5 : 3;
+  return curve === "gentle" ? 2 : curve === "snappy" ? 4 : 3;
 }
 
 /**
@@ -254,55 +259,166 @@ export function overshootFraction(degrees: number, deltaDegrees: number): number
  * The speed profile is a short sine ramp up followed by a power-law wind-down
  * whose exponent is the "curve" setting; integrating it gives the position,
  * normalised so the spin ends exactly on target. Both ends have zero speed.
- * The table is built once per curve and interpolated.
+ *
+ * A roll-back is part of that profile, not something added after it. The
+ * profile takes a single dip below zero near the end, so the wheel decelerates,
+ * carries past where it is going to stop, turns once, and eases back. The dip's
+ * size is solved for, so the wheel passes the target by exactly the roll-back
+ * the settings ask for, whichever curve is in use.
+ *
+ * It used to be added on top of a finished curve, from a fixed three-quarters
+ * of the way through. That addition starts moving at a speed of its own, so it
+ * always stepped the wheel's speed up by about the same amount: invisible under
+ * gentle, which is still turning at 7.3°/frame there, and a lurch under snappy,
+ * which is down to 0.4°/frame with almost nothing left to travel.
  */
 const RAMP_IN = 0.15;
 const SAMPLES = 256;
-const profiles = new Map<SpinCurve, Float64Array>();
+/** The turn begins where the plain curve still has this many roll-backs to travel. */
+const TURN_AT_ROLLBACKS = 4;
+/**
+  * The dip is the wind-down itself, scaled: speed = forward × (1 − depth × g),
+  * with g rising smoothly from 0 to 1 over the turn. Above depth 1 the speed
+  * crosses zero exactly once and stays below it, whatever the curve — a dip of
+  * its own shape can be outrun by a slow wind-down's tail, which put a second
+  * turn at the end of every gentle spin.
+  */
+const MAX_TURN_DEPTH = 64;
+/** However large the roll-back, the wheel spends at least this much of the spin going forwards. */
+const TURN_LIMITS: readonly [number, number] = [0.5, 0.92];
 
-function profileFor(curve: SpinCurve): Float64Array {
-  const cached = profiles.get(curve);
-  if (cached) return cached;
+const plainProfiles = new Map<SpinCurve, Float64Array>();
+/** Profiles with a roll-back are per spin, since the roll-back is drawn per spin. */
+const settleProfiles = new Map<string, Float64Array>();
+const SETTLE_CACHE_LIMIT = 32;
+
+/** The wind-down, sampled as speeds; the area under it is the whole journey. */
+function spinSpeeds(curve: SpinCurve): Float64Array {
   const n = curveExponent(curve);
+  const speeds = new Float64Array(SAMPLES);
+  for (let i = 0; i < SAMPLES; i++) {
+    const t = (i + 0.5) / SAMPLES;
+    const rampIn = t < RAMP_IN ? Math.sin((Math.PI * t) / (2 * RAMP_IN)) ** 2 : 1;
+    speeds[i] = rampIn * (1 - t) ** (n - 1);
+  }
+  return speeds;
+}
+
+/** Speeds -> positions, normalised so the spin ends exactly on target. */
+function spinTable(speeds: Float64Array): Float64Array | null {
   const table = new Float64Array(SAMPLES + 1);
   let acc = 0;
-  for (let i = 1; i <= SAMPLES; i++) {
-    const t = (i - 0.5) / SAMPLES;
-    const rampIn = t < RAMP_IN ? Math.sin((Math.PI * t) / (2 * RAMP_IN)) ** 2 : 1;
-    const windDown = (1 - t) ** (n - 1);
-    acc += rampIn * windDown;
-    table[i] = acc;
+  for (let i = 0; i < SAMPLES; i++) {
+    acc += speeds[i];
+    table[i + 1] = acc;
   }
+  // A dip deep enough to undo the whole journey would leave nothing to
+  // normalise by; the caller falls back to a spin without one.
+  if (!(acc > 0)) return null;
   for (let i = 0; i <= SAMPLES; i++) table[i] /= acc;
-  profiles.set(curve, table);
   return table;
 }
 
-/** Position 0..1 along the spin at progress t, before any roll-back. */
+function plainProfile(curve: SpinCurve): Float64Array {
+  const cached = plainProfiles.get(curve);
+  if (cached) return cached;
+  // The plain wind-down is positive throughout, so this cannot fail.
+  const table = spinTable(spinSpeeds(curve)) as Float64Array;
+  plainProfiles.set(curve, table);
+  return table;
+}
+
+const sampleAt = (table: Float64Array, t: number): number => {
+  const x = t * SAMPLES;
+  const i = Math.floor(x);
+  return table[i] + (table[Math.min(SAMPLES, i + 1)] - table[i]) * (x - i);
+};
+
+/** How far into the spin the wheel starts giving distance back. */
+function turnStart(curve: SpinCurve, overshoot: number): number {
+  const table = plainProfile(curve);
+  const want = 1 - TURN_AT_ROLLBACKS * overshoot;
+  let t = TURN_LIMITS[1];
+  for (let i = 0; i <= SAMPLES; i++) {
+    if (table[i] >= want) {
+      t = i / SAMPLES;
+      break;
+    }
+  }
+  return Math.min(TURN_LIMITS[1], Math.max(TURN_LIMITS[0], t));
+}
+
+/**
+ * A profile whose highest point is exactly `overshoot` past the target.
+ *
+ * The dip's depth is found by bisection. Deeper always means further past the
+ * target — the journey is normalised by a total the dip is subtracted from —
+ * so the search cannot land on a different solution, which is what ruled out
+ * fitting a damped spring to the tail instead.
+ */
+function settleProfile(curve: SpinCurve, overshoot: number): Float64Array {
+  const key = `${curve}:${overshoot.toFixed(6)}`;
+  const cached = settleProfiles.get(key);
+  if (cached) return cached;
+
+  const forward = spinSpeeds(curve);
+  const start = turnStart(curve, overshoot);
+  const dip = new Float64Array(SAMPLES);
+  for (let i = 0; i < SAMPLES; i++) {
+    const t = (i + 0.5) / SAMPLES;
+    const u = (t - start) / (1 - start);
+    dip[i] = u <= 0 ? 0 : forward[i] * Math.sin((Math.PI * u) / 2) ** 2;
+  }
+
+  const combined = new Float64Array(SAMPLES);
+  const peakFor = (depth: number): Float64Array | null => {
+    for (let i = 0; i < SAMPLES; i++) combined[i] = forward[i] - depth * dip[i];
+    return spinTable(combined);
+  };
+  const highest = (table: Float64Array): number => {
+    let top = 0;
+    for (let i = 0; i <= SAMPLES; i++) if (table[i] > top) top = table[i];
+    return top - 1;
+  };
+
+  let lo = 0;
+  let hi = MAX_TURN_DEPTH;
+  let best = plainProfile(curve);
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    const table = peakFor(mid);
+    if (table === null || highest(table) > overshoot) hi = mid;
+    else {
+      lo = mid;
+      best = table;
+    }
+  }
+  const settled = Float64Array.from(best);
+  if (settleProfiles.size >= SETTLE_CACHE_LIMIT) settleProfiles.clear();
+  settleProfiles.set(key, settled);
+  return settled;
+}
+
+/** Position 0..1 along the spin at progress t, with no roll-back. */
 export function spinPosition(t: number, curve: SpinCurve): number {
   if (t <= 0) return 0;
   if (t >= 1) return 1;
-  const table = profileFor(curve);
-  const x = t * SAMPLES;
-  const i = Math.floor(x);
-  const f = x - i;
-  return table[i] + (table[Math.min(SAMPLES, i + 1)] - table[i]) * f;
+  return sampleAt(plainProfile(curve), t);
 }
 
 /**
  * Progress 0..1 -> eased 0..1.
  *
- * With a roll-back, the last quarter carries a single damped overshoot: the
- * wheel swings past where it is going to stop and comes back to it. The bump
- * is zero at both ends of that window, so the spin still finishes exactly on
- * target — the result was decided before any of this started and cannot be
+ * With a roll-back the wheel passes the target by `overshoot` (as a fraction of
+ * the whole spin), turns once, and comes back to it. It still finishes exactly
+ * on target: the result was decided before any of this started and cannot be
  * changed by how the wheel arrives.
  */
 export function easeSpin(t: number, feel: FeelSettings, overshoot = feel.wheel.settleDegrees / 360): number {
-  const eased = spinPosition(t, feel.wheel.curve);
-  if (overshoot === 0 || t < 0.75) return eased;
-  const phase = (t - 0.75) / 0.25;
-  return eased + Math.sin(phase * Math.PI) * (1 - phase) * overshoot;
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  if (!(overshoot > 0)) return spinPosition(t, feel.wheel.curve);
+  return sampleAt(settleProfile(feel.wheel.curve, overshoot), t);
 }
 
 export function prefersReducedMotion(): boolean {

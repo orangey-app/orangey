@@ -16,6 +16,7 @@ import {
   settleForSpin,
   spinPosition,
   wheelDuration,
+  type SpinCurve,
 } from "../../src/ui/feel.ts";
 
 describe("feel settings", () => {
@@ -105,12 +106,25 @@ describe("the spin curve", () => {
     assert.ok(spinPosition(0.5, "snappy") > spinPosition(0.5, "standard"));
     assert.ok(spinPosition(0.5, "standard") > spinPosition(0.5, "gentle"));
     assert.equal(curveExponent("gentle"), 2);
-    assert.equal(curveExponent("snappy"), 5);
+    assert.equal(curveExponent("snappy"), 4);
+  });
+
+  test("even snappy still has ground to cover late in the spin", () => {
+    // At exponent 5 a six-turn snappy spin had 3° of 2340° left by t=0.70: the
+    // last third of the duration was a wheel standing still.
+    const delta = 6 * 360 + 180;
+    assert.ok((1 - spinPosition(0.7, "snappy")) * delta > 15, `${((1 - spinPosition(0.7, "snappy")) * delta).toFixed(1)}° left at t=0.70`);
+    // …and it is still the sharpest wind-down of the three.
+    assert.ok(1 - spinPosition(0.7, "snappy") < (1 - spinPosition(0.7, "standard")) / 3);
   });
 
   test("easeSpin overshoots past the target near the end, then comes back to it", () => {
     const none = { ...DEFAULT_FEEL, wheel: { ...DEFAULT_FEEL.wheel, settleDegrees: 0 } };
-    assert.equal(easeSpin(0.5, none), easeSpin(0.5, DEFAULT_FEEL));
+    assert.equal(easeSpin(0.5, none), spinPosition(0.5, none.wheel.curve));
+    // The roll-back is spread through the whole spin rather than bolted on at
+    // the end, so a wheel that has to go past its target and come back is a
+    // little ahead of a plain one on the way there.
+    assert.ok(easeSpin(0.5, DEFAULT_FEEL, 0.02) > easeSpin(0.5, none));
     let sawOvershoot = false;
     for (let t = 0.75; t < 1; t += 0.01) {
       const v = easeSpin(t, DEFAULT_FEEL, 0.02);
@@ -120,6 +134,76 @@ describe("the spin curve", () => {
     assert.ok(sawOvershoot, "a roll-back should swing past its target");
     assert.equal(easeSpin(1, DEFAULT_FEEL, 0.02), 1);
     assert.equal(easeSpin(1, none), 1);
+    assert.equal(easeSpin(0, DEFAULT_FEEL, 0.02), 0);
+  });
+
+  /** Speeds sampled at 60 fps through one spin, in degrees of a `delta`° spin. */
+  const speeds = (curve: SpinCurve, overshoot: number, delta = 6 * 360 + 180, durationMs = 3200): number[] => {
+    const feel = { ...DEFAULT_FEEL, wheel: { ...DEFAULT_FEEL.wheel, curve } };
+    const step = 16.7 / durationMs;
+    const out: number[] = [];
+    for (let t = 0; t < 1; t += step) {
+      out.push((easeSpin(Math.min(1, t + step), feel, overshoot) - easeSpin(t, feel, overshoot)) * delta);
+    }
+    return out;
+  };
+  const CURVES = ["gentle", "standard", "snappy"] as const;
+  const ROLLBACKS = [1, 4, 11, 30];
+
+  test("the wheel passes the target by exactly the roll-back it was given", () => {
+    const delta = 6 * 360 + 180;
+    for (const curve of CURVES) {
+      const feel = { ...DEFAULT_FEEL, wheel: { ...DEFAULT_FEEL.wheel, curve } };
+      for (const degrees of ROLLBACKS) {
+        let peak = -Infinity;
+        for (let t = 0; t <= 1; t += 0.0005) peak = Math.max(peak, (easeSpin(t, feel, degrees / delta) - 1) * delta);
+        // It used to be whatever the curve happened to be doing at t=0.75:
+        // the same 11° setting gave 4.7° on gentle and 10.1° on snappy.
+        assert.ok(Math.abs(peak - degrees) < degrees * 0.02, `${curve} with ${degrees}° went ${peak.toFixed(2)}° past`);
+      }
+    }
+  });
+
+  test("the wheel turns back once, and only once", () => {
+    for (const curve of CURVES) {
+      for (const degrees of ROLLBACKS) {
+        const v = speeds(curve, degrees / (6 * 360 + 180));
+        let turns = 0;
+        for (let i = 1; i < v.length; i++) if (Math.sign(v[i]) !== Math.sign(v[i - 1]) && Math.abs(v[i]) > 1e-9) turns++;
+        assert.equal(turns, 1, `${curve} with ${degrees}° changed direction ${turns} times`);
+      }
+    }
+  });
+
+  test("the wheel never speeds up while it is still going forwards", () => {
+    // The old roll-back was added on top of a finished curve from t=0.75, and
+    // began with a speed of its own: under snappy that more than doubled the
+    // wheel's speed from one frame to the next — the halt-then-jump.
+    for (const curve of CURVES) {
+      for (const degrees of ROLLBACKS) {
+        const v = speeds(curve, degrees / (6 * 360 + 180));
+        for (let i = 1; i < v.length; i++) {
+          if (i / v.length < 0.2 || v[i] <= 0 || v[i - 1] <= 0) continue;
+          assert.ok(v[i] <= v[i - 1] * 1.02 + 1e-6, `${curve} with ${degrees}°: ${v[i - 1].toFixed(2)} -> ${v[i].toFixed(2)}°/frame`);
+        }
+      }
+    }
+  });
+
+  test("a spin with a roll-back is smooth at any length", () => {
+    for (const curve of CURVES) {
+      for (const durationMs of [400, 1280, 3200, 8000]) {
+        const v = speeds(curve, 11 / (6 * 360 + 180), 6 * 360 + 180, durationMs);
+        // No frame may change the speed by more than the spin's own average
+        // speed; a step of that size is the lurch this replaced.
+        const average = v.reduce((a, b) => a + Math.abs(b), 0) / v.length;
+        // The ramp-in is a deliberate change of speed; the wind-down is what
+        // this is about, so start once the wheel is up to speed.
+        for (let i = Math.ceil(v.length * 0.25); i < v.length; i++) {
+          assert.ok(Math.abs(v[i] - v[i - 1]) <= average, `${curve} at ${durationMs}ms: ${(v[i] - v[i - 1]).toFixed(2)}°/frame step against an average of ${average.toFixed(2)}`);
+        }
+      }
+    }
   });
 });
 
