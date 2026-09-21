@@ -12,7 +12,7 @@ import type { CoinRandomizer, ListItem, ListRandomizer, OutcomeReaction, Randomi
 import { makeItem, newId } from "../../model/randomizer.ts";
 import { draftProblem } from "../../model/draft.ts";
 import type { LibraryNode } from "../../storage/library.ts";
-import { button, debounce, h, iconButton, setChildren } from "../dom.ts";
+import { button, h, iconButton, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { openSwatchPicker } from "../components/swatch.ts";
@@ -113,17 +113,38 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     }
     for (const marked of el.querySelectorAll("[aria-invalid]")) marked.removeAttribute("aria-invalid");
     savedLabel.textContent = "Saving…";
+    // Queue it and nothing more. The library debounces the write; flushing
+    // here meant every keystroke serialised the whole file and waited for the
+    // disk.
     model = { ...model, modified: new Date().toISOString() };
     state.library.save(node.path, model);
-    void state.library
-      .flush()
-      .then(() => {
-        savedLabel.textContent = "All changes saved";
-      })
-      // The toast has already said so; this only stops an unhandled rejection.
-      .catch(() => {});
   };
-  const saveSoon = debounce(save, 250);
+
+  /**
+   * A structural change: a button, not a keystroke.
+   *
+   * Typing is debounced by the library, but a press that also moves focus
+   * fires `focusout` on mousedown — before the handler that changes anything
+   * — so a blur alone would leave the change it made waiting on the timer.
+   * These are rare and deliberate, so they go to disk at once.
+   */
+  const saveNow = (source?: HTMLElement) => {
+    save(source);
+    flushNow();
+  };
+
+  /** Put what is queued on disk now, and say how it went. */
+  function flushNow(): void {
+    if (!state.library.hasUnsavedChanges) return;
+    void state.library.flush().then(
+      () => {
+        if (!draftProblem(model)) savedLabel.textContent = "All changes saved";
+      },
+      () => {
+        savedLabel.textContent = "Not saved";
+      },
+    );
+  }
 
   const wheel = createWheel({
     items: () => model.items,
@@ -137,7 +158,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
   const nameInput = h("input", { type: "text", value: model.name, "aria-label": "Name" });
   nameInput.addEventListener("input", () => {
     model = { ...model, name: nameInput.value };
-    saveSoon(nameInput);
+    save(nameInput);
   });
   nameInput.addEventListener("blur", async () => {
     if (!model.name.trim()) return;
@@ -152,7 +173,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
   const descInput = h("input", { type: "text", value: model.description ?? "", "aria-label": "Description" });
   descInput.addEventListener("input", () => {
     model = { ...model, description: descInput.value || undefined };
-    saveSoon(descInput);
+    save(descInput);
   });
 
   const viewToggle = h("div", { class: "segmented", role: "group", "aria-label": "How this looks when rolled" });
@@ -161,7 +182,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       ...(["wheel", "list"] as const).map((v) =>
         button(v === "wheel" ? "Wheel" : "List", () => {
           model = { ...model, view: v };
-          save();
+          saveNow();
           renderViewToggle();
         }, { "aria-pressed": model.view === v ? "true" : "false" }),
       ),
@@ -178,6 +199,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
   const filterInput = h("input", { type: "search", placeholder: "Filter outcomes", "aria-label": "Filter outcomes" });
   filterInput.addEventListener("input", () => {
     filter = filterInput.value.trim().toLowerCase();
+    rowLimit = ROW_BLOCK;
     renderRows();
   });
 
@@ -207,6 +229,104 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       `total weight ${formatWeight(total)}${filter ? ` · showing ${shown}` : ""}`;
   }
 
+  /**
+   * How many rows the table draws at once.
+   *
+   * An imported table can be thousands of outcomes, and a browser asked for
+   * a thousand rows of eleven cells each — with an input in four of them —
+   * stops being usable. The filter still searches every outcome; this is
+   * only how many are on screen.
+   */
+  const ROW_BLOCK = 300;
+  let rowLimit = ROW_BLOCK;
+
+  /** The row an event happened in, and the outcome it belongs to. */
+  function rowFor(target: EventTarget | null): { item: ListItem; index: number; tr: HTMLElement } | null {
+    const tr = (target as Element | null)?.closest?.("tr[data-item]") as HTMLElement | null;
+    if (!tr) return null;
+    const id = tr.dataset.item;
+    const index = Number(tr.dataset.index);
+    const item = model.items.find((i) => i.id === id);
+    if (!item || !Number.isFinite(index)) return null;
+    return { item, index, tr };
+  }
+
+  tbody.addEventListener("input", (e) => {
+    const where = rowFor(e.target);
+    if (!where) return;
+    const el = e.target as HTMLInputElement;
+    if (el.closest(".label-cell")) update(where.item.id, (i) => ({ ...i, label: el.value }), false, el);
+    else if (el.closest(".weight-cell")) {
+      const v = Number.parseFloat(el.value);
+      if (Number.isFinite(v) && v >= 0) update(where.item.id, (i) => ({ ...i, weight: v }), false, el);
+    } else if (el.closest(".desc-cell")) {
+      update(where.item.id, (i) => ({ ...i, description: el.value || undefined }), false, el);
+    }
+  });
+
+  tbody.addEventListener("change", (e) => {
+    const where = rowFor(e.target);
+    const el = e.target as HTMLInputElement;
+    if (!where || !el.classList.contains("row-select")) return;
+    if (el.checked) selection.add(where.item.id);
+    else selection.delete(where.item.id);
+    renderBulkBar();
+  });
+
+  tbody.addEventListener("keydown", (e) => {
+    const where = rowFor(e.target);
+    if (!where) return;
+    const el = e.target as HTMLElement;
+    const field = el.closest(".weight-cell") ? "weight" : el.closest(".label-cell") ? "label" : null;
+    if (field) onRowKey(e as KeyboardEvent, where.item, where.index, field);
+  });
+
+  tbody.addEventListener("click", (e) => {
+    const where = rowFor(e.target);
+    if (!where) return;
+    const el = e.target as HTMLElement;
+    const { item } = where;
+    if (el.closest(".disable-button")) toggleDisabled(item.id);
+    else if (el.closest(".duplicate-button")) duplicateItem(item.id);
+    else if (el.closest(".delete-button")) deleteItems([item.id]);
+    else if (el.closest(".clear-goes-to")) update(item.id, (i) => ({ ...i, goesTo: undefined }));
+    else if (el.closest(".goes-to-button")) void chooseTarget(item);
+    else {
+      const swatch = el.closest(".swatch") as HTMLElement | null;
+      if (!swatch) return;
+      openSwatchPicker(swatch, {
+        current: item.color ?? null,
+        autoColor: wheel.colors()[where.index] ?? "#888888",
+        custom: state.prefs.colours,
+        onAddCustom: (colour) => state.addColour(colour),
+        onPick: (hex) => update(item.id, (i) => ({ ...i, color: hex ?? undefined })),
+      });
+    }
+  });
+
+  tbody.addEventListener("dragstart", (e) => {
+    const where = rowFor(e.target);
+    if (!where) return;
+    (e as DragEvent).dataTransfer?.setData("text/plain", where.item.id);
+    where.tr.classList.add("dragging");
+  });
+  tbody.addEventListener("dragend", (e) => rowFor(e.target)?.tr.classList.remove("dragging"));
+  tbody.addEventListener("dragover", (e) => {
+    const where = rowFor(e.target);
+    if (!where) return;
+    e.preventDefault();
+    where.tr.classList.add("drop-target");
+  });
+  tbody.addEventListener("dragleave", (e) => rowFor(e.target)?.tr.classList.remove("drop-target"));
+  tbody.addEventListener("drop", (e) => {
+    const where = rowFor(e.target);
+    if (!where) return;
+    e.preventDefault();
+    where.tr.classList.remove("drop-target");
+    const draggedId = (e as DragEvent).dataTransfer?.getData("text/plain");
+    if (draggedId && draggedId !== where.item.id) moveItem(draggedId, where.index);
+  });
+
   function renderRows(focusItemId?: string, focusField: "label" | "weight" = "label"): void {
     const percents = displayPercents(model.items);
     // Before the colours are read, not after: `refresh` is what recomputes
@@ -214,8 +334,27 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     // edit ago.
     wheel.refresh();
     const colors = wheel.colors();
+    const rows = rowsToShow();
+    // If the one to focus is past the end of what is drawn, draw far enough
+    // to include it: Enter on the last visible row must still reach the next.
+    if (focusItemId) {
+      const at = rows.findIndex(({ item }) => item.id === focusItemId);
+      if (at >= rowLimit) rowLimit = Math.ceil((at + 1) / ROW_BLOCK) * ROW_BLOCK;
+    }
+    const visible = rows.slice(0, rowLimit);
+    const hidden = rows.length - visible.length;
     setChildren(tbody, 
-      ...rowsToShow().map(({ item, index }) => renderRow(item, index, percents[index], colors[index] ?? "#888888")),
+      ...visible.map(({ item, index }) => renderRow(item, index, percents[index], colors[index] ?? "#888888")),
+      hidden > 0
+        ? h("tr", { class: "more-rows" },
+            h("td", { colspan: "11" },
+              button(`Show ${Math.min(ROW_BLOCK, hidden)} more of ${hidden}`, () => {
+                rowLimit += ROW_BLOCK;
+                renderRows();
+              }, { class: "ghost show-more-rows" }),
+            ),
+          )
+        : null,
     );
     updateFooter();
     renderBulkBar();
@@ -225,33 +364,17 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     }
   }
 
+  /** The buttons' work is done by the delegated click handler. */
+  const noop = (): void => {};
+
   function renderRow(item: ListItem, index: number, percent: number, autoColor: string): HTMLTableRowElement {
     const tr = h("tr", { dataset: { item: item.id, index: String(index) }, draggable: "true" });
     if (item.disabled) tr.classList.add("disabled");
 
-    tr.addEventListener("dragstart", (e) => {
-      (e as DragEvent).dataTransfer?.setData("text/plain", item.id);
-      tr.classList.add("dragging");
-    });
-    tr.addEventListener("dragend", () => tr.classList.remove("dragging"));
-    tr.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      tr.classList.add("drop-target");
-    });
-    tr.addEventListener("dragleave", () => tr.classList.remove("drop-target"));
-    tr.addEventListener("drop", (e) => {
-      e.preventDefault();
-      tr.classList.remove("drop-target");
-      const draggedId = (e as DragEvent).dataTransfer?.getData("text/plain");
-      if (draggedId && draggedId !== item.id) moveItem(draggedId, index);
-    });
-
-    const check = h("input", { type: "checkbox", checked: selection.has(item.id), "aria-label": `Select ${item.label}` });
-    check.addEventListener("change", () => {
-      if (check.checked) selection.add(item.id);
-      else selection.delete(item.id);
-      renderBulkBar();
-    });
+    // No listeners on the row itself: `tbody` carries one of each for the
+    // whole table (see `delegate` below). Forty rows used to mean six hundred
+    // listeners, all of them torn down and rebuilt on every edit.
+    const check = h("input", { type: "checkbox", class: "row-select", checked: selection.has(item.id), "aria-label": `Select ${item.label}` });
 
     const swatch = h("button", {
       class: `swatch${item.color ? "" : " auto"}`,
@@ -260,37 +383,15 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       title: item.color ? `Colour ${item.color}` : "Automatic colour",
       "aria-label": item.color ? `Colour, currently ${item.color}` : "Colour, currently automatic",
     });
-    swatch.addEventListener("click", () =>
-      openSwatchPicker(swatch, {
-        current: item.color ?? null,
-        autoColor,
-        custom: state.prefs.colours,
-        onAddCustom: (colour) => state.addColour(colour),
-        onPick: (hex) => {
-          update(item.id, (i) => ({ ...i, color: hex ?? undefined }));
-        },
-      }),
-    );
 
     const label = h("input", { type: "text", value: item.label, "aria-label": "Outcome" });
-    label.addEventListener("input", () => update(item.id, (i) => ({ ...i, label: label.value }), false, label));
-    label.addEventListener("keydown", (e) => onRowKey(e as KeyboardEvent, item, index, "label"));
-
     const weight = h("input", { type: "number", min: "0", step: "any", value: String(item.weight), "aria-label": "Weight" });
-    weight.addEventListener("input", () => {
-      const v = Number.parseFloat(weight.value);
-      if (Number.isFinite(v) && v >= 0) update(item.id, (i) => ({ ...i, weight: v }), false, weight);
-    });
-    weight.addEventListener("keydown", (e) => onRowKey(e as KeyboardEvent, item, index, "weight"));
-
     const description = h("input", {
       type: "text",
       value: item.description ?? "",
       "aria-label": "Description",
       placeholder: "—",
     });
-    description.addEventListener("input", () =>
-      update(item.id, (i) => ({ ...i, description: description.value || undefined }), false, description));
 
     const reaction = reactionControl({
       current: item.reaction,
@@ -313,25 +414,25 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       ? (target?.randomizer?.name ?? "(not in your library)")
       : "—";
     const goesTo = h("span", { class: "row tight goes-to" },
-      button(goesToLabel, () => void chooseTarget(item), {
+      button(goesToLabel, noop, {
         class: `ghost goes-to-button${item.goesTo && !target ? " missing" : ""}`,
         "aria-label": `Where ${item.label} sends you: ${goesToLabel}`,
       }),
       ...(item.goesTo
-        ? [iconButton(`Stop ${item.label} sending you anywhere`, "✕", () => update(item.id, (i) => ({ ...i, goesTo: undefined })), { class: "icon-button clear-goes-to" })]
+        ? [iconButton(`Stop ${item.label} sending you anywhere`, "✕", noop, { class: "icon-button clear-goes-to" })]
         : []),
     );
 
     const disableButton = iconButton(
       item.disabled ? `Enable ${item.label}` : `Disable ${item.label}`,
       item.disabled ? "☐" : "☑",
-      () => toggleDisabled(item.id),
+      noop,
       { class: "icon-button disable-button" },
     );
-    const duplicateButton = iconButton(`Duplicate ${item.label}`, "⧉", () => duplicateItem(item.id), {
+    const duplicateButton = iconButton(`Duplicate ${item.label}`, "⧉", noop, {
       class: "icon-button duplicate-button",
     });
-    const deleteButton = iconButton(`Delete ${item.label}`, "🗑", () => deleteItems([item.id]), {
+    const deleteButton = iconButton(`Delete ${item.label}`, "🗑", noop, {
       class: "icon-button danger delete-button",
     });
 
@@ -393,6 +494,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     model = { ...model, items: model.items.map((i) => (i.id === id ? fn(i) : i)) };
     save(source);
     if (redraw) {
+      // Not typing: a colour, a reaction, a picture, a row disabled.
+      flushNow();
       renderRows();
       return;
     }
@@ -403,14 +506,30 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       const cell = tr.querySelector(".pct");
       if (cell && Number.isFinite(idx)) cell.textContent = `${percents[idx].toFixed(1)}%`;
     }
-    wheel.refresh();
+    refreshWheelSoon();
     updateFooter();
+  }
+
+  /**
+   * At most one wheel redraw per frame.
+   *
+   * Typing a label fires an input event per character, and each redraw lays
+   * out and re-measures every slice. The screen only updates once a frame in
+   * any case, so the ones in between were work nobody saw.
+   */
+  let wheelFrame = 0;
+  function refreshWheelSoon(): void {
+    if (wheelFrame) return;
+    wheelFrame = requestAnimationFrame(() => {
+      wheelFrame = 0;
+      wheel.refresh();
+    });
   }
 
   function addOutcome(): void {
     const item = makeItem("New outcome", 1);
     model = { ...model, items: [...model.items, item] };
-    save();
+    saveNow();
     renderRows(item.id, "label");
     const input = tbody.querySelector(`[data-item="${item.id}"] .label-cell input`) as HTMLInputElement | null;
     input?.select();
@@ -428,7 +547,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     const items = [...model.items];
     items.splice(index + 1, 0, copy);
     model = { ...model, items };
-    save();
+    saveNow();
     renderRows(copy.id, "label");
   }
 
@@ -442,14 +561,14 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       .filter(({ item }) => ids.includes(item.id));
     model = { ...model, items: model.items.filter((i) => !ids.includes(i.id)) };
     for (const id of ids) selection.delete(id);
-    save();
+    saveNow();
     renderRows();
     const what = removed.length === 1 ? `"${removed[0].item.label}"` : `${removed.length} outcomes`;
     state.toast(`Deleted ${what}`, "Undo", () => {
       const items = [...model.items];
       for (const { item, index } of removed) items.splice(Math.min(index, items.length), 0, item);
       model = { ...model, items };
-      save();
+      saveNow();
       renderRows();
     });
   }
@@ -462,7 +581,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     const [moved] = items.splice(from, 1);
     items.splice(to, 0, moved);
     model = { ...model, items };
-    save();
+    saveNow();
     renderRows(id);
   }
 
@@ -484,7 +603,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
           ? button("Apply order", () => {
               model = { ...model, items: rowsToShow().map(({ item }) => item) };
               sortBy = "none";
-              save();
+              saveNow();
               renderRows();
             })
           : null,
@@ -495,7 +614,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     const bulk = (label: string, fn: (item: ListItem) => ListItem, cls = "") =>
       button(label, () => {
         model = { ...model, items: model.items.map((i) => (selection.has(i.id) ? fn(i) : i)) };
-        save();
+        saveNow();
         renderRows();
       }, { class: cls });
 
@@ -540,7 +659,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     (next) => {
       model = { ...model, feel: next };
       if (!next) delete (model as { feel?: FeelOverride }).feel;
-      save();
+      saveNow();
     },
     () => void rollNow(),
   );
@@ -595,6 +714,10 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   renderRows();
 
+  // Leaving a field is the moment a person expects their change to be safe,
+  // and it is rare enough to write on. Typing is not.
+  el.addEventListener("focusout", () => flushNow());
+
   const onKey = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && state.undoLast()) e.preventDefault();
   };
@@ -604,6 +727,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
+      if (wheelFrame) cancelAnimationFrame(wheelFrame);
       const problem = draftProblem(model);
       if (problem) state.toast(`Your last change to ${model.name} was not saved: ${problem}`);
       // Pictures taken off an outcome are swept up when the editor closes,
@@ -639,13 +763,21 @@ function createSimpleEditor(node: LibraryNode): View {
     savedLabel.textContent = "Saving…";
     model = { ...model, modified: new Date().toISOString() } as Randomizer;
     state.library.save(node.path, model);
-    void state.library
-      .flush()
-      .then(() => {
-        savedLabel.textContent = "All changes saved";
-      })
-      .catch(() => {});
   };
+
+  function flushNow(): void {
+    if (!state.library.hasUnsavedChanges) return;
+    void state.library.flush().then(
+      () => {
+        if (!draftProblem(model)) savedLabel.textContent = "All changes saved";
+      },
+      () => {
+        savedLabel.textContent = "Not saved";
+      },
+    );
+  }
+
+  el.addEventListener("focusout", () => flushNow());
 
   const fields = h("div");
   const name = h("input", { type: "text", value: model.name, "aria-label": "Name" });
@@ -711,6 +843,7 @@ function createSimpleEditor(node: LibraryNode): View {
       input.addEventListener("change", () => {
         model = { ...model, [key]: input.checked } as Randomizer;
         save(input);
+        flushNow();
       });
       return h("label", { class: "row tight" }, input, label);
     };

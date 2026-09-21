@@ -87,16 +87,14 @@ export function createDiceTray(): DiceTray {
   const el = h("div", { class: "dice-tray" });
   let finish: (() => void) | null = null;
 
-  const classesFor = (die: TrayDie): string => {
-    const classes = ["die"];
-    if (!die.kept) classes.push("dropped");
-    if (die.kept && die.value === die.sides) classes.push("max");
-    if (die.kept && die.value === 1) classes.push("min");
-    return classes.join(" ");
-  };
-
-  const slotClasses = (die: TrayDie): string => {
-    const classes = ["die-slot"];
+  /**
+   * How a die reads: dropped by a keep/drop, or a natural high or low.
+   *
+   * The flat tray and the wireframe tray want the same words on different
+   * base classes, so the base is the only thing that differs.
+   */
+  const dieClasses = (die: TrayDie, base: string): string => {
+    const classes = [base];
     if (!die.kept) classes.push("dropped");
     if (die.kept && die.value === die.sides) classes.push("max");
     if (die.kept && die.value === 1) classes.push("min");
@@ -121,7 +119,7 @@ export function createDiceTray(): DiceTray {
   function showFlat(dice: TrayDie[], feel: FeelSettings, duration: number, bounce: number): Promise<void> {
     if (duration <= 0) {
       el.replaceChildren(
-        ...dice.map((die) => h("div", { class: classesFor(die), title: titleFor(die) }, String(die.value))),
+        ...dice.map((die) => h("div", { class: dieClasses(die, "die"), title: titleFor(die) }, String(die.value))),
       );
       return Promise.resolve();
     }
@@ -159,7 +157,7 @@ export function createDiceTray(): DiceTray {
         elements.forEach((node, i) => {
           const die = dice[i];
           wrappers[i].classList.remove("flying");
-          node.className = classesFor(die);
+          node.className = dieClasses(die, "die");
           node.textContent = String(die.value);
           node.removeAttribute("aria-hidden");
           node.title = titleFor(die);
@@ -215,6 +213,8 @@ export function createDiceTray(): DiceTray {
       const schedule = bounceSchedule(duration, feel.dice.bounces);
       return {
         canvas: slots[i].canvas,
+        ctx: slots[i].canvas.getContext("2d"),
+        dpr,
         solid,
         q: quatFromAxisAngle(axes[0], Math.random() * Math.PI * 2),
         axes,
@@ -244,7 +244,7 @@ export function createDiceTray(): DiceTray {
         wire.landed = true;
         draw(wire);
         slots[i].flight.classList.remove("flying");
-        slots[i].slot.className = slotClasses(die);
+        slots[i].slot.className = dieClasses(die, "die-slot");
         slots[i].value.textContent = String(die.value);
         slots[i].caption.textContent = String(die.value);
       });
@@ -397,6 +397,15 @@ export function createCoin(): CoinView {
  */
 interface WireDie {
   canvas: HTMLCanvasElement;
+  /**
+   * Looked up once, not on every frame.
+   *
+   * `draw` runs per die per frame. `getContext` is cheap but not free, and
+   * reading `clientWidth` forces the browser to lay the page out — sixty
+   * times a second, for every die on a board.
+   */
+  ctx: CanvasRenderingContext2D | null;
+  dpr: number;
   solid: Solid;
   /** Current orientation. */
   q: Quat;
@@ -482,9 +491,9 @@ function step(die: WireDie, now: number, dt: number): void {
 }
 
 function draw(die: WireDie): void {
-  const ctx = die.canvas.getContext("2d");
+  const ctx = die.ctx;
   if (!ctx) return;
-  const dpr = die.canvas.width / die.canvas.clientWidth || 1;
+  const dpr = die.dpr;
   const w = die.canvas.width;
   const h = die.canvas.height;
   ctx.setTransform(1, 0, 0, 1, 0, 0);

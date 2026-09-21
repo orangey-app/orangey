@@ -15,7 +15,7 @@ import { parseFile, serialize, wrap } from "../../model/file.ts";
 import { FILE_SUFFIX } from "../../model/file.ts";
 import { readZip, type ZipEntry } from "../../storage/zip.ts";
 import { IMAGE_DIR } from "../../storage/library.ts";
-import { restoreImage } from "../../storage/images.ts";
+import { imageIdFromName, restoreImage } from "../../storage/images.ts";
 import { basename } from "../../storage/paths.ts";
 import { absorbImages, missingOnBoards } from "../storage-actions.ts";
 import { appendChildren, button, h, setChildren } from "../dom.ts";
@@ -401,7 +401,7 @@ async function absorbArchive(entries: ZipEntry[]): Promise<{ path: string; text:
   for (const entry of entries) {
     if (entry.bytes) {
       if (entry.path.startsWith(`${IMAGE_DIR}/`)) {
-        await restoreImage(basename(entry.path).replace(/\.[^.]+$/, ""), entry.bytes);
+        await restoreImage(imageIdFromName(basename(entry.path)), entry.bytes);
       }
       continue;
     }

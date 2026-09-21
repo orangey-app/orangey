@@ -33,7 +33,13 @@ export async function shrinkForWheel(file: File): Promise<Uint8Array> {
   }
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  // A photograph re-encoded as PNG is several times the size of the JPEG it
+  // came from, and the library carries every byte of it. WebP is a fraction
+  // of either. Anything that might have transparency stays PNG, where a
+  // lossy round trip would show.
+  const photo = file.type === "image/jpeg" || file.type === "image/webp";
+  const type = photo ? "image/webp" : "image/png";
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85));
   return blob ? new Uint8Array(await blob.arrayBuffer()) : new Uint8Array(await file.arrayBuffer());
 }
 

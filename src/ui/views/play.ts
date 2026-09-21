@@ -295,7 +295,7 @@ export function createPlayView(
   const unsubscribe = state.subscribe(() => {
     recent.refresh();
     reserveResult();
-  });
+  }, ["history", "prefs"]);
 
   /* ---- presenting, and links for slides -------------------------------- */
 

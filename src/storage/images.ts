@@ -47,6 +47,16 @@ const imageLoads = new Map<string, Promise<string | null>>();
  * back, or until the library changes underneath the store.
  */
 const imageMisses = new Set<string>();
+/**
+ * The file each picture is really stored under, by id.
+ *
+ * Every picture used to be written as `<id>.png` whatever it held, so a
+ * folder library was full of JPEGs named .png that the operating system
+ * would not preview. New ones carry their real extension; the map is what
+ * lets both kinds be read without a migration, and it is built once per
+ * backend from a single listing rather than guessed at per read.
+ */
+let imageNames: Promise<Map<string, string>> | null = null;
 
 /** Called once when the library opens, and again if the library moves. */
 export function useImageStore(backend: LibraryBackend): void {
@@ -55,11 +65,50 @@ export function useImageStore(backend: LibraryBackend): void {
   imageUrls.clear();
   imageLoads.clear();
   imageMisses.clear();
+  imageNames = null;
   imageBackend = backend;
 }
 
-function imageFilePath(id: string): string {
-  return `${IMAGE_DIR}/${id}.png`;
+/** Which of the four extensions this store holds each picture under. */
+function imageNameMap(): Promise<Map<string, string>> {
+  if (imageNames) return imageNames;
+  const backend = imageBackend;
+  imageNames = (async () => {
+    const names = new Map<string, string>();
+    if (!backend) return names;
+    const entries = await backend.list(IMAGE_DIR).catch(() => []);
+    for (const entry of entries) {
+      if (entry.kind !== "file" || !PICTURE_FILE.test(entry.name)) continue;
+      names.set(imageIdFromName(entry.name), entry.name);
+    }
+    return names;
+  })();
+  return imageNames;
+}
+
+/** The four kinds the store takes; `zip.ts` accepts the same set. */
+const PICTURE_FILE = /\.(png|jpe?g|webp|gif)$/i;
+
+export function imageIdFromName(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, "");
+}
+
+/** What a new picture of these bytes should be called. */
+function imageFileName(id: string, bytes: Uint8Array): string {
+  const type = imageMediaType(bytes);
+  const ext = type === "image/jpeg" ? "jpg" : type === "image/gif" ? "gif" : type === "image/webp" ? "webp" : "png";
+  return `${id}.${ext}`;
+}
+
+/** Where a picture already in the store lives, or null if it is not there. */
+async function imageFilePath(id: string): Promise<string | null> {
+  const name = (await imageNameMap()).get(id);
+  return name ? `${IMAGE_DIR}/${name}` : null;
+}
+
+/** The file name a picture is stored under, for an archive entry. */
+export async function imageStoredName(id: string): Promise<string | null> {
+  return (await imageNameMap()).get(id) ?? null;
 }
 
 /**
@@ -107,7 +156,12 @@ export async function putImage(bytes: Uint8Array): Promise<string> {
 export async function restoreImage(id: string, bytes: Uint8Array): Promise<void> {
   if (!imageBackend) throw new Error("the image store has no library to write to");
   await imageBackend.mkdir(IMAGE_DIR);
-  await imageBackend.writeBytes(imageFilePath(id), bytes);
+  const names = await imageNameMap();
+  // Replacing a picture keeps whatever name it already had, so nothing is
+  // ever stored twice under two extensions.
+  const name = names.get(id) ?? imageFileName(id, bytes);
+  await imageBackend.writeBytes(`${IMAGE_DIR}/${name}`, bytes);
+  names.set(id, name);
   // It is there now, so anyone who asked before and was told no may ask again.
   imageMisses.delete(id);
 }
@@ -115,8 +169,10 @@ export async function restoreImage(id: string, bytes: Uint8Array): Promise<void>
 /** The bytes, or null when there is no such picture. */
 export async function imageBytes(id: string): Promise<Uint8Array | null> {
   if (!imageBackend || !id) return null;
+  const path = await imageFilePath(id);
+  if (!path) return null;
   try {
-    return await imageBackend.readBytes(imageFilePath(id));
+    return await imageBackend.readBytes(path);
   } catch {
     return null;
   }
@@ -181,7 +237,10 @@ export async function deleteImage(id: string): Promise<void> {
     imageUrls.delete(id);
   }
   if (!imageBackend) return;
-  await imageBackend.remove(imageFilePath(id)).catch(() => {});
+  const names = await imageNameMap();
+  const name = names.get(id);
+  names.delete(id);
+  if (name) await imageBackend.remove(`${IMAGE_DIR}/${name}`).catch(() => {});
 }
 
 /**
@@ -202,8 +261,8 @@ export async function pruneImages(usedIds: Set<string>): Promise<number> {
   }
   let gone = 0;
   for (const entry of entries) {
-    if (entry.kind !== "file" || !entry.name.endsWith(".png")) continue;
-    const id = entry.name.slice(0, -4);
+    if (entry.kind !== "file" || !PICTURE_FILE.test(entry.name)) continue;
+    const id = imageIdFromName(entry.name);
     if (usedIds.has(id)) continue;
     await deleteImage(id);
     gone++;

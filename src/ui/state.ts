@@ -47,6 +47,16 @@ export function rollsInScope(rows: HistoryRow[], ids: string[]): HistoryRow[] {
   });
 }
 
+/**
+ * What changed. A view says which of these it cares about, so typing in the
+ * editor no longer redraws the history panel and a toast no longer redraws
+ * the library tree.
+ *
+ * A subscriber that names no topics hears everything, which keeps any caller
+ * that was missed correct rather than silently stale.
+ */
+export type StateTopic = "prefs" | "history" | "toasts" | "library" | "outcome";
+
 export interface Toast {
   id: string;
   text: string;
@@ -85,16 +95,24 @@ class AppState {
    */
   readonly events = new EventTarget();
 
-  #listeners = new Set<() => void>();
+  #listeners = new Set<{ fn: () => void; topics: Set<StateTopic> | null }>();
   /** The save-failure toast currently on screen, if there is one. */
   #saveErrorToast: string | null = null;
+  /** Undoes the previous library's change subscription when one is swapped in. */
+  #unwatchLibrary: (() => void) | null = null;
 
   /**
-   * Take a library and listen to it. Every place that swaps the backend goes
-   * through here, so a failed write always has somebody to tell.
+   * Take a library and listen to it.
+   *
+   * Every place that swaps the backend goes through here, so a failed write
+   * always has somebody to tell, the image store follows the library, and a
+   * change to the tree reaches the views that draw it.
    */
-  useLibrary(library: LibraryService): void {
+  setLibrary(library: LibraryService): void {
+    this.#unwatchLibrary?.();
     this.library = library;
+    useImageStore(library.backend);
+    this.#unwatchLibrary = library.onChange(() => this.emit("library"));
     library.onError(() => {
       // One toast, not one per keystroke: while the last one is still on
       // screen a further failure has nothing new to say.
@@ -105,13 +123,17 @@ class AppState {
     });
   }
 
-  subscribe(fn: () => void): () => void {
-    this.#listeners.add(fn);
-    return () => this.#listeners.delete(fn);
+  subscribe(fn: () => void, topics?: StateTopic[]): () => void {
+    const entry = { fn, topics: topics ? new Set(topics) : null };
+    this.#listeners.add(entry);
+    return () => this.#listeners.delete(entry);
   }
 
-  emit(): void {
-    for (const fn of this.#listeners) fn();
+  /** Tell the subscribers who asked for any of these. No topics tells everyone. */
+  emit(...topics: StateTopic[]): void {
+    for (const { fn, topics: wanted } of this.#listeners) {
+      if (!wanted || topics.length === 0 || topics.some((t) => wanted.has(t))) fn();
+    }
   }
 
   async load(): Promise<void> {
@@ -135,8 +157,7 @@ class AppState {
     backend ??= await openOpfs();
     backend ??= await IndexedDbBackend.open();
     backend ??= new MemoryBackend();
-    this.useLibrary(new LibraryService(backend));
-    useImageStore(backend);
+    this.setLibrary(new LibraryService(backend));
     await this.library.refresh();
 
     // First run: a few real randomizers, so the app is not an empty page.
@@ -153,6 +174,17 @@ class AppState {
     }
     this.history = await appdb.history(HISTORY_IN_MEMORY);
     this.ready = true;
+
+    // The editor no longer writes on every keystroke, so something has to
+    // catch the last one when the page goes away. `pagehide` covers closing
+    // and navigating; `visibilitychange` covers a phone being locked or the
+    // tab being switched, which on mobile is often the only one that fires.
+    const flushNow = () => void this.library.flush().catch(() => {});
+    addEventListener("pagehide", flushNow);
+    addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushNow();
+    });
+
     this.applyTheme();
     this.emit();
   }
@@ -167,7 +199,7 @@ class AppState {
   async savePrefs(patch: Partial<Prefs>): Promise<void> {
     this.prefs = { ...this.prefs, ...patch };
     this.applyTheme();
-    this.emit();
+    this.emit("prefs");
     await appdb.set("prefs", this.prefs);
   }
 
@@ -242,19 +274,19 @@ class AppState {
           : { kind: "randomizer", id: randomizer.id },
     };
     this.history = [entry, ...this.history].slice(0, HISTORY_IN_MEMORY);
-    this.emit();
+    this.emit("history", "outcome");
     await appdb.addHistory(entry);
   }
 
   async removeHistory(id: string): Promise<void> {
     this.history = this.history.filter((h) => h.id !== id);
-    this.emit();
+    this.emit("history");
     await appdb.removeHistory(id);
   }
 
   async clearHistory(): Promise<void> {
     this.history = [];
-    this.emit();
+    this.emit("history");
     await appdb.clearHistory();
   }
 
@@ -272,9 +304,9 @@ class AppState {
     }
     const doomed = new Set(rollsInScope(this.history, ids).map((row) => row.id));
     this.history = this.history.filter((row) => !doomed.has(row.id));
-    this.emit();
+    this.emit("history");
     const stored = await appdb.history(HISTORY_CAP);
-    for (const row of rollsInScope(stored, ids)) await appdb.removeHistory(row.id);
+    await appdb.removeHistoryMany(rollsInScope(stored, ids).map((row) => row.id));
   }
 
   /**
@@ -286,7 +318,7 @@ class AppState {
     if (!row || row.struck === struck) return;
     const next: HistoryRow = { ...row, struck };
     this.history = this.history.map((entry) => (entry.id === id ? next : entry));
-    this.emit();
+    this.emit("history");
     await appdb.addHistory(next);
   }
 
@@ -294,7 +326,7 @@ class AppState {
     const toast: Toast = { id: newId(), text, actionLabel, action };
     toast.timer = setTimeout(() => this.dismissToast(toast.id), ms);
     this.toasts = [...this.toasts, toast].slice(-3);
-    this.emit();
+    this.emit("toasts");
     return toast.id;
   }
 
@@ -302,7 +334,7 @@ class AppState {
     const toast = this.toasts.find((t) => t.id === id);
     if (toast?.timer) clearTimeout(toast.timer);
     this.toasts = this.toasts.filter((t) => t.id !== id);
-    this.emit();
+    this.emit("toasts");
   }
 
   /** Run the most recent toast's action; wired to Ctrl/Cmd+Z. */

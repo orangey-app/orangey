@@ -59,7 +59,7 @@ export function createLibraryView(): View {
             state.toast("The browser did not allow it.");
             return;
           }
-          state.useLibrary(new LibraryService(backend));
+          state.setLibrary(new LibraryService(backend));
           await state.library.refresh();
           state.folderNeedsPermission = false;
           state.emit();
@@ -353,7 +353,7 @@ export function createLibraryView(): View {
   );
 
   searchInput.addEventListener("input", render);
-  const unsubscribe = state.subscribe(render);
+  const unsubscribe = state.subscribe(render, ["library", "prefs"]);
   render();
 
   return { el, destroy: () => unsubscribe() };

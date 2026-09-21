@@ -230,7 +230,7 @@ export function createChainRow(root: ChainRoot): ChainView {
     if (i < 0) return;
     answers[i] = last.outcome.text;
     follow(i, chainTarget(last.randomizer, last.outcome));
-  });
+  }, ["outcome"]);
 
   function rollNewest(): boolean {
     const places = chainPlacement(links.length, focus);

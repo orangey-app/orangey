@@ -10,7 +10,7 @@
  * The tree is stored flat: one record per file or folder, keyed by path.
  */
 
-import type { Entry, LibraryBackend } from "./library.ts";
+import { IMAGE_DIR, type Entry, type LibraryBackend } from "./library.ts";
 import { basename, parent } from "./paths.ts";
 
 const LIBRARY_DB = "orangey-library";
@@ -77,15 +77,44 @@ export class IndexedDbBackend implements LibraryBackend {
     }
   }
 
-  async #all(): Promise<Record_[]> {
-    return runLibraryTx<Record_[]>(this.#db, "readonly", (s) => s.getAll() as IDBRequest<Record_[]>);
+  /**
+   * The records in a range of paths.
+   *
+   * Every read used to be `getAll()` over the whole store, which loads every
+   * picture's bytes to answer a question about file names. Keys are paths and
+   * are compared by code unit, so a folder's contents are a contiguous range;
+   * "\uffff" is the conventional end of one, and `sanitizeName` cannot produce
+   * it.
+   */
+  async #range(range: IDBKeyRange): Promise<Record_[]> {
+    return runLibraryTx<Record_[]>(this.#db, "readonly", (s) => s.getAll(range) as IDBRequest<Record_[]>);
+  }
+
+  async #keysIn(range: IDBKeyRange): Promise<string[]> {
+    return runLibraryTx<string[]>(this.#db, "readonly", (s) => s.getAllKeys(range) as IDBRequest<string[]>);
   }
 
   async list(path: string): Promise<Entry[]> {
-    const all = await this.#all();
-    return all
+    const records =
+      path === ""
+        ? // The top of the library, in two reads that step over the image
+          // store: its records are the pictures themselves, and loading a
+          // megabyte of bytes to list file names is the whole problem here.
+          // The `images` folder record sorts before "images/" and so is still
+          // included, which is what the tree builder expects to skip by name.
+          [
+            ...(await this.#range(IDBKeyRange.upperBound(`${IMAGE_DIR}/`, true))),
+            ...(await this.#range(IDBKeyRange.lowerBound(`${IMAGE_DIR}/\uffff`, true))),
+          ]
+        : await this.#range(IDBKeyRange.bound(`${path}/`, `${path}/\uffff`));
+    return records
       .filter((r) => r.path !== "" && parent(r.path) === path)
       .map((r) => ({ name: basename(r.path), kind: r.kind }));
+  }
+
+  /** One record and everything beneath it. */
+  #subtree(path: string): IDBKeyRange {
+    return IDBKeyRange.bound(`${path}/`, `${path}/\uffff`);
   }
 
   async #file(path: string): Promise<Record_> {
@@ -129,10 +158,9 @@ export class IndexedDbBackend implements LibraryBackend {
   }
 
   async move(from: string, to: string): Promise<void> {
-    const all = await this.#all();
-    const source = all.find((r) => r.path === from);
+    const source = await runLibraryTx<Record_ | undefined>(this.#db, "readonly", (s) => s.get(from) as IDBRequest<Record_ | undefined>);
     if (!source) throw new Error(`nothing at ${from}`);
-    const affected = all.filter((r) => r.path === from || r.path.startsWith(`${from}/`));
+    const affected = [source, ...(await this.#range(this.#subtree(from)))];
     const folders = this.#foldersAbove(to);
     await runLibraryTx(this.#db, "readwrite", (s) => {
       for (const f of folders) s.put({ path: f, kind: "folder" } satisfies Record_);
@@ -144,11 +172,14 @@ export class IndexedDbBackend implements LibraryBackend {
   }
 
   async remove(path: string): Promise<void> {
-    const all = await this.#all();
-    const doomed = all.filter((r) => r.path === path || r.path.startsWith(`${path}/`));
+    // Keys only: a delete does not need what it is deleting, and a folder of
+    // pictures would otherwise be read into memory to be thrown away.
+    const here = await this.#keysIn(IDBKeyRange.only(path));
+    const beneath = await this.#keysIn(this.#subtree(path));
+    const doomed = [...here, ...beneath];
     if (doomed.length === 0) throw new Error(`nothing at ${path}`);
     await runLibraryTx(this.#db, "readwrite", (s) => {
-      for (const r of doomed) s.delete(r.path);
+      for (const key of doomed) s.delete(key);
     });
   }
 

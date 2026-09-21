@@ -54,8 +54,19 @@ export const HISTORY_CAP = 5000;
  */
 export const HISTORY_IN_MEMORY = 500;
 
+/**
+ * One connection, kept open.
+ *
+ * Every call used to open the database, use it and close it again, so saving
+ * a preference or writing a roll to history paid for a full open each time.
+ * The handle is dropped on failure, and when another tab wants to upgrade the
+ * schema, so a stale one is never reused.
+ */
+let dbHandle: Promise<IDBDatabase> | null = null;
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbHandle) return dbHandle;
+  dbHandle = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -65,20 +76,59 @@ function openDb(): Promise<IDBDatabase> {
         store.createIndex("at", "at");
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Another tab is upgrading: let go, or it waits on us for ever.
+      db.onversionchange = () => {
+        dbHandle = null;
+        db.close();
+      };
+      db.onclose = () => {
+        dbHandle = null;
+      };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
+  }).catch((e) => {
+    dbHandle = null;
+    throw e;
   });
+  return dbHandle;
 }
 
-function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+/**
+ * A read: the request's own result.
+ *
+ * Reads may resolve as soon as the request does — the value is already in
+ * hand and the transaction has nothing left to do.
+ */
+function txRead<T>(store: string, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   return openDb().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
-        const t = db.transaction(store, mode);
+        const t = db.transaction(store, "readonly");
         const req = fn(t.objectStore(store));
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
-        t.oncomplete = () => db.close();
+      }),
+  );
+}
+
+/**
+ * A write: only once the transaction commits.
+ *
+ * A request that has succeeded is not yet durable; resolving on it meant
+ * telling the app a preference was saved while it could still be rolled back.
+ */
+function txWrite(store: string, fn: (s: IDBObjectStore) => void): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const t = db.transaction(store, "readwrite");
+        fn(t.objectStore(store));
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error ?? new Error("transaction aborted"));
       }),
   );
 }
@@ -86,7 +136,7 @@ function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) 
 export const appdb = {
   async get<T>(key: string): Promise<T | undefined> {
     try {
-      return await tx<T>("kv", "readonly", (s) => s.get(key) as IDBRequest<T>);
+      return await txRead<T>("kv", (s) => s.get(key) as IDBRequest<T>);
     } catch {
       return undefined;
     }
@@ -94,7 +144,9 @@ export const appdb = {
 
   async set(key: string, value: unknown): Promise<void> {
     try {
-      await tx("kv", "readwrite", (s) => s.put(value, key));
+      await txWrite("kv", (s) => {
+        s.put(value, key);
+      });
     } catch {
       /* storage may be unavailable; the app keeps working in memory */
     }
@@ -102,7 +154,9 @@ export const appdb = {
 
   async addHistory(entry: HistoryEntry): Promise<void> {
     try {
-      await tx("history", "readwrite", (s) => s.put(entry));
+      await txWrite("history", (s) => {
+        s.put(entry);
+      });
       await this.trimHistory();
     } catch {
       /* ignore */
@@ -133,7 +187,6 @@ export const appdb = {
           cursor.continue();
         };
         req.onerror = () => reject(req.error);
-        t.oncomplete = () => db.close();
       });
     } catch {
       return [];
@@ -142,7 +195,21 @@ export const appdb = {
 
   async removeHistory(id: string): Promise<void> {
     try {
-      await tx("history", "readwrite", (s) => s.delete(id));
+      await txWrite("history", (s) => {
+        s.delete(id);
+      });
+    } catch {
+      /* ignore */
+    }
+  },
+
+  /** Several at once: clearing a randomizer's rolls is one transaction. */
+  async removeHistoryMany(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    try {
+      await txWrite("history", (s) => {
+        for (const id of ids) s.delete(id);
+      });
     } catch {
       /* ignore */
     }
@@ -150,16 +217,38 @@ export const appdb = {
 
   async clearHistory(): Promise<void> {
     try {
-      await tx("history", "readwrite", (s) => s.clear());
+      await txWrite("history", (s) => {
+        s.clear();
+      });
     } catch {
       /* ignore */
     }
   },
 
+  /**
+   * Keep the store to `HISTORY_CAP`, oldest first.
+   *
+   * Counting first means the usual case — every roll after the first few
+   * thousand — costs one count and nothing else, where it used to read every
+   * stored entry on every roll.
+   */
   async trimHistory(): Promise<void> {
-    const all = await tx<HistoryEntry[]>("history", "readonly", (s) => s.getAll() as IDBRequest<HistoryEntry[]>).catch(() => []);
-    if (all.length <= HISTORY_CAP) return;
-    const doomed = all.sort((a, b) => a.at - b.at).slice(0, all.length - HISTORY_CAP);
-    for (const e of doomed) await this.removeHistory(e.id);
+    try {
+      const count = await txRead<number>("history", (s) => s.count());
+      if (count <= HISTORY_CAP) return;
+      let over = count - HISTORY_CAP;
+      await txWrite("history", (s) => {
+        const req = s.index("at").openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor || over <= 0) return;
+          cursor.delete();
+          over--;
+          cursor.continue();
+        };
+      });
+    } catch {
+      /* ignore */
+    }
   },
 };

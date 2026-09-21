@@ -10,7 +10,7 @@ import { serialize, slugify, wrap } from "../model/file.ts";
 import type { BoardRandomizer, Randomizer } from "../model/randomizer.ts";
 import { IMAGE_DIR, LibraryService } from "../storage/library.ts";
 import { canPickFolder, forgetFolder, pickFolder } from "../storage/fsdir.ts";
-import { imageBytes, imageDataUrl, putImageData, useImageStore } from "../storage/images.ts";
+import { imageBytes, imageDataUrl, imageStoredName, putImageData } from "../storage/images.ts";
 import { createZip, type ZipEntry } from "../storage/zip.ts";
 import { parent } from "../storage/paths.ts";
 import { askConfirm } from "./dom.ts";
@@ -99,8 +99,7 @@ export async function useFolder(): Promise<boolean> {
       await next.refresh();
     }
   }
-  state.useLibrary(next);
-  useImageStore(backend);
+  state.setLibrary(next);
   state.folderNeedsPermission = false;
   void state.savePrefs({ backend: "fsa" });
   state.toast(`Library is now the folder “${backend.label}”`);
@@ -173,7 +172,11 @@ async function pictureEntries(randomizers: Randomizer[]): Promise<ZipEntry[]> {
   const entries: ZipEntry[] = [];
   for (const id of usedImageIds(randomizers)) {
     const bytes = await imageBytes(id);
-    if (bytes) entries.push({ path: `${IMAGE_DIR}/${id}.png`, bytes });
+    if (!bytes) continue;
+    // Its real name, so what comes out of the archive is a file the person's
+    // computer will open rather than a JPEG called .png.
+    const name = (await imageStoredName(id)) ?? `${id}.png`;
+    entries.push({ path: `${IMAGE_DIR}/${name}`, bytes });
   }
   return entries;
 }

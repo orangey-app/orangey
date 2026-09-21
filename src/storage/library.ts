@@ -79,6 +79,16 @@ const isRandomizerFile = (name: string) => name.toLowerCase().endsWith(FILE_SUFF
 export class LibraryService {
   backend: LibraryBackend;
   #tree: LibraryNode | null = null;
+  /**
+   * Every node by path and by randomizer id.
+   *
+   * `find` and `findById` are called from render loops — the tree draws one
+   * row per file and each asks — and both used to walk the whole tree. The
+   * maps are rebuilt in one pass whenever the tree changes, which is far less
+   * often than they are read.
+   */
+  #byPath = new Map<string, LibraryNode>();
+  #byId = new Map<string, LibraryNode>();
   #pending = new Map<string, string>();
   #timer: ReturnType<typeof setTimeout> | null = null;
   #writeDelayMs: number;
@@ -92,6 +102,14 @@ export class LibraryService {
     this.#writeDelayMs = writeDelayMs;
   }
 
+  /**
+   * Told when the shape of the library changes: a file created, renamed,
+   * moved or deleted, or the whole tree re-read.
+   *
+   * Not when a randomizer's contents change. `save()` is called on every
+   * keystroke in the editor, and a tree that redrew each time would throw
+   * away the row the user is typing in — the editor updates its own preview.
+   */
   onChange(fn: () => void): () => void {
     this.#listeners.add(fn);
     return () => this.#listeners.delete(fn);
@@ -117,23 +135,75 @@ export class LibraryService {
 
   async refresh(): Promise<LibraryNode> {
     this.#tree = await this.#readFolder("", "Library");
+    this.#reindex();
     this.#emit();
     return this.#tree;
   }
 
+  /** Rebuild the lookups from the tree. Depth first, so the first id wins. */
+  #reindex(): void {
+    this.#byPath = new Map();
+    this.#byId = new Map();
+    const walk = (node: LibraryNode): void => {
+      this.#byPath.set(node.path, node);
+      const id = node.randomizer?.id;
+      if (id && !this.#byId.has(id)) this.#byId.set(id, node);
+      for (const child of node.children ?? []) walk(child);
+    };
+    if (this.#tree) walk(this.#tree);
+  }
+
+  /** The order `#readFolder` produces: folders by name, then files by title. */
+  #sortChildren(folder: LibraryNode): void {
+    const children = folder.children ?? [];
+    const folders = children.filter((c) => c.kind === "folder").sort((a, b) => naturalCompare(a.name, b.name));
+    const files = children.filter((c) => c.kind === "file").sort((a, b) => naturalCompare(this.#title(a), this.#title(b)));
+    folder.children = [...folders, ...files];
+  }
+
+  /**
+   * Put a node in its folder, or say it could not be done.
+   *
+   * A patch is only safe when the tree is loaded and the folder is in it; a
+   * caller that gets false falls back to a full `refresh()`.
+   */
+  #attach(parentPath: string, node: LibraryNode): boolean {
+    const parent_ = this.#byPath.get(parentPath);
+    if (!parent_ || parent_.kind !== "folder") return false;
+    parent_.children = [...(parent_.children ?? []), node];
+    this.#sortChildren(parent_);
+    this.#reindex();
+    this.#emit();
+    return true;
+  }
+
+  /** Take a node out of the tree. False when it was not there to take. */
+  #detach(path: string): boolean {
+    const node = this.#byPath.get(path);
+    if (!node || node === this.#tree) return false;
+    const parent_ = this.#byPath.get(parent(path));
+    if (!parent_?.children) return false;
+    parent_.children = parent_.children.filter((c) => c !== node);
+    return true;
+  }
+
   async #readFolder(path: string, name: string): Promise<LibraryNode> {
     const entries = await this.backend.list(path);
-    const folders: LibraryNode[] = [];
-    const files: LibraryNode[] = [];
-    for (const e of entries) {
-      const child = join(path, e.name);
-      // The image store's folder is the app's bookkeeping, not part of anyone's
-      // library, so it is never a folder you can open, move or save into. Only
-      // at the top: a folder of pictures the user made themselves is theirs.
-      if (path === "" && e.kind === "folder" && e.name === IMAGE_DIR) continue;
-      if (e.kind === "folder") folders.push(await this.#readFolder(child, e.name));
-      else if (isRandomizerFile(e.name)) files.push(await this.#readFile(child, e.name));
-    }
+    // The image store's folder is the app's bookkeeping, not part of anyone's
+    // library, so it is never a folder you can open, move or save into. Only
+    // at the top: a folder of pictures the user made themselves is theirs.
+    const wanted = entries.filter(
+      (e) => !(path === "" && e.kind === "folder" && e.name === IMAGE_DIR) && (e.kind === "folder" || isRandomizerFile(e.name)),
+    );
+    // Together rather than one after another: a library of two hundred files
+    // was two hundred round trips to the backend, each waiting for the last.
+    const children = await Promise.all(
+      wanted.map((e) =>
+        e.kind === "folder" ? this.#readFolder(join(path, e.name), e.name) : this.#readFile(join(path, e.name), e.name),
+      ),
+    );
+    const folders = children.filter((c) => c.kind === "folder");
+    const files = children.filter((c) => c.kind === "file");
     folders.sort((a, b) => naturalCompare(a.name, b.name));
     files.sort((a, b) => naturalCompare(this.#title(a), this.#title(b)));
     return { kind: "folder", path, name, children: [...folders, ...files] };
@@ -173,19 +243,12 @@ export class LibraryService {
   }
 
   find(path: string): LibraryNode | null {
-    const walk = (n: LibraryNode): LibraryNode | null => {
-      if (n.path === path) return n;
-      for (const c of n.children ?? []) {
-        const hit = walk(c);
-        if (hit) return hit;
-      }
-      return null;
-    };
-    return walk(this.tree);
+    if (!this.#tree) return path === "" ? this.tree : null;
+    return this.#byPath.get(path) ?? null;
   }
 
   findById(id: string): LibraryNode | null {
-    return this.files().find((f) => f.randomizer?.id === id) ?? null;
+    return this.#byId.get(id) ?? null;
   }
 
   /** Search names, tags, descriptions and outcome labels. */
@@ -228,7 +291,9 @@ export class LibraryService {
     while (existing.includes(final.toLowerCase())) final = `${clean} ${n++}`;
     const path = join(parentPath, final);
     await this.backend.mkdir(path);
-    await this.refresh();
+    // One node into the tree rather than re-reading every file in the
+    // library: a create used to cost a full walk of the folder structure.
+    if (!this.#attach(parentPath, { kind: "folder", path, name: final, children: [] })) await this.refresh();
     return path;
   }
 
@@ -236,7 +301,7 @@ export class LibraryService {
     const taken = (await this.backend.list(parentPath)).map((e) => e.name);
     const path = join(parentPath, fileNameFor(randomizer.name, taken));
     await this.backend.write(path, serialize(wrap(randomizer)));
-    await this.refresh();
+    if (!this.#attach(parentPath, { kind: "file", path, name: basename(path), randomizer })) await this.refresh();
     return path;
   }
 
@@ -245,7 +310,6 @@ export class LibraryService {
     const node = this.find(path);
     this.#pending.set(path, serialize({ ...wrap(randomizer), unknown: node?.extras }));
     if (node) node.randomizer = randomizer;
-    this.#emit();
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = setTimeout(() => void this.flush().catch(() => {}), this.#writeDelayMs);
   }
@@ -290,7 +354,6 @@ export class LibraryService {
     });
     this.#flushing = run.catch(() => {});
     await run;
-    this.#emit();
   }
 
   async rename(path: string, newName: string): Promise<string> {
@@ -309,7 +372,15 @@ export class LibraryService {
     const target = join(parent(path), fileNameFor(newName, taken));
     await this.backend.write(path, serialize({ ...wrap(randomizer), unknown: node.extras }));
     if (target !== path) await this.backend.move(path, target);
-    await this.refresh();
+    // A renamed file stays in its folder but may sort somewhere else in it.
+    if (this.#detach(path)) {
+      node.path = target;
+      node.name = basename(target);
+      node.randomizer = randomizer;
+      if (!this.#attach(parent(target), node)) await this.refresh();
+    } else {
+      await this.refresh();
+    }
     return target;
   }
 
@@ -322,8 +393,17 @@ export class LibraryService {
       : name;
     const target = join(toFolder, finalName);
     if (target === path) return path;
+    const node = this.find(path);
     await this.backend.move(path, target);
-    await this.refresh();
+    // Only a file can be patched across: a folder carries a subtree whose
+    // every path changes, which is what a full re-read is for.
+    if (node?.kind === "file" && this.#detach(path)) {
+      node.path = target;
+      node.name = finalName;
+      if (!this.#attach(toFolder, node)) await this.refresh();
+    } else {
+      await this.refresh();
+    }
     return target;
   }
 
@@ -345,7 +425,14 @@ export class LibraryService {
   async remove(path: string): Promise<void> {
     await this.flush();
     await this.backend.remove(path);
-    await this.refresh();
+    // Dropping the node drops everything under it, which is what the backend
+    // just did on disk.
+    if (this.#detach(path)) {
+      this.#reindex();
+      this.#emit();
+    } else {
+      await this.refresh();
+    }
   }
 
   /**

@@ -271,7 +271,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   }
 
   // A randomizer edited elsewhere, or deleted, changes what a board shows.
-  const unsubscribe = state.subscribe(() => renderIfChanged());
+  const unsubscribe = state.subscribe(() => renderIfChanged(), ["library", "history"]);
   render();
   if (params.present) setPresenting(true);
   if (params.roll) requestAnimationFrame(() => void rollEverything());

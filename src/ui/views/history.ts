@@ -129,6 +129,6 @@ export function createHistoryView(): View {
     stored = rows.length;
     render();
   });
-  const unsubscribe = state.subscribe(render);
+  const unsubscribe = state.subscribe(render, ["history"]);
   return { el, destroy: () => unsubscribe() };
 }

@@ -32,7 +32,7 @@ export function mountApp(root: HTMLElement): MascotHost {
   // The one Orangey. It listens to the bus, plays the reactions table, and
   // sits in whichever view offers a slot — only Play does.
   const mascot = new MascotHost({ bus: state.events, feel: () => state.prefs.feel });
-  state.subscribe(() => mascot.applyFeel());
+  state.subscribe(() => mascot.applyFeel(), ["prefs"]);
 
   const main = h("div", { class: "main" }, h("div", { class: "main-inner" }));
   const side = h("div", { class: "side" });
@@ -149,7 +149,11 @@ export function mountApp(root: HTMLElement): MascotHost {
         break;
       }
       case "library":
-        setMain(createLibraryView());
+        // On a wide screen the library is already in the sidebar, and a
+        // second copy in the main pane is two trees of the same files that
+        // both have to be kept in step. On a narrow one the sidebar is
+        // hidden, so the main pane is the only place it can be.
+        setMain(sidebarVisible() ? libraryIsOnTheLeft() : createLibraryView());
         break;
       case "import":
         setMain(createImportView());
@@ -236,6 +240,20 @@ export function mountApp(root: HTMLElement): MascotHost {
     );
   }
 
+  /** Read from the stylesheet rather than repeating its breakpoint here. */
+  function sidebarVisible(): boolean {
+    return getComputedStyle(side).display !== "none";
+  }
+
+  function libraryIsOnTheLeft(): View {
+    return {
+      el: h("div", { class: "card" },
+        h("h1", { text: "Your library" }),
+        h("p", { class: "faint", text: "It is in the panel on the left: every folder and randomizer you have, with search at the top. Choose one to play it." }),
+      ),
+    };
+  }
+
   function applyPanes(): void {
     side.classList.toggle("is-active", mobilePane === "side");
     main.classList.toggle("is-hidden", mobilePane === "side");
@@ -288,7 +306,7 @@ export function mountApp(root: HTMLElement): MascotHost {
   });
 
   window.addEventListener("hashchange", renderRoute);
-  state.subscribe(renderToasts);
+  state.subscribe(renderToasts, ["toasts"]);
   renderRoute();
   renderToasts();
   return mascot;

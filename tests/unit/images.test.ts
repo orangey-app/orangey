@@ -76,20 +76,31 @@ describe("the image store", () => {
 
     // An outcome can outlive its picture. A wheel asks on every frame, so a
     // miss has to be remembered, or the wheel reads the backend for ever.
+    //
+    // The hard case is a picture the store still believes in: the file was
+    // taken out of the library folder behind its back. An id it has never
+    // heard of never reaches the backend at all.
     let reads = 0;
     const readBytes = store.readBytes.bind(store);
     store.readBytes = async (p) => {
       reads++;
       return readBytes(p);
     };
-    const missing = "no-such-picture";
-    assert.equal(await imageUrl(missing), null);
-    assert.equal(await imageUrl(missing), null);
-    assert.equal(reads, 1, `${reads} reads for a picture that is not there`);
+
+    const stranger = "no-such-picture";
+    assert.equal(await imageUrl(stranger), null);
+    assert.equal(await imageUrl(stranger), null);
+    assert.equal(reads, 0, `${reads} reads for a picture the store never had`);
+
+    const vanished = await putImage(picture(6));
+    await store.remove(`images/${vanished}.png`);
+    assert.equal(await imageUrl(vanished), null);
+    assert.equal(await imageUrl(vanished), null);
+    assert.equal(reads, 1, `${reads} reads for a picture that went missing`);
 
     // Putting it back heals it: a wheel drawn after an import must show it.
-    await restoreImage(missing, picture(5));
-    assert.ok(await imageUrl(missing), "the store still says it is missing");
+    await restoreImage(vanished, picture(5));
+    assert.ok(await imageUrl(vanished), "the store still says it is missing");
   });
 
   test("keeps its folder out of the library", async () => {
