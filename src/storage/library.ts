@@ -75,6 +75,7 @@ export class LibraryService {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #writeDelayMs: number;
   #listeners = new Set<() => void>();
+  #errorListeners = new Set<(error: unknown) => void>();
   /** Resolves when every debounced write has hit the backend. */
   #flushing: Promise<void> = Promise.resolve();
 
@@ -86,6 +87,16 @@ export class LibraryService {
   onChange(fn: () => void): () => void {
     this.#listeners.add(fn);
     return () => this.#listeners.delete(fn);
+  }
+
+  /**
+   * Told when a flush could not write. This is the failure signal the UI acts
+   * on: the change stays queued, so the app must say so rather than let a
+   * person keep typing into a file that is no longer being saved.
+   */
+  onError(fn: (error: unknown) => void): () => void {
+    this.#errorListeners.add(fn);
+    return () => this.#errorListeners.delete(fn);
   }
 
   #emit(): void {
@@ -221,7 +232,7 @@ export class LibraryService {
     if (node) node.randomizer = randomizer;
     this.#emit();
     if (this.#timer) clearTimeout(this.#timer);
-    this.#timer = setTimeout(() => void this.flush(), this.#writeDelayMs);
+    this.#timer = setTimeout(() => void this.flush().catch(() => {}), this.#writeDelayMs);
   }
 
   get hasUnsavedChanges(): boolean {
@@ -233,12 +244,37 @@ export class LibraryService {
       clearTimeout(this.#timer);
       this.#timer = null;
     }
-    const batch = [...this.#pending.entries()];
-    this.#pending.clear();
-    this.#flushing = this.#flushing.then(async () => {
-      for (const [path, text] of batch) await this.backend.write(path, text);
+    // `#flushing` must never hold a rejected promise: a `then` chained onto
+    // one is skipped, which is how a single failed write used to stop the app
+    // saving for the rest of the session.
+    //
+    // The batch is taken inside the run rather than here, so that one run's
+    // snapshot, writes and restores are serialised against every other run's.
+    // Snapshotting at call time instead lets a second flush lift a newer text
+    // out of `#pending` before an earlier, slower flush fails — the guard
+    // below then sees an empty map, puts the older text back, and the next
+    // flush writes it over the newer one.
+    const run = this.#flushing.then(async () => {
+      const batch = [...this.#pending.entries()];
+      this.#pending.clear();
+      const failures: unknown[] = [];
+      for (const [path, text] of batch) {
+        try {
+          await this.backend.write(path, text);
+        } catch (e) {
+          failures.push(e);
+          // Back into the queue, so the change is not lost and a later flush
+          // can write it — but never over a newer edit of the same file.
+          if (!this.#pending.has(path)) this.#pending.set(path, text);
+        }
+      }
+      if (failures.length) {
+        for (const fn of this.#errorListeners) fn(failures[0]);
+        throw failures[0];
+      }
     });
-    await this.#flushing;
+    this.#flushing = run.catch(() => {});
+    await run;
     this.#emit();
   }
 

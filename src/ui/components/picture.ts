@@ -69,8 +69,13 @@ export function pictureCell(opts: PictureCellOptions): HTMLElement {
     }
     const url = imageUrlSync(id);
     if (!url) {
-      // Not read from the store yet: show the slot, then fill it in.
-      void imageUrl(id).then(() => render());
+      // Not read from the store yet: show the slot, then fill it in. A null
+      // answer means the picture is gone — say so and stop, because rendering
+      // again would ask again, and get the same answer, for ever.
+      void imageUrl(id).then((found) => {
+        if (found) render();
+        else renderMissing();
+      });
       holder.append(h("span", { class: "faint", text: "…" }));
       return;
     }
@@ -81,6 +86,20 @@ export function pictureCell(opts: PictureCellOptions): HTMLElement {
       // The picture leaves the outcome; the bytes are swept up when the editor
       // closes, because the same picture may be on another outcome.
       button("✕", () => opts.onChange(undefined), { class: "ghost icon-button remove-picture", "aria-label": `Remove the picture from ${opts.subject()}` }),
+    );
+  }
+
+  /**
+   * The outcome still names a picture, but the store has not got it: the file
+   * was deleted from the library folder, or an archive arrived without it.
+   * The buttons stay, so it can be replaced or the reference dropped.
+   */
+  function renderMissing(): void {
+    holder.replaceChildren(
+      input,
+      h("span", { class: "faint picture-missing", text: "Picture missing", title: "The picture this outcome points at is not in the library" }),
+      button("＋", () => input.click(), { class: "ghost icon-button add-picture", "aria-label": `Replace the missing picture for ${opts.subject()}` }),
+      button("✕", () => opts.onChange(undefined), { class: "ghost icon-button remove-picture", "aria-label": `Remove the missing picture from ${opts.subject()}` }),
     );
   }
 

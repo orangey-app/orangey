@@ -220,6 +220,65 @@ describe("the library", () => {
     assert.match(await backend.read(path), /"name": "Busy 19"/);
   });
 
+  test("a failed write keeps the change and never puts a stale one back", async () => {
+    const { backend, library } = await setup();
+    const path = await library.create("", emptyRandomizer("list", "Fragile"));
+    const node = library.find(path)!;
+    const named = (name: string) => ({ ...node.randomizer!, name });
+    const original = backend.write.bind(backend);
+    const errors: unknown[] = [];
+    library.onError((e) => errors.push(e));
+
+    // One write throws. The change must survive, saving must keep working,
+    // and a later flush must put it on disk.
+    let failOnce = true;
+    backend.write = async (p, c) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("the disk is full");
+      }
+      await original(p, c);
+    };
+    library.save(path, named("One"));
+    await assert.rejects(library.flush(), /the disk is full/);
+    assert.equal(errors.length, 1, "the error listener should have run once");
+    assert.ok(library.hasUnsavedChanges, "the failed change was dropped on the floor");
+    await library.flush();
+    assert.match(await backend.read(path), /"name": "One"/);
+    assert.ok(!library.hasUnsavedChanges);
+
+    // A slow write that fails while a second flush is already queued. The
+    // failed text is older than what is waiting, so it must not go back into
+    // the queue on top of it and be written afterwards.
+    let releaseWrite = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let gateNext = true;
+    backend.write = async (p, c) => {
+      if (gateNext) {
+        gateNext = false;
+        await gate;
+        throw new Error("the disk went away");
+      }
+      await original(p, c);
+    };
+
+    library.save(path, named("v1"));
+    const a = library.flush().then(() => null, (e: unknown) => e);
+    // Let A take its snapshot and park on the gate before v2 is typed.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    library.save(path, named("v2"));
+    const b = library.flush().then(() => null, (e: unknown) => e);
+    releaseWrite();
+    assert.match(String(await a), /the disk went away/);
+    assert.equal(await b, null, "the flush behind a failed one must still run");
+
+    await library.flush();
+    assert.match(await backend.read(path), /"name": "v2"/, "a stale write overwrote a newer one");
+    assert.ok(!library.hasUnsavedChanges, "something stale is still queued");
+  });
+
   test("search looks inside outcome labels, tags and descriptions", async () => {
     const { library } = await setup();
     const base = emptyRandomizer("list", "Forest Encounters") as ListRandomizer;

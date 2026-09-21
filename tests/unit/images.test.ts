@@ -11,6 +11,7 @@ import {
   pruneImages,
   putImage,
   putImageData,
+  restoreImage,
   useImageStore,
 } from "../../src/storage/images.ts";
 import { absorbImages, portableRandomizer } from "../../src/ui/storage-actions.ts";
@@ -59,7 +60,7 @@ describe("the image store", () => {
   });
 
   test("makes one URL per picture, however often a spinning wheel asks", async () => {
-    openStore();
+    const store = openStore();
     const id = await putImage(picture(2));
 
     // A synchronous render gets nothing until the picture is loaded, which is
@@ -72,6 +73,23 @@ describe("the image store", () => {
 
     await deleteImage(id);
     assert.equal(imageUrlSync(id), null, "and the URL goes with the picture");
+
+    // An outcome can outlive its picture. A wheel asks on every frame, so a
+    // miss has to be remembered, or the wheel reads the backend for ever.
+    let reads = 0;
+    const readBytes = store.readBytes.bind(store);
+    store.readBytes = async (p) => {
+      reads++;
+      return readBytes(p);
+    };
+    const missing = "no-such-picture";
+    assert.equal(await imageUrl(missing), null);
+    assert.equal(await imageUrl(missing), null);
+    assert.equal(reads, 1, `${reads} reads for a picture that is not there`);
+
+    // Putting it back heals it: a wheel drawn after an import must show it.
+    await restoreImage(missing, picture(5));
+    assert.ok(await imageUrl(missing), "the store still says it is missing");
   });
 
   test("keeps its folder out of the library", async () => {

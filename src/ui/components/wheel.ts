@@ -117,16 +117,29 @@ export function createWheel(opts: WheelOptions): WheelView {
     colorByIndex = result.colors;
   }
 
+  /**
+   * Which draw we are on. A picture that arrives after the wheel has been
+   * redrawn belongs to a wheel that no longer exists, and redrawing on it
+   * would undo whatever the newer draw put there.
+   */
+  let renderCount = 0;
+
   function refresh(): void {
     const items = opts.items();
     computeColors();
     segments = layout(items, { padAngle: items.length > 60 ? 0 : 0.4 });
+    renderCount++;
     setChildren(el, mode() === "ticker" ? renderTicker() : renderWheel());
   }
 
   function renderWheel(): HTMLElement {
     const items = opts.items();
     const showLabels = mode() === "wheel";
+    // Pictures not in the cache yet are collected over the whole draw and
+    // fetched together, and the wheel is redrawn once, only if something
+    // actually arrived. Redrawing on a picture that is simply not there is
+    // what used to spin this forever.
+    const wanted = new Set<string>();
     const paths = segments.map((seg) => {
       const fill = colorByIndex[seg.index] ?? "#888888";
       return s("path", {
@@ -146,7 +159,7 @@ export function createWheel(opts: WheelOptions): WheelView {
       if (!item?.image) return [];
       const url = imageUrlSync(item.image);
       if (!url) {
-        void imageUrl(item.image).then(() => refresh());
+        wanted.add(item.image);
         return [];
       }
       const span = seg.endAngle - seg.startAngle;
@@ -233,6 +246,16 @@ export function createWheel(opts: WheelOptions): WheelView {
       s("circle", { cx: String(cx), cy: String(cy), r: String(HUB_RADIUS), fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
       pointer,
     );
+    if (wanted.size) {
+      const drawnAt = renderCount;
+      const ids = [...wanted];
+      void Promise.all(ids.map((id) => imageUrl(id))).then((urls) => {
+        // Nothing came back: every one of them is missing, and asking again
+        // would only produce the same answer.
+        if (renderCount !== drawnAt || !urls.some((url) => url !== null)) return;
+        refresh();
+      });
+    }
     return h("div", { class: "wheel-holder" }, svg);
   }
 

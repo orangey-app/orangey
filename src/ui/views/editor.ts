@@ -10,6 +10,7 @@
 import { displayPercents, isRollable } from "../../core/weighted.ts";
 import type { CoinRandomizer, ListItem, ListRandomizer, OutcomeReaction, Randomizer } from "../../model/randomizer.ts";
 import { makeItem, newId } from "../../model/randomizer.ts";
+import { draftProblem } from "../../model/draft.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { button, debounce, h, iconButton, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
@@ -95,13 +96,32 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   const savedLabel = h("span", { class: "faint", text: "All changes saved" });
 
-  const save = () => {
+  /**
+   * Save, unless the draft is one the app could not read back.
+   *
+   * The file on disk keeps the last good state and the draft stays in the
+   * editor, marked invalid, so the half-typed weight or the empty label can
+   * be finished rather than thrown away. `source` is the field whose handler
+   * asked to save, which is the one to mark.
+   */
+  const save = (source?: HTMLElement) => {
+    const problem = draftProblem(model);
+    if (problem) {
+      savedLabel.textContent = `Not saved: ${problem}`;
+      source?.setAttribute("aria-invalid", "true");
+      return;
+    }
+    for (const marked of el.querySelectorAll("[aria-invalid]")) marked.removeAttribute("aria-invalid");
     savedLabel.textContent = "Saving…";
     model = { ...model, modified: new Date().toISOString() };
     state.library.save(node.path, model);
-    void state.library.flush().then(() => {
-      savedLabel.textContent = "All changes saved";
-    });
+    void state.library
+      .flush()
+      .then(() => {
+        savedLabel.textContent = "All changes saved";
+      })
+      // The toast has already said so; this only stops an unhandled rejection.
+      .catch(() => {});
   };
   const saveSoon = debounce(save, 250);
 
@@ -117,10 +137,13 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
   const nameInput = h("input", { type: "text", value: model.name, "aria-label": "Name" });
   nameInput.addEventListener("input", () => {
     model = { ...model, name: nameInput.value };
-    saveSoon();
+    saveSoon(nameInput);
   });
   nameInput.addEventListener("blur", async () => {
     if (!model.name.trim()) return;
+    // Renaming moves the file. An invalid draft has not been written to the
+    // old name, so moving it would carry the wrong contents to the new one.
+    if (draftProblem(model)) return;
     await state.library.flush();
     const path = await state.library.rename(node.path, model.name);
     if (path !== node.path) navigate(`#/edit/${encodeURIComponent(path)}`, true);
@@ -129,7 +152,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
   const descInput = h("input", { type: "text", value: model.description ?? "", "aria-label": "Description" });
   descInput.addEventListener("input", () => {
     model = { ...model, description: descInput.value || undefined };
-    saveSoon();
+    saveSoon(descInput);
   });
 
   const viewToggle = h("div", { class: "segmented", role: "group", "aria-label": "How this looks when rolled" });
@@ -247,13 +270,13 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     );
 
     const label = h("input", { type: "text", value: item.label, "aria-label": "Outcome" });
-    label.addEventListener("input", () => update(item.id, (i) => ({ ...i, label: label.value }), false));
+    label.addEventListener("input", () => update(item.id, (i) => ({ ...i, label: label.value }), false, label));
     label.addEventListener("keydown", (e) => onRowKey(e as KeyboardEvent, item, index, "label"));
 
     const weight = h("input", { type: "number", min: "0", step: "any", value: String(item.weight), "aria-label": "Weight" });
     weight.addEventListener("input", () => {
       const v = Number.parseFloat(weight.value);
-      if (Number.isFinite(v) && v >= 0) update(item.id, (i) => ({ ...i, weight: v }), false);
+      if (Number.isFinite(v) && v >= 0) update(item.id, (i) => ({ ...i, weight: v }), false, weight);
     });
     weight.addEventListener("keydown", (e) => onRowKey(e as KeyboardEvent, item, index, "weight"));
 
@@ -264,7 +287,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       placeholder: "—",
     });
     description.addEventListener("input", () =>
-      update(item.id, (i) => ({ ...i, description: description.value || undefined }), false));
+      update(item.id, (i) => ({ ...i, description: description.value || undefined }), false, description));
 
     const reaction = reactionControl({
       current: item.reaction,
@@ -363,9 +386,9 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   // ---- mutations -----------------------------------------------------------
 
-  function update(id: string, fn: (item: ListItem) => ListItem, redraw = true): void {
+  function update(id: string, fn: (item: ListItem) => ListItem, redraw = true, source?: HTMLElement): void {
     model = { ...model, items: model.items.map((i) => (i.id === id ? fn(i) : i)) };
-    save();
+    save(source);
     if (redraw) {
       renderRows();
       return;
@@ -578,12 +601,15 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
+      const problem = draftProblem(model);
+      if (problem) state.toast(`Your last change to ${model.name} was not saved: ${problem}`);
       // Pictures taken off an outcome are swept up when the editor closes,
       // not when the ✕ is pressed: the same picture may be on another outcome
       // or another randomizer, and undo may yet bring this one back.
-      void state.library.flush().then(() =>
-        pruneImages(usedImageIds(state.library.files().map((f) => f.randomizer!).filter(Boolean))),
-      );
+      void state.library
+        .flush()
+        .then(() => pruneImages(usedImageIds(state.library.files().map((f) => f.randomizer!).filter(Boolean))))
+        .catch(() => {});
     },
   };
 }
@@ -593,24 +619,43 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 /** Dice, coin and number randomizers have a handful of fields each. */
 function createSimpleEditor(node: LibraryNode): View {
   let model = structuredClone(node.randomizer!) as Randomizer;
-  const save = () => {
+  const savedLabel = h("span", { class: "faint", text: "All changes saved" });
+  const el = h("div");
+
+  // As in the list editor: a draft the app could not read back is kept in the
+  // editor and marked, and the file on disk keeps its last good state. Half a
+  // dice expression is the ordinary way to type a whole one.
+  const save = (source?: HTMLElement) => {
+    const problem = draftProblem(model);
+    if (problem) {
+      savedLabel.textContent = `Not saved: ${problem}`;
+      source?.setAttribute("aria-invalid", "true");
+      return;
+    }
+    for (const marked of el.querySelectorAll("[aria-invalid]")) marked.removeAttribute("aria-invalid");
+    savedLabel.textContent = "Saving…";
     model = { ...model, modified: new Date().toISOString() } as Randomizer;
     state.library.save(node.path, model);
-    void state.library.flush();
+    void state.library
+      .flush()
+      .then(() => {
+        savedLabel.textContent = "All changes saved";
+      })
+      .catch(() => {});
   };
 
   const fields = h("div");
   const name = h("input", { type: "text", value: model.name, "aria-label": "Name" });
   name.addEventListener("input", () => {
     model = { ...model, name: name.value } as Randomizer;
-    save();
+    save(name);
   });
 
   if (model.type === "dice") {
     const expr = h("input", { type: "text", value: model.expression, "aria-label": "Dice expression" });
     expr.addEventListener("input", () => {
       model = { ...model, expression: expr.value } as Randomizer;
-      save();
+      save(expr);
     });
     fields.append(h("label", { class: "field" }, h("span", { class: "field-label", text: "Expression" }), expr));
   } else if (model.type === "coin") {
@@ -623,7 +668,7 @@ function createSimpleEditor(node: LibraryNode): View {
           const faces = [...(model as CoinRandomizer).faces] as [string, string];
           faces[i] = input.value;
           model = { ...model, faces } as Randomizer;
-          save();
+          save(input);
         });
         const reaction = reactionControl({
           current: coin.faceReactions?.[i] ?? null,
@@ -653,7 +698,7 @@ function createSimpleEditor(node: LibraryNode): View {
         const v = Number.parseFloat(input.value);
         if (Number.isFinite(v)) {
           model = { ...model, [key]: v } as Randomizer;
-          save();
+          save(input);
         }
       });
       return h("label", { class: "field" }, h("span", { class: "field-label", text: label }), input);
@@ -662,7 +707,7 @@ function createSimpleEditor(node: LibraryNode): View {
       const input = h("input", { type: "checkbox", checked: (model as never)[key] as unknown as boolean });
       input.addEventListener("change", () => {
         model = { ...model, [key]: input.checked } as Randomizer;
-        save();
+        save(input);
       });
       return h("label", { class: "row tight" }, input, label);
     };
@@ -685,18 +730,23 @@ function createSimpleEditor(node: LibraryNode): View {
     },
   );
 
-  return {
-    el: h("div", {},
-      h("div", { class: "card" },
-        h("h1", { text: `Edit ${model.name}` }),
-        h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), name),
-        fields,
-        button("← Back to play", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
-      ),
-      feel,
+  el.append(
+    h("div", { class: "card" },
+      h("div", { class: "row", style: { marginBottom: "12px" } }, h("div", { class: "spacer" }), savedLabel),
+      h("h1", { text: `Edit ${model.name}` }),
+      h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), name),
+      fields,
+      button("← Back to play", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
     ),
+    feel,
+  );
+
+  return {
+    el,
     destroy() {
-      void state.library.flush();
+      const problem = draftProblem(model);
+      if (problem) state.toast(`Your last change to ${model.name} was not saved: ${problem}`);
+      void state.library.flush().catch(() => {});
     },
   };
 }

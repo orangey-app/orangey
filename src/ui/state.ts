@@ -86,6 +86,24 @@ class AppState {
   readonly events = new EventTarget();
 
   #listeners = new Set<() => void>();
+  /** The save-failure toast currently on screen, if there is one. */
+  #saveErrorToast: string | null = null;
+
+  /**
+   * Take a library and listen to it. Every place that swaps the backend goes
+   * through here, so a failed write always has somebody to tell.
+   */
+  useLibrary(library: LibraryService): void {
+    this.library = library;
+    library.onError(() => {
+      // One toast, not one per keystroke: while the last one is still on
+      // screen a further failure has nothing new to say.
+      if (this.#saveErrorToast && this.toasts.some((t) => t.id === this.#saveErrorToast)) return;
+      this.#saveErrorToast = this.toast("Could not save your changes", "Retry", () => {
+        void this.library.flush().catch(() => {});
+      });
+    });
+  }
 
   subscribe(fn: () => void): () => void {
     this.#listeners.add(fn);
@@ -117,7 +135,7 @@ class AppState {
     backend ??= await openOpfs();
     backend ??= await IndexedDbBackend.open();
     backend ??= new MemoryBackend();
-    this.library = new LibraryService(backend);
+    this.useLibrary(new LibraryService(backend));
     useImageStore(backend);
     await this.library.refresh();
 
@@ -272,11 +290,12 @@ class AppState {
     await appdb.addHistory(next);
   }
 
-  toast(text: string, actionLabel?: string, action?: () => void, ms = 10000): void {
+  toast(text: string, actionLabel?: string, action?: () => void, ms = 10000): string {
     const toast: Toast = { id: newId(), text, actionLabel, action };
     toast.timer = setTimeout(() => this.dismissToast(toast.id), ms);
     this.toasts = [...this.toasts, toast].slice(-3);
     this.emit();
+    return toast.id;
   }
 
   dismissToast(id: string): void {

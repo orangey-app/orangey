@@ -99,7 +99,7 @@ export async function useFolder(): Promise<boolean> {
       await next.refresh();
     }
   }
-  state.library = next;
+  state.useLibrary(next);
   useImageStore(backend);
   state.folderNeedsPermission = false;
   void state.savePrefs({ backend: "fsa" });

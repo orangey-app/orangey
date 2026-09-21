@@ -28,6 +28,11 @@ describe("routes", () => {
       ["a path route with no path", "#/r/", { name: "play" }],
       ["an id route with no id", "#/id/", { name: "play" }],
       ["an editor with nothing to edit", "#/edit/", { name: "library" }],
+      // a half-typed or mangled escape used to throw out of the router and
+      // leave the app with nothing on screen at all
+      ["a malformed escape", "#/r/%", { name: "play" }],
+      ["a malformed escape in an id", "#/id/%zz", { name: "play" }],
+      ["a malformed escape in an editor path", "#/edit/%E0%A4%A", { name: "library" }],
     ];
     for (const [what, hash, expected] of cases) {
       const route = parseRoute(hash) as unknown as Record<string, unknown>;

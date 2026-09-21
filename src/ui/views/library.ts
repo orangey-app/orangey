@@ -59,7 +59,7 @@ export function createLibraryView(): View {
             state.toast("The browser did not allow it.");
             return;
           }
-          state.library = new LibraryService(backend);
+          state.useLibrary(new LibraryService(backend));
           await state.library.refresh();
           state.folderNeedsPermission = false;
           state.emit();

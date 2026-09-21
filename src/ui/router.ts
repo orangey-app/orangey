@@ -39,6 +39,20 @@ function readParams(query: string): LinkParams {
   return { roll: on("roll"), present: on("present") };
 }
 
+/**
+ * `decodeURIComponent` throws on a malformed escape ("%", "%zz"), and a throw
+ * from the router leaves the app with nothing rendered at all. A bad address
+ * is a bad address: treat it as one rather than as a fatal error.
+ */
+function decodeArg(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw);
+  } catch (e) {
+    if (e instanceof URIError) return null;
+    throw e;
+  }
+}
+
 export function parseRoute(hash: string): Route {
   const clean = hash.replace(/^#\/?/, "");
   const queryAt = clean.indexOf("?");
@@ -47,7 +61,7 @@ export function parseRoute(hash: string): Route {
   const params = queryAt < 0 ? NO_PARAMS : readParams(query);
 
   const [head, ...rest] = withoutQuery.split("/");
-  const arg = decodeURIComponent(rest.join("/"));
+  const arg = decodeArg(rest.join("/"));
   switch (head) {
     case "roll": {
       // The payload is base64url, which URLSearchParams leaves alone, but a

@@ -37,6 +37,16 @@ let imageBackend: LibraryBackend | null = null;
 const imageUrls = new Map<string, string>();
 /** Asks for a picture that are still in the air, so two asks make one read. */
 const imageLoads = new Map<string, Promise<string | null>>();
+/**
+ * Ids the store has already looked for and not found.
+ *
+ * An outcome can outlive its picture — the file was deleted from the folder,
+ * or an archive arrived without it — and the callers ask again on every draw.
+ * Without this, a wheel that lands on such an outcome reads the backend once
+ * per frame forever. A miss is remembered until something puts the picture
+ * back, or until the library changes underneath the store.
+ */
+const imageMisses = new Set<string>();
 
 /** Called once when the library opens, and again if the library moves. */
 export function useImageStore(backend: LibraryBackend): void {
@@ -44,6 +54,7 @@ export function useImageStore(backend: LibraryBackend): void {
   for (const url of imageUrls.values()) URL.revokeObjectURL(url);
   imageUrls.clear();
   imageLoads.clear();
+  imageMisses.clear();
   imageBackend = backend;
 }
 
@@ -97,6 +108,8 @@ export async function restoreImage(id: string, bytes: Uint8Array): Promise<void>
   if (!imageBackend) throw new Error("the image store has no library to write to");
   await imageBackend.mkdir(IMAGE_DIR);
   await imageBackend.writeBytes(imageFilePath(id), bytes);
+  // It is there now, so anyone who asked before and was told no may ask again.
+  imageMisses.delete(id);
 }
 
 /** The bytes, or null when there is no such picture. */
@@ -113,11 +126,15 @@ export async function imageBytes(id: string): Promise<Uint8Array | null> {
 export async function imageUrl(id: string): Promise<string | null> {
   const known = imageUrls.get(id);
   if (known) return known;
+  if (imageMisses.has(id)) return null;
   const inFlight = imageLoads.get(id);
   if (inFlight) return inFlight;
   const load = (async () => {
     const bytes = await imageBytes(id);
-    if (!bytes) return null;
+    if (!bytes) {
+      imageMisses.add(id);
+      return null;
+    }
     // Between the read starting and finishing someone else may have made it.
     const raced = imageUrls.get(id);
     if (raced) return raced;
@@ -157,6 +174,7 @@ export async function putImageData(dataUrl: string): Promise<string> {
 }
 
 export async function deleteImage(id: string): Promise<void> {
+  imageMisses.add(id);
   const url = imageUrls.get(id);
   if (url) {
     URL.revokeObjectURL(url);
