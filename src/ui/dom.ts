@@ -142,6 +142,21 @@ export function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * When a roll happened, for a list that may span days.
+ *
+ * "14:32" is enough for this evening's game and useless for a session three
+ * weeks ago, so anything but today carries its date as well.
+ */
+export function formatWhen(at: number): string {
+  const when = new Date(at);
+  const now = new Date();
+  const sameDay =
+    when.getFullYear() === now.getFullYear() && when.getMonth() === now.getMonth() && when.getDate() === now.getDate();
+  if (sameDay) return formatTime(at);
+  return `${when.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${formatTime(at)}`;
+}
+
 /* ---- dialogs and menus ----------------------------------------------------
  * Replacements for prompt(), confirm() and ad-hoc dropdowns. They return
  * promises, close on Escape, and restore focus to the element that opened

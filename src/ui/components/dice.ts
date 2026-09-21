@@ -106,6 +106,16 @@ export function createDiceTray(): DiceTray {
   const titleFor = (die: TrayDie): string =>
     die.kept ? `${die.value} on a d${die.sides}` : `${die.value}, dropped`;
 
+  /**
+   * The wireframe dice this tray put in the shared animation loop.
+   *
+   * The loop is shared by every tray on the page — a board rolls several at
+   * once — so a tray starting a roll may only take its own dice out of it.
+   * Clearing the whole set left the other trays' dice drawn but never
+   * stepped, which is how a board ended up with wireframes that sat still.
+   */
+  let mine: WireDie[] = [];
+
   /* ---- flat ------------------------------------------------------------- */
 
   function showFlat(dice: TrayDie[], feel: FeelSettings, duration: number, bounce: number): Promise<void> {
@@ -257,6 +267,8 @@ export function createDiceTray(): DiceTray {
       });
     };
 
+    mine = wires;
+
     if (duration <= 0) {
       reveal();
       return Promise.resolve();
@@ -291,7 +303,8 @@ export function createDiceTray(): DiceTray {
       // Forty spinning solids is a lot of work for a phone, and forty tiny
       // wireframes are unreadable anyway, so a big handful stays flat.
       const wireframe = feel.dice.style === "wireframe" && shown.length <= WIREFRAME_DICE_LIMIT;
-      active.clear();
+      for (const wire of mine) active.delete(wire);
+      mine = [];
       return wireframe ? showWireframe(shown, feel, duration, bounce) : showFlat(shown, feel, duration, bounce);
     },
     skip() {

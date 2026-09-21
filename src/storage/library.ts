@@ -57,6 +57,14 @@ export interface LibraryNode {
   randomizer?: Randomizer | null;
   readOnly?: boolean;
   error?: string;
+  /**
+   * Top-level keys in the file that this version of Orangey does not know.
+   *
+   * Another tool's annotations, or a field from a newer format, are carried
+   * back out on the next save rather than dropped: a file the user opened to
+   * change one weight should not come back smaller than it went in.
+   */
+  extras?: Record<string, unknown>;
 }
 
 export interface SearchHit {
@@ -139,7 +147,14 @@ export class LibraryService {
     try {
       const text = await this.backend.read(path);
       const out = parseFile(text);
-      return { kind: "file", path, name, randomizer: out.file.randomizer, readOnly: out.readOnly };
+      return {
+        kind: "file",
+        path,
+        name,
+        randomizer: out.file.randomizer,
+        readOnly: out.readOnly,
+        ...(out.file.unknown ? { extras: out.file.unknown } : {}),
+      };
     } catch (e) {
       const message = e instanceof ValidationError ? e.issues.map((i) => `${i.path}: ${i.message}`).join("; ") : String(e);
       return { kind: "file", path, name, randomizer: null, error: message };
@@ -227,8 +242,8 @@ export class LibraryService {
 
   /** Queue a save. Repeated calls for the same file coalesce (plan C5). */
   save(path: string, randomizer: Randomizer): void {
-    this.#pending.set(path, serialize(wrap(randomizer)));
     const node = this.find(path);
+    this.#pending.set(path, serialize({ ...wrap(randomizer), unknown: node?.extras }));
     if (node) node.randomizer = randomizer;
     this.#emit();
     if (this.#timer) clearTimeout(this.#timer);
@@ -292,7 +307,7 @@ export class LibraryService {
     const randomizer = { ...node.randomizer!, name: newName, modified: new Date().toISOString() };
     const taken = (await this.backend.list(parent(path))).map((e) => e.name).filter((n) => n !== basename(path));
     const target = join(parent(path), fileNameFor(newName, taken));
-    await this.backend.write(path, serialize(wrap(randomizer)));
+    await this.backend.write(path, serialize({ ...wrap(randomizer), unknown: node.extras }));
     if (target !== path) await this.backend.move(path, target);
     await this.refresh();
     return target;
@@ -357,7 +372,16 @@ export class LibraryService {
       if (folder) await this.backend.mkdir(folder);
       const exists = this.find(entry.path) !== null;
       if (!exists) {
-        await this.backend.write(entry.path, entry.text);
+        // Two files sharing an id make every link and board entry pointing at
+        // it ambiguous, so an arrival that clashes with a file already here
+        // is given a new one. The text is otherwise passed through untouched.
+        const clash = this.findById(parsed.file.randomizer.id);
+        await this.backend.write(
+          entry.path,
+          clash && clash.path !== entry.path
+            ? serialize({ ...parsed.file, randomizer: { ...parsed.file.randomizer, id: newId() } })
+            : entry.text,
+        );
         result.added++;
         continue;
       }

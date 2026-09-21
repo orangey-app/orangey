@@ -46,6 +46,13 @@ export interface Prefs {
 const DB_NAME = "orangey";
 const DB_VERSION = 1;
 export const HISTORY_CAP = 5000;
+/**
+ * How many of those rolls the app holds in memory.
+ *
+ * The store keeps up to `HISTORY_CAP`; this is the recent slice the History
+ * view and the Recent rolls panel work from. An export asks for the lot.
+ */
+export const HISTORY_IN_MEMORY = 500;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -102,10 +109,32 @@ export const appdb = {
     }
   },
 
-  async history(limit = 200): Promise<HistoryEntry[]> {
+  /**
+   * The most recent rolls, newest first.
+   *
+   * Through the `at` index backwards rather than `getAll()` then sort: the
+   * store holds up to `HISTORY_CAP` entries, and reading five thousand of
+   * them to show the last few hundred is work the index can avoid.
+   */
+  async history(limit = HISTORY_IN_MEMORY): Promise<HistoryEntry[]> {
     try {
-      const all = await tx<HistoryEntry[]>("history", "readonly", (s) => s.getAll() as IDBRequest<HistoryEntry[]>);
-      return all.sort((a, b) => b.at - a.at).slice(0, limit);
+      const db = await openDb();
+      return await new Promise<HistoryEntry[]>((resolve, reject) => {
+        const t = db.transaction("history", "readonly");
+        const req = t.objectStore("history").index("at").openCursor(null, "prev");
+        const out: HistoryEntry[] = [];
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor || out.length >= limit) {
+            resolve(out);
+            return;
+          }
+          out.push(cursor.value as HistoryEntry);
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+        t.oncomplete = () => db.close();
+      });
     } catch {
       return [];
     }

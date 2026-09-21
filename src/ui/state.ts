@@ -4,7 +4,7 @@
  */
 
 import { CryptoSource, SeededSource, type RandomSource } from "../core/rng.ts";
-import { appdb, HISTORY_CAP, type HistoryEntry, type Prefs } from "../storage/appdb.ts";
+import { appdb, HISTORY_CAP, HISTORY_IN_MEMORY, type HistoryEntry, type Prefs } from "../storage/appdb.ts";
 import { LibraryService, type LibraryBackend } from "../storage/library.ts";
 import { MemoryBackend } from "../storage/memory.ts";
 import { openOpfs, reopenFolder } from "../storage/fsdir.ts";
@@ -151,7 +151,7 @@ class AppState {
       this.prefs.seeded = true;
       await appdb.set("prefs", this.prefs);
     }
-    this.history = await appdb.history();
+    this.history = await appdb.history(HISTORY_IN_MEMORY);
     this.ready = true;
     this.applyTheme();
     this.emit();
@@ -241,7 +241,7 @@ class AppState {
           ? { kind: "dice", expression: randomizer.expression }
           : { kind: "randomizer", id: randomizer.id },
     };
-    this.history = [entry, ...this.history].slice(0, 500);
+    this.history = [entry, ...this.history].slice(0, HISTORY_IN_MEMORY);
     this.emit();
     await appdb.addHistory(entry);
   }

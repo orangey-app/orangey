@@ -10,6 +10,7 @@
  * and so no way to get it wrong.
  */
 
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,9 +80,22 @@ writeFileSync(join(dist, "icon-192.png"), makeIcon(192));
 writeFileSync(join(dist, "icon-512.png"), makeIcon(512));
 writeFileSync(join(dist, "icon-512-maskable.png"), makeIcon(512, { inset: 0.78 }));
 
+/**
+ * The cache is named from the content, not from the version alone.
+ *
+ * The worker serves cache-first and only ever re-fetches when `sw.js` itself
+ * changes. Named from the version, a deploy without a version bump reached
+ * nobody who had already opened the app: they kept the old code until the
+ * next release. With the hash in it, sw.js changes whenever the app does, the
+ * browser installs the new worker, and `activate` drops the old cache.
+ */
+const hash = createHash("sha256").update(js).update(css).digest("hex").slice(0, 8);
+
 const sw = `// Orangey service worker: precache the shell so the app opens offline.
-const CACHE = "orangey-v${version}";
-const ASSETS = ["./", "./index.html", "./app.js", "./app.css", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const CACHE = "orangey-v${version}-${hash}";
+// Not orangey.html: it is only built with --single, and one missing asset
+// makes addAll reject, which means the worker never installs at all.
+const ASSETS = ["./", "./index.html", "./app.js", "./app.css", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });

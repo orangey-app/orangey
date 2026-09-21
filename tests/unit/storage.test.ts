@@ -279,6 +279,34 @@ describe("the library", () => {
     assert.ok(!library.hasUnsavedChanges, "something stale is still queued");
   });
 
+  test("a key this version does not know survives a re-save", async () => {
+    const { backend, library } = await setup();
+    const path = await library.create("", emptyRandomizer("list", "Annotated"));
+
+    // A field another tool put at the top of the file, or one from a newer
+    // format. Editing a weight must not quietly delete it.
+    const raw = JSON.parse(await backend.read(path)) as Record<string, unknown>;
+    raw["x-note"] = { by: "some other tool", keep: true };
+    await backend.write(path, `${JSON.stringify(raw, null, 2)}\n`);
+    await library.refresh();
+
+    const node = library.find(path)!;
+    library.save(path, { ...node.randomizer!, name: "Annotated still" });
+    await library.flush();
+    const after = JSON.parse(await backend.read(path)) as Record<string, unknown>;
+    assert.deepEqual(after["x-note"], { by: "some other tool", keep: true });
+    assert.equal((after.randomizer as Record<string, unknown>).name, "Annotated still");
+
+    // And through a rename, which rewrites the file under a new name.
+    const moved = await library.rename(path, "Renamed");
+    const renamed = JSON.parse(await backend.read(moved)) as Record<string, unknown>;
+    assert.deepEqual(renamed["x-note"], { by: "some other tool", keep: true });
+
+    // A copy is a new file of this version's making, and starts clean.
+    const copy = await library.duplicate(moved);
+    assert.equal(JSON.parse(await backend.read(copy))["x-note"], undefined);
+  });
+
   test("search looks inside outcome labels, tags and descriptions", async () => {
     const { library } = await setup();
     const base = emptyRandomizer("list", "Forest Encounters") as ListRandomizer;

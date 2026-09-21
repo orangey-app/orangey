@@ -199,3 +199,27 @@ export function fitLabelToWidth(label: string, width: number, measure: (text: st
   }
   return lo === 0 ? "…" : `${chars.slice(0, lo).join("").trimEnd()}…`;
 }
+
+export interface TickerWindow {
+  /** First outcome in the strip, as an index into the live outcomes. */
+  start: number;
+  /** One past the last. */
+  end: number;
+  /** Where the winner sits inside the strip. */
+  local: number;
+}
+
+/**
+ * Which slice of a long list the ticker should actually build.
+ *
+ * A list of five thousand outcomes is five thousand rows of DOM, so the strip
+ * is capped. Capping it at the first `size` rows works until the winner is
+ * beyond them: the strip then scrolls to a row that was never built and the
+ * ticker lands on nothing. So the window follows the winner instead, with a
+ * few rows of run-up in front of it for the roll to travel through.
+ */
+export function tickerWindow(liveCount: number, position: number, size = 80, tail = 3): TickerWindow {
+  const start = Math.max(0, position - tail);
+  const end = Math.min(liveCount, start + size);
+  return { start, end, local: position - start };
+}

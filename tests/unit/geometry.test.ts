@@ -9,10 +9,26 @@ import {
   POINTER_ANGLE,
   radialLabelRoom,
   segmentAtPointer,
+  tickerWindow,
 } from "../../src/core/wheel-geometry.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 
 describe("wheel geometry", () => {
+  test("the ticker's window always contains the winner, however long the list", () => {
+    const liveCount = 5000;
+    for (const position of [0, 1, 399, 400, 2500, 4998, 4999]) {
+      const w = tickerWindow(liveCount, position);
+      const rows = w.end - w.start;
+      assert.ok(rows > 0, `position ${position}: an empty strip`);
+      assert.ok(w.local >= 0 && w.local < rows, `position ${position}: local ${w.local} outside 0..${rows}`);
+      assert.equal(w.start + w.local, position, `position ${position}: the window points elsewhere`);
+      assert.ok(w.end <= liveCount, `position ${position}: the window runs off the end`);
+    }
+    // A list shorter than the window is the whole list.
+    const small = tickerWindow(3, 2);
+    assert.deepEqual(small, { start: 0, end: 3, local: 2 });
+  });
+
   test("a slice's angle is its share of the weight, and the slices cover the circle exactly", () => {
     const segs = layout([{ weight: 50 }, { weight: 20 }, { weight: 20 }, { weight: 10 }], { padAngle: 0.25 });
     const spans = segs.map((s) => s.endAngle - s.startAngle);

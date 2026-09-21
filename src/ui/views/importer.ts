@@ -9,7 +9,7 @@
 import { detect, guessColumns, guessHeader, type Detection } from "../../import/detect.ts";
 import { buildItems, itemsFromJson, type ImportResult, type Mapping } from "../../import/map.ts";
 import { delimiterName, looksLikeJson, parseDelimited, type Delimiter } from "../../import/parse.ts";
-import { emptyRandomizer, type ListRandomizer, type Randomizer } from "../../model/randomizer.ts";
+import { emptyRandomizer, newId, type ListRandomizer, type Randomizer } from "../../model/randomizer.ts";
 import { decodeRandomizer } from "../../model/link.ts";
 import { parseFile, serialize, wrap } from "../../model/file.ts";
 import { FILE_SUFFIX } from "../../model/file.ts";
@@ -243,7 +243,7 @@ export function createImportView(initialText = ""): View {
     if (!linked) return;
     const { randomizer } = linked;
     const taken = state.library.findById(randomizer.id) !== null;
-    const path = await state.library.create("", { ...randomizer, id: taken ? crypto.randomUUID() : randomizer.id });
+    const path = await state.library.create("", { ...randomizer, id: taken ? newId() : randomizer.id });
     state.toast(`Added “${randomizer.name}” to your library`);
     navigate(`#/edit/${encodeURIComponent(path)}`);
   }
@@ -322,7 +322,10 @@ export function createImportView(initialText = ""): View {
         // A file made for travelling carries its pictures inside it; they go
         // to the store now, so what lands in the library is an ordinary file.
         const randomizer = await absorbImages(parsed.file.randomizer);
-        const path = await state.library.create("", randomizer);
+        // A file dropped in twice, or one copied from another library, would
+        // otherwise arrive sharing its id with a randomizer already here.
+        const clash = state.library.findById(randomizer.id) !== null;
+        const path = await state.library.create("", clash ? { ...randomizer, id: newId() } : randomizer);
         state.toast(`Imported "${randomizer.name}"`);
         navigate(`#/r/${encodeURIComponent(path)}`);
         return;

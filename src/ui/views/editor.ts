@@ -209,13 +209,16 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   function renderRows(focusItemId?: string, focusField: "label" | "weight" = "label"): void {
     const percents = displayPercents(model.items);
+    // Before the colours are read, not after: `refresh` is what recomputes
+    // them, so asking first showed each row the colour its outcome had one
+    // edit ago.
+    wheel.refresh();
     const colors = wheel.colors();
     setChildren(tbody, 
       ...rowsToShow().map(({ item, index }) => renderRow(item, index, percents[index], colors[index] ?? "#888888")),
     );
     updateFooter();
     renderBulkBar();
-    wheel.refresh();
     if (focusItemId) {
       const input = tbody.querySelector(`[data-item="${focusItemId}"] .${focusField}-cell input`);
       (input as HTMLInputElement | null)?.focus();

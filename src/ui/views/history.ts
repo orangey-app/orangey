@@ -4,7 +4,8 @@
  * agreed not to count is struck instead: the line stays, drawn through.
  */
 
-import { button, formatTime, h, setChildren } from "../dom.ts";
+import { button, formatWhen, h, setChildren } from "../dom.ts";
+import { appdb, HISTORY_CAP } from "../../storage/appdb.ts";
 import { state, type HistoryRow } from "../state.ts";
 import { navigate } from "../router.ts";
 import { download } from "./library.ts";
@@ -36,14 +37,23 @@ export function createHistoryView(): View {
   const list = h("ul", { class: "history-list" });
   const summary = h("p", { class: "faint" });
 
+  /** How many rolls the store holds, which may be more than are shown. */
+  let stored: number | null = null;
+
   function render(): void {
-    summary.textContent = state.history.length
-      ? `${state.history.length} roll${state.history.length === 1 ? "" : "s"} kept on this device`
-      : "No rolls yet.";
+    const shown = state.history.length;
+    if (!shown) {
+      summary.textContent = "No rolls yet.";
+    } else if (stored !== null && stored > shown) {
+      summary.textContent =
+        `${stored} rolls kept on this device, showing the most recent ${shown}. An export includes all of them.`;
+    } else {
+      summary.textContent = `${shown} roll${shown === 1 ? "" : "s"} kept on this device`;
+    }
     setChildren(list, 
       ...state.history.map((entry) =>
         h("li", { class: entry.struck ? "struck" : "" },
-          h("span", { class: "when", text: formatTime(entry.at) }),
+          h("span", { class: "when", text: formatWhen(entry.at) }),
           h("span", { class: "what" },
             h("span", { class: "name", text: entry.randomizerName }),
             " ",
@@ -71,13 +81,27 @@ export function createHistoryView(): View {
     );
   }
 
-  function exportCsv(): void {
-    download("orangey-history.csv", `${historyCsv(state.history)}\n`, "text/csv");
+  /**
+   * Everything the store holds, not the recent slice held in memory: an
+   * export of "my history" that quietly stopped at the most recent few
+   * hundred would be wrong in the one way that matters.
+   *
+   * The rows in memory carry `struck`, which the stored ones may predate, so
+   * the two are merged on id rather than one replacing the other.
+   */
+  async function allRows(): Promise<HistoryRow[]> {
+    const known = new Map(state.history.map((row) => [row.id, row]));
+    const rows = await appdb.history(HISTORY_CAP);
+    return rows.map((row) => known.get(row.id) ?? row);
   }
 
-  function exportText(): void {
-    const text = state.history
-      .map((e) => `${formatTime(e.at)}  ${e.randomizerName}  →  ${e.resultText}`)
+  async function exportCsv(): Promise<void> {
+    download("orangey-history.csv", `${historyCsv(await allRows())}\n`, "text/csv");
+  }
+
+  async function exportText(): Promise<void> {
+    const text = (await allRows())
+      .map((e) => `${formatWhen(e.at)}  ${e.randomizerName}  →  ${e.resultText}`)
       .join("\n");
     download("orangey-history.txt", `${text}\n`, "text/plain");
   }
@@ -87,8 +111,8 @@ export function createHistoryView(): View {
       h("div", { class: "row" },
         h("h1", { text: "History", style: { margin: "0" } }),
         h("div", { class: "spacer" }),
-        button("Export CSV", exportCsv, { class: "ghost" }),
-        button("Export text", exportText, { class: "ghost" }),
+        button("Export CSV", () => void exportCsv(), { class: "ghost" }),
+        button("Export text", () => void exportText(), { class: "ghost" }),
         button("Clear", () => {
           if (confirm("Clear the whole history?")) void state.clearHistory();
         }, { class: "ghost danger" }),
@@ -99,6 +123,12 @@ export function createHistoryView(): View {
   );
 
   render();
+  // How many are really there, so the summary can say when it is showing a
+  // slice. It arrives a moment after the list, which is soon enough.
+  void appdb.history(HISTORY_CAP).then((rows) => {
+    stored = rows.length;
+    render();
+  });
   const unsubscribe = state.subscribe(render);
   return { el, destroy: () => unsubscribe() };
 }

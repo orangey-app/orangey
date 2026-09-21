@@ -24,6 +24,7 @@ import {
   pointOnCircle,
   POINTER_ANGLE,
   radialLabelRoom,
+  tickerWindow,
   type Segment,
 } from "../../core/wheel-geometry.ts";
 import { CryptoSource } from "../../core/rng.ts";
@@ -332,17 +333,32 @@ export function createWheel(opts: WheelOptions): WheelView {
     const items = opts.items();
     const live = items.map((it, i) => ({ it, i })).filter(({ it }) => !it.disabled && it.weight > 0);
     const position = Math.max(0, live.findIndex(({ i }) => i === index));
+    // Must match `.ticker-row` in app.css.
     const rowHeight = 46;
-    const target = -(position * rowHeight);
     const duration = wheelDuration(feel);
     if (!tickerStrip) return Promise.resolve();
     const strip = tickerStrip;
+
+    // The idle strip holds only the first rows of a long list, so the winner
+    // may not be among them. Rebuild it around the winner before travelling,
+    // and the roll lands on a row that exists however long the list is.
+    const window_ = tickerWindow(live.length, position);
+    const rows = live.slice(window_.start, window_.end);
+    setChildren(strip,
+      ...rows.map(({ it }, i) =>
+        h("div", {
+          class: "ticker-row",
+          style: { background: (window_.start + i) % 2 ? "var(--bg-raised)" : "transparent" },
+        }, it.label),
+      ),
+    );
+    const target = -(window_.local * rowHeight);
 
     if (duration <= 0) {
       strip.style.transform = `translateY(${target}px)`;
       return Promise.resolve();
     }
-    const from = -(Math.min(live.length, 400) * rowHeight);
+    const from = -(rows.length * rowHeight);
     const overshoot = overshootFraction(settleForSpin(feel), Math.abs(target - from));
     const started = performance.now();
     return new Promise<void>((resolve) => {

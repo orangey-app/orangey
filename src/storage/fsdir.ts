@@ -101,6 +101,9 @@ export class DirectoryBackend implements LibraryBackend {
       const out = await target.createWritable();
       await out.write(contents as FileSystemWriteChunkType);
       await out.close();
+      // Whatever went wrong above may still have made the temp file, and a
+      // folder of ".forest.orangey.json.tmp" is the user's folder, not ours.
+      await dir.removeEntry(tmpName).catch(() => {});
     }
   }
 

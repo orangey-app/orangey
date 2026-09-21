@@ -19,6 +19,9 @@ describe("dice notation", () => {
       ["1d20 + 5 - 2", "d20 + 5 - 2"],
       ["  2D6  +  3 ", "2d6 + 3"],
       ["-d4+10", "-d4 + 10"],
+      // Space before keep/drop is how people write it, and DICE.md says so.
+      ["4d6 kh3", "4d6kh3"],
+      ["2d20  kl1", "2d20kl1"],
     ];
     for (const [input, expected] of cases) {
       assert.equal(parse(input).normalized, expected, `for ${input}`);

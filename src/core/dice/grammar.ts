@@ -116,6 +116,8 @@ function parseDiceOrConst(c: Cursor): Node {
 
   const node: DiceNode = { kind: "dice", count: n, sides };
 
+  // "4d6 kh3" is how people write it, and DICE.md promises it works.
+  c.ws();
   const two = c.src.slice(c.i, c.i + 2).toLowerCase();
   if (two === "kh" || two === "kl" || two === "dh" || two === "dl") {
     const at = c.i;
