@@ -11,15 +11,15 @@
  */
 
 import { serialize, wrap } from "../../model/file.ts";
-import { emptyRandomizer, type RandomizerType } from "../../model/randomizer.ts";
+import { emptyRandomizer, isBoard, type BoardRandomizer, type Randomizer, type RandomizerType } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { basename, parent } from "../../storage/paths.ts";
 import { regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
 import { LibraryService } from "../../storage/library.ts";
-import { canUseFolder, describeStorage, exportLibraryZip, stopUsingFolder, useFolder } from "../storage-actions.ts";
-import { askConfirm, askFolder, askText, button, h, iconButton, openMenu, setChildren } from "../dom.ts";
+import { canUseFolder, describeStorage, exportBoardZip, exportLibraryZip, portableRandomizer, stopUsingFolder, useFolder } from "../storage-actions.ts";
+import { askConfirm, askFolder, askText, button, h, iconButton, openMenu, setChildren, type MenuItem } from "../dom.ts";
 import { state } from "../state.ts";
-import { navigate } from "../router.ts";
+import { appBase, navigate, slideLink } from "../router.ts";
 import type { View } from "./editor.ts";
 
 export function createLibraryView(): View {
@@ -70,7 +70,7 @@ export function createLibraryView(): View {
   }
 
   function openStorageMenu(anchor: HTMLElement): void {
-    const items = [
+    const items: MenuItem[] = [
       { label: "Export library as ZIP", onSelect: () => void exportLibraryZip() },
     ];
     if (canUseFolder()) {
@@ -187,6 +187,10 @@ export function createLibraryView(): View {
       return h("div", {}, list);
     }
     const more = iconButton(`More for ${node.name}`, "⋯", () => openFolderMenu(node, more));
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openFolderMenu(node, row);
+    });
     return h("div", {}, h("div", { class: "tree-file" }, row, more), list);
   }
 
@@ -211,7 +215,28 @@ export function createLibraryView(): View {
     );
     draggable(row, node.path);
     const more = iconButton(`More for ${name}`, "⋯", () => openFileMenu(node, more));
+    // Right-click opens the same menu the ⋯ does, rather than a second one:
+    // it is where people reach for "copy the link to this".
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openFileMenu(node, row);
+    });
     return h("div", { class: "tree-file" }, row, more);
+  }
+
+  /**
+   * The link that opens this randomizer in this library, by id — so renaming
+   * or moving it later does not break what you pasted.
+   */
+  async function copyLinkTo(randomizer: Randomizer): Promise<void> {
+    const link = slideLink(appBase(), randomizer.id, { roll: false, present: false });
+    try {
+      await navigator.clipboard.writeText(link);
+      state.toast(`Link to "${randomizer.name}" copied`);
+    } catch {
+      // Clipboard permission can be refused; show it so it can be copied by hand.
+      state.toast(link);
+    }
   }
 
   function openFileMenu(node: LibraryNode, anchor: HTMLElement): void {
@@ -220,10 +245,16 @@ export function createLibraryView(): View {
       { label: "Play", onSelect: () => navigate(`#/r/${encodeURIComponent(node.path)}`) },
       { label: "Edit", onSelect: () => navigate(`#/edit/${encodeURIComponent(node.path)}`) },
       { label: isFavourite ? "Remove from favourites" : "Add to favourites", onSelect: () => node.randomizer && state.toggleFavourite(node.randomizer.id) },
+      ...(node.randomizer
+        ? [{ label: "Copy link", onSelect: () => void copyLinkTo(node.randomizer!) }]
+        : []),
       { label: "Rename…", onSelect: () => void renameNode(node, anchor), separator: true },
       { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
       { label: "Duplicate", onSelect: async () => { await state.library.duplicate(node.path); render(); } },
-      { label: "Export file", onSelect: () => exportFile(node) },
+      { label: "Export file", onSelect: () => void exportFile(node) },
+      ...(node.randomizer && isBoard(node.randomizer)
+        ? [{ label: "Export board with its randomizers", onSelect: () => void exportBoardZip(node.randomizer as BoardRandomizer) }]
+        : []),
       { label: "Delete…", onSelect: () => void confirmDelete(node, anchor), danger: true, separator: true },
     ], node.randomizer?.name ?? node.name);
   }
@@ -266,18 +297,22 @@ export function createLibraryView(): View {
     render();
   }
 
-  function exportFile(node: LibraryNode): void {
+  async function exportFile(node: LibraryNode): Promise<void> {
     if (!node.randomizer) return;
-    download(basename(node.path), serialize(wrap(node.randomizer)), "application/json");
+    // Pictures are inlined on the way out: a file handed to someone has to
+    // carry them, since the store they live in is this library.
+    download(basename(node.path), serialize(wrap(await portableRandomizer(node.randomizer))), "application/json");
   }
 
   async function newRandomizer(type: RandomizerType, folder = selectedFolder): Promise<void> {
-    const titles: Record<RandomizerType, string> = { list: "New wheel", dice: "New dice", coin: "New coin", number: "New number" };
+    const titles: Record<RandomizerType, string> = { list: "New wheel", dice: "New dice", coin: "New coin", number: "New number", board: "New board" };
     const name = await askText(titles[type], { label: "Name", value: titles[type], confirm: "Create", opener: newButton });
     if (!name) return;
     const path = await state.library.create(folder, emptyRandomizer(type, name));
     render();
-    navigate(`#/edit/${encodeURIComponent(path)}`);
+    // A board is built on the board itself — there is nothing to edit in a
+    // separate screen — so it opens where it is played.
+    navigate(type === "board" ? `#/r/${encodeURIComponent(path)}` : `#/edit/${encodeURIComponent(path)}`);
   }
 
   async function newFolder(folder = selectedFolder): Promise<void> {
@@ -297,7 +332,8 @@ export function createLibraryView(): View {
       { label: "Dice", onSelect: () => void newRandomizer("dice") },
       { label: "Coin", onSelect: () => void newRandomizer("coin") },
       { label: "Number", onSelect: () => void newRandomizer("number") },
-      { label: "Folder", onSelect: () => void newFolder(), separator: true },
+      { label: "Board", onSelect: () => void newRandomizer("board"), separator: true },
+      { label: "Folder", onSelect: () => void newFolder() },
     ], "New"), { class: "primary new-button", "aria-haspopup": "menu", "aria-expanded": "false" });
 
   const el = h("div", { class: "library" },
@@ -329,6 +365,7 @@ function glyphFor(node: LibraryNode): string {
     case "dice": return "🎲";
     case "coin": return "🪙";
     case "number": return "#";
+    case "board": return "▦";
     default: return "•";
   }
 }
@@ -338,7 +375,7 @@ export function download(name: string, text: string, type: string): void {
 }
 
 export function downloadBytes(name: string, bytes: Uint8Array, type = "application/zip"): void {
-  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;

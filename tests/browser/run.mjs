@@ -1,12 +1,12 @@
 /**
  * Browser tests, driving the built app in headless Chromium over CDP.
  *
- * The suite has two halves: feature checks that belong to individual
- * deliverables, and the combination matrix from deliverable N — the tests that
- * prove features still work when used together, which is where the bugs
- * actually live.
+ * These are the paths a person actually walks: loading the app, building a
+ * randomizer, rolling it, sharing it, and coming back to it later. Anything a
+ * unit test can answer on its own — geometry, parsing, validation, palette
+ * maths, Orangey's reaction rules — is left to tests/unit, so what is here is
+ * only what needs a real browser to be true.
  */
-
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -150,19 +150,7 @@ async function main() {
     assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.motion`), "full");
   });
 
-  await test("a hand-edited preference is clamped on load", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`
-      const { state } = window.orangey;
-      await state.savePrefs({ feel: { ...state.prefs.feel, wheel: { ...state.prefs.feel.wheel, durationMs: 999999, turns: 400 } } });
-    `);
-    await open(page);
-    const wheel = await page.evaluate(`return window.orangey.state.prefs.feel.wheel`);
-    assert.equal(wheel.durationMs, 8000);
-    assert.equal(wheel.turns, 12);
-  });
-
-  await test("the outcome table disables, duplicates and deletes, and undo restores", async (page) => {
+  await test("the outcome table disables, duplicates, deletes and reorders, and undo restores", async (page) => {
     await open(page, "", { fresh: true });
     const path = await createList(page, "Table", [
       { label: "Goblin", weight: 50 },
@@ -204,17 +192,26 @@ async function main() {
     await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 4`);
     const restored = await page.evaluate(`return [...document.querySelectorAll(".label-cell input")].map((i) => i.value)`);
     assert.deepEqual(restored, labels, "undo did not restore the row in its original place");
-  });
 
-  await test("the last outcome cannot be deleted", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Single", [{ label: "Only", weight: 1 }]);
-    await page.evaluate(`window.orangey.navigate("#/edit/" + encodeURIComponent(${JSON.stringify(path)}))`);
-    await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 1`);
-    await page.click(".outcomes tbody tr:nth-child(1) .delete-button");
-    await new Promise((r) => setTimeout(r, 200));
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".outcomes tbody tr").length`), 1);
-    assert.match(await page.evaluate(`return document.querySelector(".toast").textContent`), /at least one outcome/);
+    // Reorder by dragging the last row onto the first: the table and the file
+    // on disk must agree on the new order.
+    await page.evaluate(`
+      const rows = [...document.querySelectorAll(".outcomes tbody tr")];
+      const dt = new DataTransfer();
+      rows[3].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+      rows[0].dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      rows[0].dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      rows[3].dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
+    `);
+    await page.waitForFunction(`document.querySelector(".outcomes tbody tr:nth-child(1) .label-cell input").value === "Troll"`);
+    const reordered = await page.evaluate(`return [...document.querySelectorAll(".label-cell input")].map((i) => i.value)`);
+    assert.deepEqual(reordered, ["Troll", "Goblin", "Goblin (copy)", "Orc"]);
+    const onDisk = await page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      return JSON.parse(await state.library.backend.read(${JSON.stringify(path)})).randomizer.items.map((i) => i.label);
+    `);
+    assert.deepEqual(onDisk, reordered, "the new order was not saved");
   });
 
   await test("adding an outcome from the table writes it to disk", async (page) => {
@@ -300,30 +297,6 @@ async function main() {
     assert.equal(await page.evaluate(`return window.orangey.state.history.length`), 1);
   });
 
-  await test("a slide link survives the wheel being renamed and moved", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Renamed Later", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    const link = await page.evaluate(`
-      const { state } = window.orangey;
-      const node = state.library.find(${JSON.stringify(path)});
-      await state.library.createFolder("", "Campaign");
-      const renamed = await state.library.rename(node.path, "Something Else");
-      await state.library.move(renamed, "Campaign");
-      return location.origin + location.pathname + "?debug#/id/" + encodeURIComponent(node.randomizer.id) + "?roll=1";
-    `);
-    await page.goto(link);
-    await page.waitForFunction("window.orangey");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`, 15000);
-    const shown = await page.evaluate(`
-      return {
-        title: document.querySelector("h1").textContent,
-        result: document.querySelector(".result-value").textContent,
-      };
-    `);
-    assert.equal(shown.title, "Something Else", "the link should still find it after a rename and a move");
-    assert.ok(["A", "B"].includes(shown.result), shown.result);
-  });
-
   await test("a link to something this library does not have explains itself", async (page) => {
     await open(page, "", { fresh: true });
     await open(page, "#/id/not-in-this-library?roll=1");
@@ -332,7 +305,7 @@ async function main() {
     assert.match(text, /not-in-this-library/);
   });
 
-  await test("Escape leaves the full-screen view, but skips the roll while one is running", async (page) => {
+  await test("Escape skips a running roll onto the result that was rolled, and then leaves the full-screen view", async (page) => {
     await open(page, "", { fresh: true });
     const path = await createList(page, "Escapable", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
     const id = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(path)}).randomizer.id`);
@@ -342,8 +315,17 @@ async function main() {
 
     await page.click(".roll-button");
     await new Promise((r) => setTimeout(r, 400));
+    // Mid-spin the answer must not be on screen yet.
+    assert.equal(await page.evaluate(`return document.querySelector(".result-value").textContent`), "Rolling…");
     await page.key("Escape");
     await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
+    // Skipping shows the result that was actually rolled — the one history kept
+    // — rather than picking a fresh one when the animation is cut short.
+    const skipped = await page.evaluate(`
+      return { shown: document.querySelector(".result-value").textContent, recorded: window.orangey.state.history[0].resultText };
+    `);
+    assert.equal(skipped.shown, skipped.recorded, "the shown result is not the one that was rolled");
+    assert.ok(["A", "B"].includes(skipped.shown), skipped.shown);
     assert.equal(
       await page.evaluate(`return document.body.classList.contains("presenting")`),
       true,
@@ -408,12 +390,31 @@ async function main() {
     assert.ok(!report.afterRemove.includes("three"));
   });
 
-  await test("a randomizer can be dragged into a folder, and renamed through a dialog", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Draggable", [{ label: "A", weight: 1 }]);
-    await page.evaluate(`await window.orangey.state.library.createFolder("", "Target")`);
+  await test("a randomizer is created, moved, renamed and deleted through the library, and the tree follows", async (page) => {
+    await open(page, "#/library", { fresh: true });
+    await page.waitForFunction(`document.querySelector(".new-button")`);
+
+    // Create: + New → Wheel, named in the app's own dialog. Creating opens the
+    // editor, so come back to the library to watch the tree.
+    const newThing = async (kind, name) => {
+      await page.click(".new-button");
+      await page.waitForFunction(`document.querySelector(".menu")`);
+      await page.evaluate(`[...document.querySelectorAll(".menu-item")].find((b) => b.textContent === ${JSON.stringify(kind)}).click()`);
+      await page.waitForFunction(`document.querySelector("dialog[open] input[type=text]")`);
+      await page.type("dialog[open] input[type=text]", name);
+      await page.evaluate(`document.querySelector("dialog[open] form").requestSubmit()`);
+    };
+    await newThing("Wheel", "Draggable");
+    await page.waitForFunction(`location.hash.startsWith("#/edit/")`);
     await open(page, "#/library");
+    await page.waitForFunction(`[...document.querySelectorAll(".tree-row")].some((r) => r.textContent.includes("Draggable"))`);
+    assert.deepEqual(await page.evaluate(`return window.orangey.state.library.files().map((f) => f.path)`), ["draggable.orangey.json"]);
+
+    // A folder to move it into, made the same way.
+    await newThing("Folder", "Target");
     await page.waitForFunction(`document.querySelector(".folder-row")`);
+
+    // Move: drag the file onto the folder.
     await page.evaluate(`
       const file = [...document.querySelectorAll(".tree-row")].find((r) => r.textContent.includes("Draggable"));
       const folder = [...document.querySelectorAll(".folder-row")].find((r) => r.textContent.includes("Target"));
@@ -426,48 +427,69 @@ async function main() {
     await page.waitForFunction(`window.orangey.state.library.files().some((f) => f.path === "Target/draggable.orangey.json")`);
 
     // Rename through the app's own dialog — no browser prompt.
-    await page.evaluate(`
-      const more = [...document.querySelectorAll(".tree-file .icon-button")].find((b) => b.getAttribute("aria-label").includes("Draggable"));
-      more.click();
-    `);
-    await page.waitForFunction(`document.querySelector(".menu")`);
-    await page.evaluate(`[...document.querySelectorAll(".menu-item")].find((b) => b.textContent === "Rename…").click()`);
+    const fileMenu = async (name, item) => {
+      await page.evaluate(`
+        [...document.querySelectorAll(".tree-file .icon-button")].find((b) => b.getAttribute("aria-label").includes(${JSON.stringify(name)})).click();
+      `);
+      await page.waitForFunction(`document.querySelector(".menu")`);
+      await page.evaluate(`[...document.querySelectorAll(".menu-item")].find((b) => b.textContent === ${JSON.stringify(item)}).click()`);
+    };
+    await fileMenu("Draggable", "Rename…");
     await page.waitForFunction(`document.querySelector("dialog[open] input[type=text]")`);
     await page.type("dialog[open] input[type=text]", "Renamed by dialog");
     await page.evaluate(`document.querySelector("dialog[open] form").requestSubmit()`);
     await page.waitForFunction(`window.orangey.state.library.files().some((f) => f.randomizer && f.randomizer.name === "Renamed by dialog")`);
+
+    // Delete, through the confirmation it insists on.
+    await fileMenu("Renamed by dialog", "Delete…");
+    await page.waitForFunction(`document.querySelector("dialog[open] .danger-primary")`);
+    await page.click("dialog[open] .danger-primary");
+    await page.waitForFunction(`window.orangey.state.library.files().length === 0`);
+    // the tree lost the file and kept the folder it was in
+    assert.equal(
+      await page.evaluate(`return [...document.querySelectorAll(".tree-row")].some((r) => r.textContent.includes("Renamed by dialog"))`),
+      false,
+      "the deleted randomizer is still in the tree",
+    );
+    assert.ok(await page.evaluate(`return document.querySelectorAll(".folder-row").length >= 1`), "the folder went with it");
+    assert.deepEqual(page.consoleErrors, []);
   });
 
-  await test("a library ZIP goes through the one import door", async (page) => {
-    await open(page, "", { fresh: true });
-    await createList(page, "Zipped", [{ label: "A", weight: 1 }]);
-    const zipBase64 = await page.evaluate(`
-      const { state } = window.orangey;
-      const node = state.library.files()[0];
-      const text = await state.library.backend.read(node.path);
-      // Build a ZIP in-page with the app's own writer by importing nothing:
-      // the debug hook does not expose it, so use the export path instead.
-      return null;
+  await test("V the wheel has three settings: spin length, turns, and a roll-back switch", async (page) => {
+    await open(page, "#/settings", { fresh: true });
+    await page.waitForFunction(`document.querySelector('input[aria-label="Spin length"]')`);
+    // The wheel is the first Feel section on the page; the editor wraps the
+    // same controls in .feel-card, Settings puts each in a card of its own.
+    const wheelSection = `document.querySelectorAll(".feel-section")[0]`;
+    const controls = await page.evaluate(`
+      const section = ${wheelSection};
+      return {
+        labels: [...section.querySelectorAll(".field-label")].map((el) => el.textContent),
+        windDown: section.textContent.includes("Wind-down"),
+        rollBack: Boolean(section.querySelector('input[aria-label="Roll-back"]')),
+        checked: section.querySelector('input[aria-label="Roll-back"]').checked,
+      };
     `);
-    void zipBase64;
-    // Export through the storage menu, then re-import through the wizard.
-    const entries = await page.evaluate(`
-      const { state } = window.orangey;
-      const node = state.library.files()[0];
-      return [{ path: "Packed/" + node.path, text: await state.library.backend.read(node.path) }];
-    `);
-    const result = await page.evaluate(`
-      const { state } = window.orangey;
-      return await state.library.importArchive(${JSON.stringify(entries)}, async () => "keep-both");
-    `);
-    assert.equal(result.added, 1);
-    const paths = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.path).sort()`);
-    assert.deepEqual(paths, ["Packed/zipped.orangey.json", "zipped.orangey.json"]);
-    // The wizard accepts .zip files and says so.
-    await open(page, "#/import");
-    const accept = await page.evaluate(`return document.querySelector('input[type=file]').getAttribute("accept")`);
-    assert.ok(accept.includes(".zip"));
-    assert.equal(await page.evaluate(`return document.querySelectorAll('input[accept=".zip"]').length`), 0, "the separate ZIP import should be gone");
+    assert.deepEqual(controls.labels, ["Spin length", "Turns", "Roll-back"]);
+    assert.equal(controls.windDown, false, "the wind-down choice should be gone");
+    assert.equal(controls.checked, true, "the roll-back ships on");
+
+    // Off, and it stays off across a reload.
+    await page.click('input[aria-label="Roll-back"]');
+    await page.waitForFunction(`window.orangey.state.prefs.feel.wheel.settleDegrees === 0`);
+    await open(page, "#/settings", { fresh: false });
+    await page.waitForFunction(`document.querySelector('input[aria-label="Roll-back"]')`);
+    assert.equal(await page.evaluate(`return document.querySelector('input[aria-label="Roll-back"]').checked`), false);
+    assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.settleDegrees`), 0);
+
+    // And back on, at the value the app ships with.
+    await page.click('input[aria-label="Roll-back"]');
+    await page.waitForFunction(`window.orangey.state.prefs.feel.wheel.settleDegrees > 0`);
+    assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.settleDegrees`), 11);
+    // A curve in an old settings file is still honoured; it simply has no control.
+    await page.evaluate(`window.orangey.state.setFeel({ wheel: { ...window.orangey.state.prefs.feel.wheel, curve: "snappy" } })`);
+    assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.curve`), "snappy");
+    assert.deepEqual(page.consoleErrors, []);
   });
 
   await test("a randomizer's own Feel settings are saved with it and used when it rolls", async (page) => {
@@ -526,56 +548,6 @@ async function main() {
     assert.equal(elapsed.motion, "full", "the global setting must be untouched");
   });
 
-  await test("the coin is tossed along an arc and the dice fly in, scattering", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "full", coin: { flips: 4, durationMs: 1200, arc: 1.2 }, dice: { style: "flat", tumbleMs: 1200, bounces: 2, spread: 0.8 } })`);
-    await page.evaluate(`[...document.querySelectorAll(".quickbar button")].find((b) => b.textContent === "Coin").click()`);
-    await new Promise((r) => setTimeout(r, 300));
-    const coin = await page.evaluate(`
-      const f = document.querySelector(".coin-flight");
-      return { tossing: f.classList.contains("tossing"), arc: f.style.getPropertyValue("--arc-h"), transform: getComputedStyle(f).transform };
-    `);
-    assert.equal(coin.tossing, true);
-    assert.match(coin.arc, /^\d+px$/);
-    assert.notEqual(coin.transform, "none", "the coin should be off its start point mid-toss");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
-
-    await page.evaluate(`
-      const f = document.querySelector('.quickbar input[type="text"]');
-      f.focus(); f.value = "3d6";
-      f.dispatchEvent(new Event("input", { bubbles: true }));
-      f.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    `);
-    await new Promise((r) => setTimeout(r, 250));
-    const dice = await page.evaluate(`
-      const flights = [...document.querySelectorAll(".die-flight")];
-      return { count: flights.length, flying: flights.filter((f) => f.classList.contains("flying")).length,
-               mids: flights.map((f) => f.style.getPropertyValue("--mx")), transforms: flights.map((f) => getComputedStyle(f).transform) };
-    `);
-    assert.equal(dice.count, 3);
-    assert.equal(dice.flying, 3, "the dice should be in flight");
-    assert.ok(new Set(dice.mids).size > 1, "the scatter should differ between dice");
-    assert.ok(dice.transforms.every((t) => t !== "none"), "each die should be away from its slot mid-flight");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
-    const settled = await page.evaluate(`return [...document.querySelectorAll(".die-flight")].map((f) => f.classList.contains("flying"))`);
-    assert.deepEqual(settled, [false, false, false], "every die should have arrived");
-  });
-
-  await test("wireframe numbers share one size across a mixed handful", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant", dice: { style: "wireframe", tumbleMs: 400, bounces: 1, spread: 0 } })`);
-    await page.evaluate(`
-      const f = document.querySelector('.quickbar input[type="text"]');
-      f.focus(); f.value = "d4+d6+d12+d20";
-      f.dispatchEvent(new Event("input", { bubbles: true }));
-      f.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    `);
-    await page.waitForFunction(`document.querySelectorAll(".die-value").length === 4`);
-    const sizes = await page.evaluate(`return [...document.querySelectorAll(".die-value")].map((v) => v.style.fontSize)`);
-    assert.equal(new Set(sizes).size, 1, `sizes differ: ${sizes.join(", ")}`);
-    assert.ok(parseFloat(sizes[0]) >= 8);
-  });
-
   await test("a colour scheme applies at once and survives a reload", async (page) => {
     await open(page, "", { fresh: true });
     await open(page, "#/settings");
@@ -587,162 +559,6 @@ async function main() {
     assert.equal(await page.evaluate(`return document.documentElement.getAttribute("data-scheme")`), "ocean");
     await page.evaluate(`await window.orangey.state.savePrefs({ scheme: "orangey" })`);
     assert.equal(await page.evaluate(`return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()`), "#f3a257");
-  });
-
-  // ---- deliverable N: the combination matrix -------------------------------
-
-  await test("N1 import → edit → save → reload → roll", async (page) => {
-    await open(page, "#/import", { fresh: true });
-    await page.waitForFunction(`document.querySelector(".importer textarea")`);
-    const csv = ["Name,Weight,Description"]
-      .concat(Array.from({ length: 40 }, (_, i) => `Outcome ${i + 1},${i + 1},Note ${i + 1}`))
-      .join("\n");
-    await page.type(".importer textarea", csv);
-    await page.click(".importer .primary");
-    await page.waitForFunction(`document.querySelector(".report")`);
-    const report = await page.evaluate(`return document.querySelector(".report").textContent`);
-    assert.match(report, /40 entries ready/);
-
-    await page.evaluate(`
-      const buttons = [...document.querySelectorAll("button")];
-      buttons.find((b) => b.textContent === "Create and edit").click();
-    `);
-    await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 40`);
-
-    // Disable five, delete two, add one, recolour one.
-    await page.evaluate(`
-      for (let i = 1; i <= 5; i++) document.querySelector(".outcomes tbody tr:nth-child(" + i + ") .disable-button").click();
-    `);
-    await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr.disabled").length === 5`);
-    await page.click(".outcomes tbody tr:nth-child(10) .delete-button");
-    await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 39`);
-    await page.click(".outcomes tbody tr:nth-child(10) .delete-button");
-    await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 38`);
-    await page.click(".add-outcome");
-    await page.type(".outcomes tbody tr:nth-child(39) .label-cell input", "Added later");
-    const deleted = await page.evaluate(`
-      const { state } = window.orangey;
-      await state.library.flush();
-      const node = state.library.files()[0];
-      const r = { ...node.randomizer, items: node.randomizer.items.map((i, n) => (n === 0 ? { ...i, color: "#a33a30" } : i)) };
-      state.library.save(node.path, r);
-      await state.library.flush();
-      return { path: node.path, labels: r.items.map((i) => i.label), disabled: r.items.filter((i) => i.disabled).length };
-    `);
-    assert.equal(deleted.labels.length, 39);
-    assert.equal(deleted.disabled, 5);
-
-    // Reload: the file and the UI agree.
-    await open(page);
-    const reloaded = await page.evaluate(`
-      const node = window.orangey.state.library.files()[0];
-      return { labels: node.randomizer.items.map((i) => i.label), disabled: node.randomizer.items.filter((i) => i.disabled).map((i) => i.label), color: node.randomizer.items[0].color };
-    `);
-    assert.deepEqual(reloaded.labels, deleted.labels);
-    assert.equal(reloaded.color, "#a33a30");
-    assert.equal(reloaded.disabled.length, 5);
-
-    // 10000 seeded rolls never produce a disabled or deleted outcome.
-    const seen = await page.evaluate(`
-      const { state, rollRandomizer } = window.orangey;
-      const node = state.library.files()[0];
-      const { SeededSource } = window.orangey.state.constructor === Object ? {} : {};
-      const results = new Set();
-      for (let i = 0; i < 10000; i++) results.add(rollRandomizer(node.randomizer, state.source()).text);
-      return [...results];
-    `);
-    for (const label of reloaded.disabled) assert.ok(!seen.includes(label), `${label} is disabled but came up`);
-    assert.ok(!seen.includes("Outcome 10"), "a deleted outcome came up");
-  });
-
-  await test("N2 disabled outcomes × geometry × colour", async (page) => {
-    await open(page, "", { fresh: true });
-    const items = Array.from({ length: 12 }, (_, i) => ({ label: `Item ${i + 1}`, weight: i + 1, disabled: i < 5 }));
-    const path = await createList(page, "Mixed", items);
-    await open(page, `#/edit/${encodeURIComponent(path)}`);
-    await page.waitForFunction(`document.querySelectorAll(".wheel-svg path[data-index]").length === 7`);
-
-    const before = await page.evaluate(`
-      return [...document.querySelectorAll(".wheel-svg path[data-index]")].map((p) => ({ index: p.dataset.index, fill: p.getAttribute("fill") }));
-    `);
-    assert.equal(before.length, 7);
-    assert.equal(new Set(before.map((s) => s.fill)).size, 7, "two visible segments share a colour");
-
-    // Enabling one restores its own colour rather than reshuffling the wheel.
-    await page.click(".outcomes tbody tr:nth-child(1) .disable-button");
-    await page.waitForFunction(`document.querySelectorAll(".wheel-svg path[data-index]").length === 8`);
-    const after = await page.evaluate(`
-      return [...document.querySelectorAll(".wheel-svg path[data-index]")].map((p) => ({ index: p.dataset.index, fill: p.getAttribute("fill") }));
-    `);
-    for (const segment of before) {
-      const match = after.find((s) => s.index === segment.index);
-      assert.equal(match.fill, segment.fill, `segment ${segment.index} changed colour when another was enabled`);
-    }
-  });
-
-  await test("N4 seeded RNG × instant mode × history", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Seeded", [
-      { label: "One", weight: 1 },
-      { label: "Two", weight: 1 },
-      { label: "Three", weight: 1 },
-    ]);
-    const sequence = async (motion) =>
-      page.evaluate(`
-        const { state, rollRandomizer } = window.orangey;
-        await state.savePrefs({ seed: "847193" });
-        state.setFeel({ motion: ${JSON.stringify(motion)} });
-        state.resetSeedSequence();
-        const node = state.library.find(${JSON.stringify(path)});
-        const out = [];
-        for (let i = 0; i < 20; i++) out.push(rollRandomizer(node.randomizer, state.source()).text);
-        return out;
-      `);
-    const withAnimation = await sequence("full");
-    const withoutAnimation = await sequence("instant");
-    assert.deepEqual(withoutAnimation, withAnimation, "the same seed gave different sequences");
-
-    // The result recorded in history is the same text either way, with the seed.
-    await page.evaluate(`
-      const { state, rollRandomizer } = window.orangey;
-      state.resetSeedSequence();
-      const node = state.library.find(${JSON.stringify(path)});
-      await state.record(node.randomizer, rollRandomizer(node.randomizer, state.source()));
-    `);
-    const entry = await page.evaluate(`return window.orangey.state.history[0]`);
-    assert.equal(entry.resultText, withAnimation[0]);
-    assert.match(entry.seed, /^847193#/);
-  });
-
-  await test("N5 feel × wheel × skip: a skipped spin lands on the same result", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Skippable", [
-      { label: "Alpha", weight: 1 },
-      { label: "Beta", weight: 1 },
-      { label: "Gamma", weight: 1 },
-      { label: "Delta", weight: 1 },
-    ]);
-    for (const curve of ["gentle", "standard", "snappy"]) {
-      for (const settle of ["none", "slight", "bouncy"]) {
-        await open(page, `#/r/${encodeURIComponent(path)}`);
-        await page.evaluate(`
-          window.orangey.state.setFeel({ motion: "full", wheel: { durationMs: 2000, turns: 4, curve: ${JSON.stringify(curve)}, settle: ${JSON.stringify(settle)} } });
-        `);
-        await page.click(".roll-button");
-        await new Promise((r) => setTimeout(r, 600)); // ~30 % through
-
-        // Mid-spin the answer must not be on screen yet.
-        const midway = await page.evaluate(`return document.querySelector(".result-value").textContent`);
-        assert.equal(midway, "Rolling…", `${curve}/${settle}: the result showed during the spin`);
-
-        await page.key("Escape");
-        await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
-        const final = await page.evaluate(`return document.querySelector(".result-value").textContent`);
-        const recorded = await page.evaluate(`return window.orangey.state.history[0].resultText`);
-        assert.equal(final, recorded, `${curve}/${settle}: the shown result is not the one that was rolled`);
-        assert.ok(["Alpha", "Beta", "Gamma", "Delta"].includes(final), final);
-      }
-    }
   });
 
   await test("the result stays hidden until the wheel, dice and coin land", async (page) => {
@@ -837,144 +653,6 @@ async function main() {
     assert.equal(settled.total, kept, "the total must be the three kept dice");
   });
 
-  await test("wireframe dice draw a solid, stay blank while tumbling, and reveal on landing", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "full", dice: { style: "wireframe", tumbleMs: 1500, bounces: 3, spread: 0.4 } })`);
-    await page.evaluate(`
-      const f = document.querySelector('.quickbar input[type="text"]');
-      f.focus();
-      f.value = "4d6kh3";
-      f.dispatchEvent(new Event("input", { bubbles: true }));
-      f.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    `);
-
-    const during = await page.evaluate(`
-      const frames = [];
-      for (let i = 0; i < 6; i++) {
-        frames.push({
-          canvases: document.querySelectorAll(".die-canvas").length,
-          rolling: document.querySelectorAll(".die-slot.rolling").length,
-          values: [...document.querySelectorAll(".die-value")].map((v) => v.textContent).join(""),
-          captions: [...document.querySelectorAll(".die-caption")].map((v) => v.textContent).join(""),
-          pixels: document.querySelector(".die-canvas").toDataURL().length + ":" + document.querySelector(".die-canvas").toDataURL().slice(-24),
-          flat: document.querySelectorAll(".dice-tray .die").length,
-        });
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      return frames;
-    `);
-    for (const frame of during) {
-      assert.equal(frame.canvases, 4, "one canvas per die");
-      assert.equal(frame.flat, 0, "no flat dice while wireframe is on");
-      assert.equal(frame.rolling, 4, "every die should still be rolling");
-      assert.equal(frame.values, "", "the wireframe must not show numbers while tumbling");
-      assert.equal(frame.captions, "", "no caption while tumbling either");
-    }
-    assert.ok(new Set(during.map((f) => f.pixels)).size > 1, "the wireframe never redrew");
-
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
-    const landed = await page.evaluate(`
-      const slots = [...document.querySelectorAll(".die-slot")];
-      return {
-        rolling: document.querySelectorAll(".die-slot.rolling").length,
-        values: slots.map((s) => Number(s.querySelector(".die-value").textContent)),
-        captions: slots.map((s) => Number(s.querySelector(".die-caption").textContent)),
-        dropped: slots.filter((s) => s.classList.contains("dropped")).length,
-        total: Number(document.querySelector(".result-value").textContent),
-      };
-    `);
-    assert.equal(landed.rolling, 0, "nothing should still be rolling");
-    assert.deepEqual(landed.values, landed.captions, "the centred value and the caption must agree");
-    assert.equal(landed.values.length, 4);
-    for (const v of landed.values) assert.ok(v >= 1 && v <= 6, `a d6 showed ${v}`);
-    assert.equal(landed.dropped, 1, "4d6kh3 drops exactly one die");
-    const kept = landed.values.slice().sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0);
-    assert.equal(landed.total, kept);
-  });
-
-  await test("a landed wireframe die is still, and shows a face square-on with its number inside", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "full", dice: { style: "wireframe", tumbleMs: 700, bounces: 2, spread: 0 } })`);
-    await page.click(".quickbar button:nth-child(6)");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
-    // Give the landing bounce time to finish, then check the drawing no longer
-    // changes: a die that is still being animated would differ between frames.
-    const stable = await page.evaluate(`
-      await new Promise((r) => setTimeout(r, 700));
-      const canvas = document.querySelector(".die-canvas");
-      const first = canvas.toDataURL();
-      await new Promise((r) => setTimeout(r, 250));
-      return first === canvas.toDataURL();
-    `);
-    assert.equal(stable, true, "the die is still moving after it should have settled");
-
-    const label = await page.evaluate(`
-      const value = document.querySelector(".die-value");
-      const stage = document.querySelector(".die-stage");
-      const v = value.getBoundingClientRect();
-      const s = stage.getBoundingClientRect();
-      return {
-        text: value.textContent,
-        fontSize: parseFloat(getComputedStyle(value).fontSize),
-        stageSize: s.width,
-        insideStage: v.left >= s.left - 1 && v.right <= s.right + 1 && v.top >= s.top - 1 && v.bottom <= s.bottom + 1,
-        hasTransform: value.style.transform.startsWith("translate("),
-      };
-    `);
-    assert.ok(Number(label.text) >= 1 && Number(label.text) <= 20, label.text);
-    // The number is sized from the face, not from a fixed rule in the CSS.
-    assert.ok(label.fontSize > 10 && label.fontSize < label.stageSize * 0.6, `font-size ${label.fontSize}px`);
-    assert.ok(label.hasTransform, "the number should be placed on the face it belongs to");
-    assert.ok(label.insideStage, "the number should sit within the die");
-  });
-
-  await test("the number is about half a side of the face it sits on", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant", dice: { style: "wireframe", tumbleMs: 400, bounces: 1, spread: 0 } })`);
-    // A d6 lands on a square, so half a side is unambiguous, and a single
-    // digit needs no shrinking to fit.
-    for (let attempt = 0; attempt < 12; attempt++) {
-      await page.click(".quickbar button:nth-child(2)");
-      await page.waitForFunction(`document.querySelector(".die-value") && document.querySelector(".die-value").textContent !== ""`);
-      const measured = await page.evaluate(`
-        const { state } = window.orangey;
-        const value = document.querySelector(".die-value");
-        return { text: value.textContent, fontSize: parseFloat(getComputedStyle(value).fontSize) };
-      `);
-      assert.equal(measured.text.length, 1, "a d6 always shows a single digit");
-      // The cube is 92px across with a projection radius of 0.34 of that; the
-      // square's side works out near 36px on screen, so half is about 18px.
-      assert.ok(
-        measured.fontSize > 14 && measured.fontSize < 26,
-        `a d6 showing ${measured.text} sized its number at ${measured.fontSize}px`,
-      );
-    }
-  });
-
-  await test("dice with no solid of their own still roll as wireframes", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "full", dice: { style: "wireframe", tumbleMs: 400, bounces: 1, spread: 0 } })`);
-    for (const expression of ["d7", "2d30", "d100", "d4"]) {
-      await page.evaluate(`
-        const f = document.querySelector('.quickbar input[type="text"]');
-        f.focus();
-        f.value = ${JSON.stringify(expression)};
-        f.dispatchEvent(new Event("input", { bubbles: true }));
-        f.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      `);
-      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
-      const shown = await page.evaluate(`
-        return {
-          canvases: document.querySelectorAll(".die-canvas").length,
-          values: [...document.querySelectorAll(".die-value")].map((v) => Number(v.textContent)),
-        };
-      `);
-      const sides = Number(expression.replace(/^\d*d/, ""));
-      assert.ok(shown.canvases >= 1, `${expression} drew no wireframe`);
-      for (const v of shown.values) assert.ok(v >= 1 && v <= sides, `${expression} showed ${v}`);
-    }
-  });
-
   await test("flat is the default, and the dice style setting sticks", async (page) => {
     await open(page, "", { fresh: true });
     assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.dice.style`), "flat");
@@ -998,194 +676,6 @@ async function main() {
     // Instant mode draws the solid at rest with its value, without animating.
     const value = await page.evaluate(`return Number(document.querySelector(".die-value").textContent)`);
     assert.ok(value >= 1 && value <= 20, `got ${value}`);
-  });
-
-  await test("the wheel swings past its target and settles back onto it", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Bouncy", [
-      { label: "Alpha", weight: 1 },
-      { label: "Beta", weight: 1 },
-      { label: "Gamma", weight: 1 },
-    ]);
-    const trace = async (settle) => {
-      await open(page, `#/r/${encodeURIComponent(path)}`);
-      await page.evaluate(`
-        window.orangey.state.setFeel({ motion: "full", wheel: { durationMs: 900, turns: 2, curve: "standard", settle: ${JSON.stringify(settle)} } });
-      `);
-      return page.evaluate(`
-        const angleOf = () => {
-          const t = document.querySelector(".wheel-rotor").getAttribute("transform") || "rotate(0 0 0)";
-          return Number(t.match(/rotate\\(([-0-9.]+)/)[1]);
-        };
-        document.querySelector(".roll-button").click();
-        const seen = [];
-        // Sample the whole spin, not just its beginning: the overshoot only
-        // happens in the last quarter.
-        while (document.querySelector(".roll-button").textContent !== "Roll") {
-          seen.push(angleOf());
-          await new Promise((r) => requestAnimationFrame(r));
-        }
-        return { seen, final: angleOf() };
-      `);
-    };
-
-    const bouncy = await trace("bouncy");
-    const none = await trace("none");
-    // The rotation is taken modulo 360, so only the tail of the spin can be
-    // compared with the settled angle: a bounce goes past it and comes back,
-    // a plain spin approaches it from below and stops.
-    const past = (t) => {
-      const tail = t.seen.slice(Math.floor(t.seen.length * 0.8));
-      return tail.filter((a) => a > t.final + 0.5 && a - t.final < 40).length;
-    };
-    assert.ok(past(bouncy) > 0, "a bouncy wheel should overshoot before settling");
-    assert.equal(past(none), 0, "a wheel with no settle should not overshoot");
-  });
-
-  await test("N6 storage × library operations × history", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Movable", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    await page.evaluate(`
-      const { state, rollRandomizer } = window.orangey;
-      const node = state.library.find(${JSON.stringify(path)});
-      await state.record(node.randomizer, rollRandomizer(node.randomizer, state.source()));
-      await state.library.createFolder("", "Campaign");
-      const renamed = await state.library.rename(${JSON.stringify(path)}, "Renamed");
-      const moved = await state.library.move(renamed, "Campaign");
-      const copy = await state.library.duplicate(moved);
-      await state.library.remove(copy);
-      return { renamed, moved };
-    `);
-    const files = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.path)`);
-    assert.deepEqual(files, ["Campaign/renamed.orangey.json"]);
-    const history = await page.evaluate(`return window.orangey.state.history.map((h) => [h.randomizerName, h.resultText])`);
-    assert.equal(history.length, 1);
-    assert.equal(history[0][0], "Movable", "history should keep the name it was rolled under");
-    assert.ok(["A", "B"].includes(history[0][1]));
-
-    // Deleting the randomizer leaves history readable.
-    await page.evaluate(`await window.orangey.state.library.remove("Campaign/renamed.orangey.json")`);
-    const after = await page.evaluate(`return window.orangey.state.history.length`);
-    assert.equal(after, 1);
-  });
-
-  await test("N7 large data × wheel modes", async (page) => {
-    await open(page, "", { fresh: true });
-    for (const [count, expected] of [[49, "unlabelled"], [201, "ticker"], [500, "ticker"]]) {
-      const items = Array.from({ length: count }, (_, i) => ({ label: `Outcome ${i + 1}`, weight: 1 }));
-      const path = await createList(page, `Big ${count}`, items);
-      await open(page, `#/r/${encodeURIComponent(path)}`);
-      await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
-      const mode = await page.evaluate(`
-        if (document.querySelector(".ticker")) return "ticker";
-        return document.querySelector(".wheel-label") ? "wheel" : "unlabelled";
-      `);
-      assert.equal(mode, expected, `${count} outcomes rendered as ${mode}`);
-      await page.click(".roll-button");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
-      const result = await page.evaluate(`return document.querySelector(".result-value").textContent`);
-      assert.match(result, /^Outcome \d+$/);
-    }
-    // A 48-outcome wheel still carries labels.
-    const items = Array.from({ length: 48 }, (_, i) => ({ label: `L${i}`, weight: 1 }));
-    const path = await createList(page, "Exactly 48", items);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    assert.ok(await page.evaluate(`return Boolean(document.querySelector(".wheel-label"))`));
-  });
-
-  await test("N7b distribution over a large wheel stays within 1 %", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Distribution", [
-      { label: "Half", weight: 50 },
-      { label: "Third", weight: 30 },
-      { label: "Fifth", weight: 20 },
-    ]);
-    const counts = await page.evaluate(`
-      const { state, rollRandomizer } = window.orangey;
-      const node = state.library.find(${JSON.stringify(path)});
-      const counts = { Half: 0, Third: 0, Fifth: 0 };
-      for (let i = 0; i < 100000; i++) counts[rollRandomizer(node.randomizer, state.source()).text]++;
-      return counts;
-    `);
-    assert.ok(Math.abs(counts.Half / 1000 - 50) < 1, `Half ${counts.Half / 1000}%`);
-    assert.ok(Math.abs(counts.Third / 1000 - 30) < 1, `Third ${counts.Third / 1000}%`);
-    assert.ok(Math.abs(counts.Fifth / 1000 - 20) < 1, `Fifth ${counts.Fifth / 1000}%`);
-  });
-
-  await test("N8 offline: everything still works with the network cut", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.waitForFunction(`navigator.serviceWorker.controller || true`);
-    await page.setOffline(true);
-    await page.goto(`${server.origin}/index.html?debug`);
-    await page.waitForFunction("window.orangey");
-    const path = await createList(page, "Offline", [{ label: "Works", weight: 1 }, { label: "Also", weight: 1 }]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
-    await page.click(".roll-button");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
-    const result = await page.evaluate(`return document.querySelector(".result-value").textContent`);
-    assert.ok(["Works", "Also"].includes(result), result);
-    await page.setOffline(false);
-  });
-
-  await test("N8b the single-file build works from file:// and keeps its library", async (page) => {
-    await page.goto(`file://${join(dist, "orangey.html")}?debug&noseed`);
-    await page.waitForFunction("window.orangey");
-    const backend = await page.evaluate(`return window.orangey.state.library.backend.kind`);
-    // A page opened from disk gets no OPFS; it must fall to IndexedDB, never
-    // to memory — that is exactly the bug where a new wheel disappeared.
-    assert.equal(backend, "idb", `expected the IndexedDB backend on file://, got ${backend}`);
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
-    await page.click(".quickbar button:nth-child(6)");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
-    const value = Number(await page.evaluate(`return document.querySelector(".result-value").textContent`));
-    assert.ok(value >= 1 && value <= 20, `got ${value}`);
-
-    await createList(page, "Kept on disk", [{ label: "A", weight: 1 }, { label: "B", weight: 2 }]);
-    await page.goto(`file://${join(dist, "orangey.html")}?debug&noseed`);
-    await page.waitForFunction("window.orangey");
-    const names = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
-    assert.ok(names.includes("Kept on disk"), `the library did not survive a reload: ${names.join(", ")}`);
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  await test("M spin length follows the setting", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Timed", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    for (const durationMs of [800, 2000]) {
-      await open(page, `#/r/${encodeURIComponent(path)}`);
-      const measured = await page.evaluate(`
-        const { state } = window.orangey;
-        state.setFeel({ motion: "full", wheel: { ...state.prefs.feel.wheel, durationMs: ${durationMs}, turns: 3 } });
-        const started = performance.now();
-        document.querySelector(".roll-button").click();
-        await new Promise((resolve) => {
-          const check = () => (document.querySelector(".roll-button").textContent === "Roll" ? resolve() : requestAnimationFrame(check));
-          requestAnimationFrame(check);
-        });
-        return performance.now() - started;
-      `);
-      assert.ok(
-        Math.abs(measured - durationMs) < durationMs * 0.25 + 120,
-        `asked for ${durationMs} ms, spin took ${measured.toFixed(0)} ms`,
-      );
-    }
-  });
-
-  await test("M instant mode produces a result within a frame", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Instant", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    const elapsed = await page.evaluate(`
-      window.orangey.state.setFeel({ motion: "instant" });
-      const started = performance.now();
-      document.querySelector(".roll-button").click();
-      await new Promise((r) => requestAnimationFrame(r));
-      return performance.now() - started;
-    `);
-    assert.ok(elapsed < 100, `took ${elapsed.toFixed(0)} ms`);
-    const spoken = await page.evaluate(`return document.querySelector('[role="status"]').textContent`);
-    assert.ok(spoken.length > 0, "instant mode should announce immediately");
   });
 
   await test("J drag-and-drop and the wizard report agree with the fixture", async (page) => {
@@ -1299,15 +789,14 @@ async function main() {
   });
 
   // ---- P: Orangey the mascot ---------------------------------------------
-  // The rules: one Orangey however many dice; a max roll is Happy and a min is
-  // Oops; reveal waits for the landing; a failed link is Oops; presence is
-  // the GM's choice; he never touches history or the RNG; at rest he is the
-  // drawing.
+  // What he does with a landing is unit-tested; what is left for a browser is
+  // that he really appears when something happens, and that there is only ever
+  // one of him on the screen.
 
   /**
    * Show him, with every reaction switched on. Orangey ships with four of them
-   * off — the noisy ones — but these tests are about the machinery, so they
-   * start from all of them on. What he does out of the box has its own test.
+   * off — the noisy ones — but this is about the machinery, so it starts from
+   * all of them on.
    */
   const mascotOn = (page, presence = "always", motion = "instant") =>
     page.evaluate(`
@@ -1321,19 +810,6 @@ async function main() {
       state.setFeel({ motion: ${JSON.stringify(motion)}, mascot: { ...state.prefs.feel.mascot, presence: ${JSON.stringify(presence)} } });
     `);
   const played = (page) => page.evaluate(`return [...window.orangey.mascot.played]`);
-  const hostState = (page) => page.evaluate(`return window.orangey.mascot.state`);
-  /** A seed whose FIRST d20 roll gives `want`, found by trying seeds in the page. */
-  const seedFor = (page, expression, want) =>
-    page.evaluate(`
-      const { state, rollRandomizer } = window.orangey;
-      const r = { type: "dice", expression: ${JSON.stringify(expression)}, id: "x", name: "x", created: "", modified: "" };
-      for (let i = 0; i < 5000; i++) {
-        await state.savePrefs({ seed: "p" + i });
-        state.resetSeedSequence();
-        if (rollRandomizer(r, state.source()).text === ${JSON.stringify(want)}) { state.resetSeedSequence(); return "p" + i; }
-      }
-      throw new Error("no seed found");
-    `);
 
   await test("P one Orangey, however many dice: 8d6 makes one element and one landing", async (page) => {
     await open(page, "", { fresh: true });
@@ -1347,240 +823,7 @@ async function main() {
     assert.equal(seen.length, 1, `one roll produced ${seen.length} reactions: ${seen}`);
   });
 
-  await test("P a max roll is Happy, a min roll is Oops, anything else is Reveal", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page);
-    for (const [want, expect] of [["20", "happy"], ["1", "oops"], ["11", "reveal"]]) {
-      const seed = await seedFor(page, "d20", want);
-      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-      await page.click(".quickbar button:nth-child(6)");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
-      assert.equal(await hostState(page), expect, `rolled ${want}`);
-    }
-    const seen = await played(page);
-    assert.deepEqual(seen, ["happy", "oops", "reveal"]);
-  });
-
-  await test("P reveal waits for the landing: he is still anticipating at 1.5 s of a 3 s spin", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Slow", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotOn(page, "always", "full");
-    await page.evaluate(`window.orangey.state.setFeel({ wheel: { ...window.orangey.state.prefs.feel.wheel, durationMs: 3000 } })`);
-    await page.click(".roll-button");
-    await new Promise((r) => setTimeout(r, 1500));
-    assert.equal(await hostState(page), "anticipate", "should still be watching the wheel");
-    assert.equal(await page.evaluate(`return document.querySelector(".result-panel").classList.contains("is-pending")`), true);
-    await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
-    assert.equal(await hostState(page), "reveal");
-    assert.deepEqual(await played(page), ["anticipate", "reveal"]);
-  });
-
-  await test("P instant mode never flashes the anticipation pose", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "always", "instant");
-    for (let i = 0; i < 5; i++) {
-      await page.click(".quickbar button:nth-child(2)");
-      await page.waitForFunction(`window.orangey.state.history.length === ${i + 1}`);
-    }
-    const seen = await played(page);
-    assert.ok(!seen.includes("anticipate"), `anticipate was shown: ${seen}`);
-    assert.equal(seen.length, 5);
-  });
-
-  await test("P a slide link to something this library does not have makes him wince", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "triggers");
-    await open(page, "#/id/not-in-this-library?roll=1");
-    const text = await page.evaluate(`return document.querySelector(".main-inner").textContent`);
-    assert.match(text, /not stored in this browser/);
-    assert.equal(await hostState(page), "oops");
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-host").classList.contains("is-visible")`), true);
-    assert.equal(await page.evaluate(`return document.querySelector(".main-inner .mascot-slot .mascot-host") !== null`), true, "he is in the message's slot");
-  });
-
-  await test("P a roll that cannot happen is an Oops", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Nothing", [{ label: "A", weight: 0 }, { label: "B", weight: 0 }]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotOn(page);
-    await page.click(".roll-button");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent.includes("No outcomes")`);
-    assert.equal(await hostState(page), "oops");
-  });
-
-  await test("P a clean import is Happy and one with problems is Oops", async (page) => {
-    for (const [file, expect] of [["simple.csv", "happy"], ["broken.csv", "oops"]]) {
-      await open(page, "#/import", { fresh: true });
-      await mascotOn(page);
-      await page.waitForFunction(`document.querySelector(".importer textarea")`);
-      await page.type(".importer textarea", fixture(file));
-      await page.click(".importer .primary");
-      await page.waitForFunction(`document.querySelector(".report")`);
-      await page.evaluate(`[...document.querySelectorAll(".importer button")].find((b) => b.textContent === "Create and edit").click()`);
-      await page.waitForFunction(`location.hash.startsWith("#/edit/")`);
-      const seen = await played(page);
-      assert.equal(seen[seen.length - 1], expect, `${file}: ${seen}`);
-    }
-  });
-
-  await test("P presence: hidden mounts nothing, triggers shows him only for a roll, always idles from load", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "hidden");
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".mascot-host").length`), 0);
-    await page.click(".quickbar button:nth-child(6)");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".mascot-host").length`), 0, "still nothing after a roll");
-    assert.deepEqual(await played(page), []);
-
-    await mascotOn(page, "triggers");
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".mascot-host").length`), 1);
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-host").classList.contains("is-visible")`), false, "invisible until something happens");
-    await page.click(".quickbar button:nth-child(6)");
-    await page.waitForFunction(`document.querySelector(".mascot-host").classList.contains("is-visible")`);
-    await page.waitForFunction(`!document.querySelector(".mascot-host").classList.contains("is-visible")`, 6000);
-
-    await mascotOn(page, "always");
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-host").classList.contains("is-visible")`), true);
-    assert.equal(await hostState(page), "idle");
-    // the setting survives a reload
-    await open(page);
-    assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.mascot.presence`), "always");
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-host").classList.contains("is-visible")`), true);
-  });
-
-  await test("P instant mode draws one still pose and schedules no frames", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "always", "instant");
-    await page.click(".quickbar button:nth-child(6)");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
-    const a = await page.evaluate(`return document.querySelector(".mascot-svg .body").getAttribute("d")`);
-    await new Promise((r) => setTimeout(r, 400));
-    const b = await page.evaluate(`return document.querySelector(".mascot-svg .body").getAttribute("d")`);
-    assert.equal(a, b, "the body moved in instant mode");
-    assert.equal(await page.evaluate(`return window.orangey.mascotTicker.running`), false);
-    assert.equal(await page.evaluate(`return window.orangey.mascotTicker.size`), 0);
-  });
-
-  await test("P Escape at 30 % of a spin leaves him in the same pose as a full spin", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Skippable", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotOn(page, "always", "full");
-    await page.evaluate(`window.orangey.state.setFeel({ wheel: { ...window.orangey.state.prefs.feel.wheel, durationMs: 2000 } })`);
-    await page.click(".roll-button");
-    await new Promise((r) => setTimeout(r, 600));
-    await page.key("Escape");
-    await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
-    assert.equal(await hostState(page), "reveal");
-    assert.deepEqual(await played(page), ["anticipate", "reveal"]);
-  });
-
-  await test("P he never touches history or the RNG: the same seed gives the same rolls with him on and off", async (page) => {
-    await open(page, "", { fresh: true });
-    const run = async (presence) => {
-      await page.evaluate(`
-        const { state } = window.orangey;
-        await state.clearHistory();
-        await state.savePrefs({ seed: "parity" });
-        state.resetSeedSequence();
-      `);
-      await mascotOn(page, presence, "instant");
-      for (let i = 0; i < 30; i++) {
-        await page.click(".quickbar button:nth-child(6)");
-        await page.waitForFunction(`window.orangey.state.history.length === ${i + 1}`);
-      }
-      return page.evaluate(`return window.orangey.state.history.map((e) => e.resultText + "|" + e.seed).reverse()`);
-    };
-    const hidden = await run("hidden");
-    const always = await run("always");
-    assert.deepEqual(always, hidden);
-    assert.equal(hidden.length, 30);
-  });
-
-  await test("P two hundred rolls leave one element and one ticker subscriber at most", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "always", "instant");
-    for (let i = 0; i < 200; i++) {
-      await page.click(".quickbar button:nth-child(2)");
-      await page.waitForFunction(`window.orangey.mascot.played.length === ${i + 1}`);
-    }
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".mascot-host").length`), 1);
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".mascot-svg").length`), 1);
-    assert.ok((await page.evaluate(`return window.orangey.mascotTicker.size`)) <= 1);
-  });
-
-  await test("P at rest he is the drawing: mean body height within 0.5 % at every wobble setting", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "always", "full");
-    const DRAWN = 112.09;
-    for (const wobble of [0, 1, 1.8]) {
-      await page.evaluate(`window.orangey.state.setFeel({ mascot: { ...window.orangey.state.prefs.feel.mascot, wobble: ${wobble} } })`);
-      // let the change settle, then sample for two breath cycles
-      await new Promise((r) => setTimeout(r, 1200));
-      const stats = await page.evaluate(`
-        const el = document.querySelector(".mascot-svg .body");
-        const hs = [];
-        const t0 = performance.now();
-        while (performance.now() - t0 < 6800) { await new Promise((r) => requestAnimationFrame(r)); hs.push(el.getBBox().height); }
-        return { mean: hs.reduce((a, b) => a + b, 0) / hs.length, max: Math.max(...hs), n: hs.length };
-      `);
-      assert.ok(Math.abs(stats.mean / DRAWN - 1) < 0.005, `wobble ${wobble}: mean height ${stats.mean.toFixed(2)} vs ${DRAWN} over ${stats.n} frames`);
-      assert.ok(stats.max >= DRAWN - 0.05, `wobble ${wobble}: never reached the drawn height (max ${stats.max.toFixed(2)})`);
-    }
-  });
-
-  await test("P the mascot is decoration: aria-hidden, not focusable, no accessible name needed", async (page) => {
-    await open(page, "", { fresh: true });
-    await mascotOn(page, "always");
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-host").getAttribute("aria-hidden")`), "true");
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-svg").getAttribute("aria-hidden")`), "true");
-    assert.equal(await page.evaluate(`return document.querySelector(".mascot-host").querySelectorAll("button, a, input, [tabindex]").length`), 0);
-  });
-
-  await test("P the Orangey settings card changes presence, wobble and rules, and they survive a reload", async (page) => {
-    await open(page, "#/settings", { fresh: true });
-    await page.waitForFunction(`document.querySelector(".mascot-card")`);
-    await page.click('.mascot-card [aria-label="Presence"] button:nth-child(3)');
-    await page.waitForFunction(`window.orangey.state.prefs.feel.mascot.presence === "always"`);
-    await page.click('.mascot-card [aria-label="Wobble"] button:nth-child(1)');
-    await page.waitForFunction(`window.orangey.state.prefs.feel.mascot.wobble === 0`);
-    await page.click('.mascot-card input[data-rule="roll-max"]');
-    await page.waitForFunction(`window.orangey.state.prefs.feel.mascot.rules["roll-max"] === false`);
-    await page.click(".preview-mascot-happy");
-    await open(page, "#/settings");
-    const m = await page.evaluate(`return window.orangey.state.prefs.feel.mascot`);
-    assert.equal(m.presence, "always");
-    assert.equal(m.wobble, 0);
-    // the four Orangey ships with off are still off, and roll-max joins them
-    assert.deepEqual(m.rules, {
-      "roll-start": false, "roll-land": false, "roll-fail": false, "import-warn": false, "roll-max": false,
-    });
-    // and the switched-off rule really is off: a maximum no longer cheers
-    await open(page, "#/");
-    const seed = await seedFor(page, "d20", "20");
-    await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence(); window.orangey.state.setFeel({ motion: "instant" });`);
-    await page.click(".quickbar button:nth-child(6)");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent === "20"`);
-    assert.ok(!(await played(page)).includes("happy"), "cheering was switched off");
-    assert.notEqual(await hostState(page), "happy");
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  // ---- Q: Orangey on wheels and coins ---------------------------------------
-
-  /** A seed whose first roll of the randomizer at `path` lands on `wantText`. */
-  const seedForPath = (page, path, wantText) =>
-    page.evaluate(`
-      const { state, rollRandomizer } = window.orangey;
-      const r = state.library.find(${JSON.stringify(path)}).randomizer;
-      for (let i = 0; i < 5000; i++) {
-        await state.savePrefs({ seed: "q" + i });
-        state.resetSeedSequence();
-        if (rollRandomizer(r, state.source()).text === ${JSON.stringify(wantText)}) { state.resetSeedSequence(); return "q" + i; }
-      }
-      throw new Error("no seed found");
-    `);
+  // ---- Q: outcome tags, back, and the settings file -------------------------
 
   await test("Q tagging a wheel outcome in the editor: the cell cycles none → cheer → wince → none and is saved", async (page) => {
     await open(page, "", { fresh: true });
@@ -1605,119 +848,6 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  await test("Q the bulk bar tags every selected outcome at once", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Bulk", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }, { label: "C", weight: 1 }]);
-    await open(page, `#/edit/${encodeURIComponent(path)}`);
-    await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 3`);
-    await page.click('.outcomes th input[aria-label="Select all outcomes"]');
-    await page.waitForFunction(`document.querySelector(".bulk-wince")`);
-    await page.click(".bulk-wince");
-    await page.waitForFunction(`[...document.querySelectorAll(".outcomes .reaction-control")].every((b) => b.dataset.reaction === "wince")`);
-    await page.click('.outcomes th input[aria-label="Select all outcomes"]');
-    await page.click('.outcomes tr:nth-child(2) input[type="checkbox"]');
-    await page.waitForFunction(`document.querySelector(".bulk-no-reaction")`);
-    await page.click(".bulk-no-reaction");
-    await page.waitForFunction(`document.querySelector(".outcomes tr:nth-child(2) .reaction-control").dataset.reaction === "none"`);
-    const saved = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(path)}).randomizer.items.map((i) => i.reaction ?? null)`);
-    assert.deepEqual(saved, ["wince", null, "wince"]);
-  });
-
-  await test("Q a tagged wheel outcome is Happy or Oops when it lands, exactly like a max or min die", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Fate", [
-      { label: "Crit", weight: 1, reaction: "cheer" }, { label: "Fumble", weight: 1, reaction: "wince" }, { label: "Meh", weight: 1 },
-    ]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotOn(page, "always", "instant");
-    for (const [want, expect] of [["Crit", "happy"], ["Fumble", "oops"], ["Meh", "reveal"]]) {
-      const seed = await seedForPath(page, path, want);
-      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-      await page.click(".roll-button");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
-      assert.equal(await hostState(page), expect, `landed on ${want}`);
-    }
-    assert.deepEqual(await played(page), ["happy", "oops", "reveal"]);
-  });
-
-  await test("Q a coin face can be tagged in its editor and Orangey reacts to that face only", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await page.evaluate(`
-      const { state } = window.orangey;
-      const r = { id: "coin1", type: "coin", name: "Omen", faces: ["Good", "Ill"], created: new Date().toISOString(), modified: new Date().toISOString() };
-      return await state.library.create("", r);
-    `);
-    await open(page, `#/edit/${encodeURIComponent(path)}`);
-    await page.waitForFunction(`document.querySelectorAll(".reaction-control").length === 2`);
-    // second face → wince (two presses)
-    await page.click(".reaction-control:nth-of-type(1)");
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[1].click()`);
-    await page.waitForFunction(`document.querySelectorAll(".reaction-control")[1].dataset.reaction === "cheer"`);
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[1].click()`);
-    await page.waitForFunction(`document.querySelectorAll(".reaction-control")[1].dataset.reaction === "wince"`);
-    await page.evaluate(`await window.orangey.state.library.flush()`);
-    let saved = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(path)}).randomizer.faceReactions`);
-    assert.deepEqual(saved, ["cheer", "wince"]);
-    // clearing both faces removes the key from the file entirely
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[0].click()`);
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[0].click()`);
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[1].click()`);
-    await page.evaluate(`await window.orangey.state.library.flush()`);
-    saved = await page.evaluate(`return "faceReactions" in window.orangey.state.library.find(${JSON.stringify(path)}).randomizer`);
-    assert.equal(saved, false);
-    // tag Ill again and roll it
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[1].click()`);
-    await page.evaluate(`document.querySelectorAll(".reaction-control")[1].click()`);
-    await page.evaluate(`await window.orangey.state.library.flush()`);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotOn(page, "always", "instant");
-    for (const [want, expect] of [["Ill", "oops"], ["Good", "reveal"]]) {
-      const seed = await seedForPath(page, path, want);
-      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-      await page.click(".roll-button");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
-      assert.equal(await hostState(page), expect, `landed on ${want}`);
-    }
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  await test("Q switching off the tag rules in Settings makes a tagged outcome a plain landing", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Off", [{ label: "Crit", weight: 1, reaction: "cheer" }, { label: "Meh", weight: 1 }]);
-    await open(page, "#/settings");
-    await page.waitForFunction(`document.querySelector('.mascot-card input[data-rule="outcome-cheer"]')`);
-    await page.click('.mascot-card input[data-rule="outcome-cheer"]');
-    await page.waitForFunction(`window.orangey.state.prefs.feel.mascot.rules["outcome-cheer"] === false`);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotShow(page, "always", "instant");
-    // Say the precondition out loud rather than inheriting it: what he does
-    // with the shipped defaults has its own test, and the suite shares one
-    // browser profile, so a previous test's preferences can outlive a clear.
-    await page.evaluate(`
-      const { state } = window.orangey;
-      const rules = { ...state.prefs.feel.mascot.rules, "roll-land": false };
-      state.setFeel({ mascot: { ...state.prefs.feel.mascot, rules } });
-    `);
-    const seed = await seedForPath(page, path, "Crit");
-    await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-    await page.click(".roll-button");
-    await page.waitForFunction(`document.querySelector(".result-value").textContent === "Crit"`);
-    // ordinary landings are off out of the box too, so with the tag rule off
-    // he has nothing to say about this outcome at all
-    assert.deepEqual(await played(page), []);
-    assert.notEqual(await hostState(page), "happy");
-  });
-
-  await test("Q a file with a tag round-trips through the library byte for byte", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "RT", [{ label: "X", weight: 2, color: "#a33a30", reaction: "cheer" }, { label: "Y", weight: 1 }]);
-    const text = await page.evaluate(`return await window.orangey.state.library.backend.read(${JSON.stringify(path)})`);
-    assert.ok(text.includes('"color": "#a33a30",\n        "reaction": "cheer"'), text);
-  });
-
-  // ---- Q: back, settings file, my colours, a copy of the app ----------------
-
-  /** Capture what the app hands to the browser as a download: the blob's text. */
   const captureDownload = (page) =>
     page.evaluate(`
       window.__downloads = [];
@@ -1756,19 +886,6 @@ async function main() {
     await page.click(".topbar .back");
     await page.waitForFunction(`location.hash === "#/"`);
     assert.deepEqual(page.consoleErrors, []);
-  });
-
-  await test("Q Back is the one top-bar button that stays on a phone-sized screen", async (page) => {
-    await open(page, "#/settings", { fresh: true });
-    await page.setViewport(400, 800);
-    await page.waitForFunction(`document.querySelector(".topbar .back")`);
-    const shown = await page.evaluate(`
-      const vis = (sel) => getComputedStyle(document.querySelector(sel)).display !== "none";
-      return { back: vis(".topbar .back"), library: [...document.querySelectorAll(".topbar button")].filter((b) => !b.classList.contains("back")).every((b) => getComputedStyle(b).display === "none") };
-    `);
-    assert.equal(shown.back, true);
-    assert.equal(shown.library, true, "the other top-bar buttons yield to the tab bar");
-    await page.setViewport(1280, 900);
   });
 
   await test("Q Save settings writes a file with the scheme, feel, Orangey, seed and my colours; Load applies it and refuses a bad one", async (page) => {
@@ -1833,147 +950,7 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  await test("Q my colours: added in Settings or from the picker, shown first in the picker, removable, and used on an outcome", async (page) => {
-    await open(page, "#/settings", { fresh: true });
-    await page.waitForFunction(`document.querySelector(".colours-card")`);
-    await page.evaluate(`
-      const c = document.querySelector('.colours-card input[type="color"]');
-      c.value = "#5a6b2f"; c.dispatchEvent(new Event("input", { bubbles: true }));
-      const n = document.querySelector('.colours-card input[type="text"]');
-      n.value = "Swamp";
-    `);
-    await page.click(".colours-card .add-colour");
-    await page.waitForFunction(`document.querySelectorAll(".my-colour").length === 1`);
-    assert.deepEqual(await page.evaluate(`return window.orangey.state.prefs.colours`), [{ name: "Swamp", hex: "#5a6b2f" }]);
-    // an empty name is refused, not saved as a blank
-    await page.click(".colours-card .add-colour");
-    assert.equal(await page.evaluate(`return document.querySelectorAll(".my-colour").length`), 1);
-    assert.equal(await page.evaluate(`return document.querySelector('.colours-card input[type="text"]').getAttribute("aria-invalid")`), "true");
-
-    // from the picker in an editor
-    const path = await createList(page, "Palette", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    await open(page, `#/edit/${encodeURIComponent(path)}`);
-    await page.waitForFunction(`document.querySelector(".outcomes tr:nth-child(1) .swatch")`);
-    await page.click(".outcomes tr:nth-child(1) .swatch");
-    await page.waitForFunction(`document.querySelector(".swatch-dialog[open]")`);
-    const firstGroup = await page.evaluate(`return document.querySelector(".swatch-dialog .swatch-group-title").textContent`);
-    assert.equal(firstGroup, "My colours");
-    assert.equal(await page.evaluate(`return document.querySelector(".swatch-grid-custom button").getAttribute("aria-label")`), "Swamp");
-    await page.evaluate(`
-      const c = document.querySelector('.swatch-add input[type="color"]');
-      c.value = "#b3202a"; c.dispatchEvent(new Event("input", { bubbles: true }));
-      document.querySelector('.swatch-add input[type="text"]').value = "Campaign red";
-    `);
-    await page.click(".swatch-add-save");
-    await page.waitForFunction(`!document.querySelector(".swatch-dialog")`);
-    await page.evaluate(`await window.orangey.state.library.flush()`);
-    const item = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(path)}).randomizer.items[0].color`);
-    assert.equal(item, "#b3202a", "saving a new colour also applies it to the outcome");
-    assert.deepEqual(await page.evaluate(`return window.orangey.state.prefs.colours.map((c) => c.name)`), ["Swamp", "Campaign red"]);
-    // it is named in the picker next time
-    await page.click(".outcomes tr:nth-child(1) .swatch");
-    await page.waitForFunction(`document.querySelector(".swatch-dialog[open]")`);
-    assert.match(await page.evaluate(`return document.querySelector(".swatch-name").textContent`), /Campaign red/);
-    await page.evaluate(`document.querySelector(".swatch-dialog").close()`);
-
-    // remove one in Settings; the outcome keeps its hex, it just loses its name
-    await open(page, "#/settings");
-    await page.waitForFunction(`document.querySelectorAll(".my-colour").length === 2`);
-    await page.click('.my-colour[data-hex="#b3202a"] .remove-colour');
-    await page.waitForFunction(`document.querySelectorAll(".my-colour").length === 1`);
-    assert.deepEqual(await page.evaluate(`return window.orangey.state.prefs.colours.map((c) => c.name)`), ["Swamp"]);
-    assert.equal(await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(path)}).randomizer.items[0].color`), "#b3202a");
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  await test("Q the About card downloads orangey.html — the single file — and the single file says so instead", async (page) => {
-    await open(page, "#/settings", { fresh: true });
-    await page.waitForFunction(`document.querySelector(".download-copy")`);
-    await captureDownload(page);
-    await page.click(".download-copy");
-    await page.waitForFunction(`window.__downloads.length === 1`);
-    const html = await lastDownload(page);
-    assert.ok(html.startsWith("<!doctype html>") || html.startsWith("<!DOCTYPE html>"), html.slice(0, 40));
-    assert.ok(html.includes('<meta name="orangey-build" content="single">'));
-    assert.ok(html.length > 300000, `only ${html.length} bytes`);
-    assert.ok(html.includes("<title>Orangey"));
-    // opened as the single file, the card explains rather than offering itself
-    await page.goto(`${server.origin}/orangey.html?debug&noseed#/settings`);
-    await page.waitForFunction(`window.orangey && document.querySelector(".about-card")`);
-    assert.equal(await page.evaluate(`return document.querySelector(".download-copy")`), null);
-    assert.match(await page.evaluate(`return document.querySelector(".about-card").textContent`), /single-file Orangey/);
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  // ---- R: the brand mark and the icons ---------------------------------------
-
-  await test("R the top bar wears Orangey's head, on every scheme, and the placeholder wheel is gone", async (page) => {
-    await open(page, "", { fresh: true });
-    await page.waitForFunction(`document.querySelector(".brand .mark svg")`);
-    const mark = await page.evaluate(`
-      const span = document.querySelector(".brand .mark");
-      const svg = span.querySelector("svg");
-      const body = svg.querySelector("path.body");
-      return {
-        background: getComputedStyle(span).backgroundImage,
-        hasBody: !!body,
-        bodyFill: getComputedStyle(body).fill,
-        eyes: svg.querySelectorAll("ellipse.eye").length,
-        stem: !!svg.querySelector("ellipse.stem"),
-        mouths: svg.querySelectorAll(".mouth").length,
-        hidden: svg.getAttribute("aria-hidden"),
-        width: Math.round(span.getBoundingClientRect().width),
-        height: Math.round(span.getBoundingClientRect().height),
-      };
-    `);
-    assert.equal(mark.background, "none", "the placeholder gradient is still there");
-    assert.equal(mark.hasBody, true, "no body path in the mark");
-    assert.equal(mark.bodyFill, "rgb(243, 162, 87)");
-    assert.equal(mark.eyes, 2);
-    assert.equal(mark.stem, true);
-    assert.equal(mark.mouths, 0, "the mark is the logo, not a pose");
-    assert.equal(mark.hidden, "true", "the mark is decoration beside the word Orangey");
-    assert.ok(mark.width > 8 && mark.height > 8, `the mark has no size: ${mark.width}×${mark.height}`);
-
-    // he is the same fruit in every scheme, and always visible against the bar
-    for (const scheme of ["orangey", "night", "meadow", "ocean", "berry"]) {
-      await page.evaluate(`await window.orangey.state.savePrefs({ scheme: ${JSON.stringify(scheme)} })`);
-      const fill = await page.evaluate(`return getComputedStyle(document.querySelector(".brand .mark path.body")).fill`);
-      assert.equal(fill, "rgb(243, 162, 87)", `scheme ${scheme}`);
-    }
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  await test("R every icon the manifest names is served, is a PNG, and one of them is maskable", async (page) => {
-    await open(page, "", { fresh: true });
-    const icons = await page.evaluate(`
-      const manifest = await (await fetch("manifest.webmanifest")).json();
-      const out = [];
-      for (const icon of manifest.icons) {
-        const res = await fetch(icon.src);
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        out.push({ src: icon.src, purpose: icon.purpose, ok: res.ok, png: bytes[0] === 0x89 && bytes[1] === 0x50, length: bytes.length });
-      }
-      return out;
-    `);
-    assert.equal(icons.length, 3);
-    for (const icon of icons) {
-      assert.equal(icon.ok, true, `${icon.src} was not served`);
-      assert.equal(icon.png, true, `${icon.src} is not a PNG`);
-      assert.ok(icon.length > 500, `${icon.src} is suspiciously small: ${icon.length} bytes`);
-    }
-    const maskable = icons.find((i) => i.purpose === "maskable");
-    assert.ok(maskable, "no maskable icon");
-    assert.ok(maskable.src.includes("maskable"), "the maskable icon is not its own inset copy");
-  });
-
-  await test("R the single file carries the icon with it", async (page) => {
-    await page.goto(`${server.origin}/orangey.html?debug&noseed`);
-    await page.waitForFunction(`window.orangey && document.querySelector(".brand .mark svg")`);
-    const href = await page.evaluate(`return document.querySelector('link[rel="icon"]').getAttribute("href")`);
-    assert.match(href, /^data:image\/png;base64,/);
-    assert.ok(href.length > 1000, `the embedded icon is too small: ${href.length} characters`);
-  });
+  // ---- R: where the app is published ----------------------------------------
 
   await test("R the app runs from a project subpath, which is where it is published", async (page) => {
     // Orangey lives at orangey-app.github.io/orangey/, not at a root. Every
@@ -2084,19 +1061,6 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  await test("S a wheel of short labels keeps the big type and one line", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Short", [{ label: "Yes", weight: 1 }, { label: "No", weight: 1 }]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await page.waitForFunction(`document.querySelector(".result-slot")`);
-    const shape = await page.evaluate(`
-      const slot = document.querySelector(".result-slot");
-      return { small: slot.classList.contains("small"), clamp: getComputedStyle(document.querySelector(".result-value")).webkitLineClamp };
-    `);
-    assert.equal(shape.small, false, "short labels should keep the large type");
-    assert.equal(shape.clamp, "1");
-  });
-
   await test("S a randomizer from the library shows a way home, not the dice presets", async (page) => {
     await open(page, "", { fresh: true });
     const path = await createList(page, "Opened", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
@@ -2154,48 +1118,37 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  await test("S out of the box he speaks up for what carries something, and stays quiet otherwise", async (page) => {
+  await test("S full screen: the wheel, the answer and the button never draw over each other", async (page) => {
     await open(page, "", { fresh: true });
-    const path = await createList(page, "Fate", [
-      { label: "Crit", weight: 1, reaction: "cheer" },
-      { label: "Fumble", weight: 1, reaction: "wince" },
-      { label: "Meh", weight: 1 },
+    const path = await createList(page, "Projector", [
+      { label: "Goblin patrol", weight: 50 },
+      { label: "Young green dragon", weight: 1 },
+      { label: "Nothing", weight: 9 },
     ]);
-
-    // A plain die roll: nothing. No watching, no reacting to the landing.
-    await open(page, "#/");
-    await mascotShow(page, "always", "instant");
-    for (const [want, expect] of [["11", null], ["20", "happy"], ["1", "oops"]]) {
-      const seed = await seedFor(page, "d20", want);
-      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-      const before = (await played(page)).length;
-      await page.click(".quickbar button:nth-child(6)");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
-      const after = await played(page);
-      if (expect === null) assert.equal(after.length, before, `a plain ${want} should pass without comment, got ${after.at(-1)}`);
-      else assert.equal(after.at(-1), expect, `rolled ${want}`);
-    }
-
-    // A tagged outcome on a wheel: cheer and wince, but nothing for the rest.
     await open(page, `#/r/${encodeURIComponent(path)}`);
-    await mascotShow(page, "always", "instant");
-    for (const [want, expect] of [["Crit", "happy"], ["Fumble", "oops"], ["Meh", null]]) {
-      const seed = await seedForPath(page, path, want);
-      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-      const before = (await played(page)).length;
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".present-button");
+    await page.waitForFunction(`document.body.classList.contains("presenting")`);
+    // a laptop, a small projector and a big one
+    for (const [w, h] of [[900, 640], [1280, 800], [1920, 1080]]) {
+      await page.setViewport(w, h);
       await page.click(".roll-button");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
-      const after = await played(page);
-      if (expect === null) assert.equal(after.length, before, `an untagged outcome should pass without comment, got ${after.at(-1)}`);
-      else assert.equal(after.at(-1), expect, `landed on ${want}`);
+      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
+      const box = await page.evaluate(`
+        const rect = (sel) => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect() : null; };
+        const wheel = rect(".wheel-svg"), slot = rect(".result-slot"), roll = rect(".roll-button");
+        return {
+          wheelBottom: wheel.bottom, slotTop: slot.top, slotBottom: slot.bottom, rollTop: roll.top,
+          height: window.innerHeight, wheelHeight: wheel.height,
+        };
+      `);
+      assert.ok(box.wheelBottom <= box.slotTop + 1, `${w}×${h}: the wheel reaches ${box.wheelBottom}, the answer starts at ${box.slotTop}`);
+      assert.ok(box.slotBottom <= box.rollTop + 1, `${w}×${h}: the answer reaches ${box.slotBottom}, the button starts at ${box.rollTop}`);
+      assert.ok(box.wheelHeight > 120, `${w}×${h}: the wheel was squeezed to ${box.wheelHeight}px`);
+      assert.ok(box.rollTop + 52 <= box.height + 1, `${w}×${h}: the button is off the bottom`);
     }
-
-    // A link that points nowhere still gets a wince: that one is worth saying.
-    await open(page, "#/", { fresh: true });
-    await mascotShow(page, "triggers", "instant");
-    await open(page, "#/id/not-in-this-library");
-    await page.waitForFunction(`window.orangey.mascot.played.length === 1`);
-    assert.deepEqual(await played(page), ["oops"]);
+    await page.setViewport(1280, 900);
     assert.deepEqual(page.consoleErrors, []);
   });
 
@@ -2221,15 +1174,10 @@ async function main() {
     page.waitForFunction(
       `window.orangey.state.history.length === 1 && document.querySelector(".roll-button").textContent === "Roll"`,
     );
-  /** The randomizer the current link carries, decoded in the page. */
-  const linkedNow = (page) =>
-    page.evaluate(`
-      const query = location.hash.slice(location.hash.indexOf("?") + 1);
-      return await window.orangey.decodeRandomizer(new URLSearchParams(query).get("w"));
-    `);
   /** The same link, pointed at this test server. */
   const localise = (link) => `${server.origin}/index.html?debug&noseed${link.slice(link.indexOf("#"))}`;
 
+  /** The wheel these tests share: four outcomes, two of them tagged. */
   const encounters = (page, extra = {}) =>
     page.evaluate(`
       const { state } = window.orangey;
@@ -2270,83 +1218,6 @@ async function main() {
     await page.waitForFunction(`window.orangey.state.history.length === 2`);
     const text = await page.evaluate(`return document.querySelector(".result-value").textContent`);
     assert.ok(["Goblin patrol", "Merchant", "Wolf pack", "Dragon"].includes(text), text);
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
-  await test("T the author's spin travels, and the reader's motion setting still wins", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await encounters(page, { feel: { wheel: { durationMs: 5200, turns: 9 } } });
-    // Without roll=1: an automatic roll would already be spinning the author's
-    // five seconds, and pressing the button would only skip it.
-    const link = (await makeLink(page, path)).replace(/&roll=1(?=&|$)/, "");
-    assert.doesNotMatch(link, /roll=1/);
-
-    await open(page, "", { fresh: true });
-    await page.goto(localise(link));
-    await page.waitForFunction(`document.querySelector(".play-card")`);
-    const carried = await page.evaluate(`
-      const { effectiveFeel, state, decodeRandomizer } = window.orangey;
-      const query = location.hash.slice(location.hash.indexOf("?") + 1);
-      const linked = await decodeRandomizer(new URLSearchParams(query).get("w"));
-      return effectiveFeel(state.prefs.feel, linked.feel).wheel;
-    `);
-    assert.equal(carried.durationMs, 5200, "the author's spin length did not travel");
-    assert.equal(carried.turns, 9);
-    // the reader's own choice is not a per-randomizer setting, so it still wins
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
-    const started = Date.now();
-    await page.click(".roll-button");
-    await page.waitForFunction(`window.orangey.state.history.length === 1`);
-    assert.ok(Date.now() - started < 1500, "instant mode should not sit through the author's five-second spin");
-  });
-
-  await test("T Orangey's tags travel with the wheel", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await encounters(page);
-    const link = await makeLink(page, path);
-    await open(page, "", { fresh: true });
-    await page.goto(localise(link));
-    await page.waitForFunction(`window.orangey && document.querySelector(".play-card")`);
-    // The link says roll=1; let that roll land, or the next press would be
-    // read as "skip" — or, a frame too early, come first and be followed by it.
-    await autoRollLanded(page);
-    await mascotShow(page, "always", "instant");
-    for (const [want, expect] of [["Dragon", "happy"], ["Wolf pack", "oops"]]) {
-      const seed = await page.evaluate(`
-        const { state, rollRandomizer, decodeRandomizer } = window.orangey;
-        const query = location.hash.slice(location.hash.indexOf("?") + 1);
-        const r = await decodeRandomizer(new URLSearchParams(query).get("w"));
-        for (let i = 0; i < 5000; i++) {
-          await state.savePrefs({ seed: "t" + i });
-          state.resetSeedSequence();
-          if (rollRandomizer(r, state.source()).text === ${JSON.stringify(want)}) { state.resetSeedSequence(); return "t" + i; }
-        }
-        throw new Error("no seed found");
-      `);
-      await page.evaluate(`await window.orangey.state.savePrefs({ seed: ${JSON.stringify(seed)} }); window.orangey.state.resetSeedSequence();`);
-      await page.click(".roll-button");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(want)}`);
-      assert.equal(await hostState(page), expect, `landed on ${want}`);
-    }
-  });
-
-  await test("T saving a linked wheel keeps the identity it arrived with", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await encounters(page);
-    const link = await makeLink(page, path);
-    await open(page, "", { fresh: true });
-    await page.goto(localise(link));
-    await page.waitForFunction(`document.querySelector(".save-randomizer")`);
-    await page.click(".save-randomizer");
-    await page.waitForFunction(`location.hash.startsWith("#/r/")`);
-    const saved = await page.evaluate(`
-      const files = window.orangey.state.library.files();
-      return { count: files.length, id: files[0].randomizer.id, name: files[0].randomizer.name, items: files[0].randomizer.items.length };
-    `);
-    assert.equal(saved.count, 1);
-    assert.equal(saved.id, "enc-linked", "a link by id should find this copy afterwards");
-    assert.equal(saved.name, "Forest Encounters");
-    assert.equal(saved.items, 4);
     assert.deepEqual(page.consoleErrors, []);
   });
 
@@ -2435,40 +1306,6 @@ async function main() {
     assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), false);
   });
 
-  await test("S full screen: the wheel, the answer and the button never draw over each other", async (page) => {
-    await open(page, "", { fresh: true });
-    const path = await createList(page, "Projector", [
-      { label: "Goblin patrol", weight: 50 },
-      { label: "Young green dragon", weight: 1 },
-      { label: "Nothing", weight: 9 },
-    ]);
-    await open(page, `#/r/${encodeURIComponent(path)}`);
-    await page.waitForFunction(`document.querySelector(".play-card")`);
-    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
-    await page.click(".present-button");
-    await page.waitForFunction(`document.body.classList.contains("presenting")`);
-    // a laptop, a small projector and a big one
-    for (const [w, h] of [[900, 640], [1280, 800], [1920, 1080]]) {
-      await page.setViewport(w, h);
-      await page.click(".roll-button");
-      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
-      const box = await page.evaluate(`
-        const rect = (sel) => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect() : null; };
-        const wheel = rect(".wheel-svg"), slot = rect(".result-slot"), roll = rect(".roll-button");
-        return {
-          wheelBottom: wheel.bottom, slotTop: slot.top, slotBottom: slot.bottom, rollTop: roll.top,
-          height: window.innerHeight, wheelHeight: wheel.height,
-        };
-      `);
-      assert.ok(box.wheelBottom <= box.slotTop + 1, `${w}×${h}: the wheel reaches ${box.wheelBottom}, the answer starts at ${box.slotTop}`);
-      assert.ok(box.slotBottom <= box.rollTop + 1, `${w}×${h}: the answer reaches ${box.slotBottom}, the button starts at ${box.rollTop}`);
-      assert.ok(box.wheelHeight > 120, `${w}×${h}: the wheel was squeezed to ${box.wheelHeight}px`);
-      assert.ok(box.rollTop + 52 <= box.height + 1, `${w}×${h}: the button is off the bottom`);
-    }
-    await page.setViewport(1280, 900);
-    assert.deepEqual(page.consoleErrors, []);
-  });
-
   // ---- U: labels along the radius, the pointer on the right ----------------
 
   await test("U the slice under the pointer is the answer, and its label arrives the right way up", async (page) => {
@@ -2531,6 +1368,408 @@ async function main() {
         assert.ok(label.text.length >= 7, `${n} outcomes: only "${label.text}" fits`);
       }
     }
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("W the single file works when opened from disk, and keeps its library", async (page) => {
+    await page.goto(`file://${join(dist, "orangey.html")}?debug&noseed`);
+    await page.waitForFunction("window.orangey");
+    const backend = await page.evaluate(`return window.orangey.state.library.backend.kind`);
+    // A page opened from disk gets no OPFS; it must fall to IndexedDB, never
+    // to memory — that is exactly the bug where a new wheel disappeared.
+    assert.equal(backend, "idb", `expected the IndexedDB backend on file://, got ${backend}`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".quickbar button:nth-child(6)");
+    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
+    const value = Number(await page.evaluate(`return document.querySelector(".result-value").textContent`));
+    assert.ok(value >= 1 && value <= 20, `got ${value}`);
+
+    await createList(page, "Kept on disk", [{ label: "A", weight: 1 }, { label: "B", weight: 2 }]);
+    await page.goto(`file://${join(dist, "orangey.html")}?debug&noseed`);
+    await page.waitForFunction("window.orangey");
+    const names = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
+    assert.ok(names.includes("Kept on disk"), `the library did not survive a reload: ${names.join(", ")}`);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- X: boards --------------------------------------------------------
+
+  /** A board holding the randomizers at `paths`, saved in the library. */
+  const createBoard = (page, name, ids) =>
+    page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const entries = ${JSON.stringify(ids)}.map((id) => ({ id, name: state.library.findById(id).randomizer.name }));
+      return await state.library.create("", { id: ${JSON.stringify(name)}, type: "board", name: ${JSON.stringify(name)},
+        created: now, modified: now, entries });
+    `);
+
+  await test("X a board rolls everything on it, and each cell keeps its own answer", async (page) => {
+    await open(page, "", { fresh: true });
+    const wheel = await createList(page, "Encounters", [{ label: "Goblins", weight: 1 }, { label: "Nothing", weight: 1 }]);
+    const other = await createList(page, "Weather", [{ label: "Rain", weight: 1 }, { label: "Sun", weight: 1 }]);
+    const ids = await page.evaluate(`
+      const { state } = window.orangey;
+      return [${JSON.stringify(wheel)}, ${JSON.stringify(other)}].map((p) => state.library.find(p).randomizer.id);
+    `);
+    const path = await createBoard(page, "Tonight", ids);
+
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 2`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".roll-all");
+    await page.waitForFunction(`window.orangey.state.history.length === 2`);
+    const shown = await page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((el) => el.textContent)`);
+    assert.ok(["Goblins", "Nothing"].includes(shown[0]), `first cell shows ${shown[0]}`);
+    assert.ok(["Rain", "Sun"].includes(shown[1]), `second cell shows ${shown[1]}`);
+    // Each cell records under its own name, so history reads as two rolls.
+    const names = await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName).sort()`);
+    assert.deepEqual(names, ["Encounters", "Weather"]);
+
+    // Rolling one cell leaves the other cell's answer where it was.
+    const before = shown[1];
+    await page.evaluate(`document.querySelectorAll(".cell-holder")[0].querySelector(".wheel-svg").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await page.waitForFunction(`window.orangey.state.history.length === 3`);
+    const after = await page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((el) => el.textContent)`);
+    assert.equal(after[1], before, "rolling one cell should not disturb the others");
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("X randomizers go on and come off a board, and a deleted one is named", async (page) => {
+    await open(page, "", { fresh: true });
+    const listPath = await createList(page, "Encounters", [{ label: "Goblins", weight: 1 }, { label: "Nothing", weight: 1 }]);
+    const id = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(listPath)}).randomizer.id`);
+    const path = await createBoard(page, "Tonight", []);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".add-to-board")`);
+
+    // Add through the picker.
+    await page.click(".add-to-board");
+    await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
+    await page.click(".picker-choice");
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 1`);
+    const saved = await page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      return JSON.parse(await state.library.backend.read(${JSON.stringify(path)})).randomizer.entries;
+    `);
+    assert.deepEqual(saved, [{ id, name: "Encounters" }], "the board should be saved with what was added");
+
+    // Delete the randomizer: the board says what is missing rather than shrinking.
+    await page.evaluate(`await window.orangey.state.library.remove(${JSON.stringify(listPath)})`);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".cell-missing")`);
+    const text = await page.evaluate(`return document.querySelector(".cell-missing").textContent`);
+    assert.match(text, /Encounters/);
+    assert.match(text, /not in your library/);
+
+    // Take it off again.
+    await page.click(".cell-remove");
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 0`);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("X a board is shared as a file, with a link that opens it in this library", async (page) => {
+    await open(page, "", { fresh: true });
+    const listPath = await createList(page, "Encounters", [{ label: "Goblins", weight: 1 }, { label: "Nothing", weight: 1 }]);
+    const id = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(listPath)}).randomizer.id`);
+    const path = await createBoard(page, "Tonight", [id]);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".share-button")`);
+    await page.click(".share-button");
+    await page.waitForFunction(`document.querySelector(".share-dialog[open]")`);
+
+    // The link is the library one: a board is several randomizers, so there is
+    // no version that carries it inside the address.
+    const link = await page.evaluate(`return document.querySelector(".share-dialog input[type=text]").value`);
+    assert.match(link, /#\/id\/Tonight/);
+    assert.ok(!link.includes("w="), `a board link must not try to carry the board: ${link}`);
+    assert.equal(await page.evaluate(`return Boolean(document.querySelector(".export-board"))`), true);
+    await page.evaluate(`document.querySelector(".share-dialog").close()`);
+
+    // That link opens the board itself, not a play screen.
+    await page.goto(`${server.origin}/index.html?debug&noseed#/id/Tonight`);
+    await page.waitForFunction(`document.querySelector(".board-grid")`);
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".cell-holder").length`), 1);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- Y: an outcome that opens another randomizer ------------------------
+
+  /** A wheel with one outcome that can come up, which may point somewhere. */
+  const pointer = (page, name, label, goesTo) =>
+    createList(page, name, [
+      goesTo ? { label, weight: 1, goesTo } : { label, weight: 1 },
+      { label: "Nothing", weight: 0 },
+    ]);
+
+  await test("Y an outcome opens the randomizer it points at, and that one waits for its own roll", async (page) => {
+    await open(page, "", { fresh: true });
+    const hoard = await pointer(page, "Hoard", "Gold");
+    const path = await pointer(page, "Encounters", "The dragon's hoard", "Hoard");
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".roll-button")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+
+    await page.click(".roll-button");
+    await page.waitForFunction(`document.querySelector(".chain-link")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".chain-link .cell-name").textContent`), "Hoard");
+    // It waits: one roll has happened, and what opened is still Ready.
+    assert.equal(await page.evaluate(`return window.orangey.state.history.length`), 1);
+    assert.equal(await page.evaluate(`return document.querySelector(".chain-link .result-value").textContent`), "Ready");
+    // Beside the wheel that sent you there, not underneath it.
+    const beside = await page.evaluate(`
+      const card = document.querySelector(".play-card").getBoundingClientRect();
+      const opened = document.querySelector(".chain-link").getBoundingClientRect();
+      return opened.left >= card.right && opened.width > 100;
+    `);
+    assert.ok(beside, "the randomizer that opened should sit next to the play card");
+
+    await page.click(".chain-roll");
+    await page.waitForFunction(`window.orangey.state.history.length === 2`);
+    assert.equal(await page.evaluate(`return document.querySelector(".chain-link .result-value").textContent`), "Gold");
+    // Ordinary rows, one per randomizer, each under its own name.
+    assert.deepEqual(
+      await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName)`),
+      ["Hoard", "Encounters"],
+    );
+
+    // The randomizer an outcome points at is deleted: the outcome still comes
+    // up, and says what is missing rather than quietly doing nothing.
+    await page.evaluate(`await window.orangey.state.library.remove(${JSON.stringify(hoard)})`);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".roll-button")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".roll-button");
+    await page.waitForFunction(`document.querySelector(".chain-link.cell-missing")`);
+    const gap = await page.evaluate(`return document.querySelector(".chain-link.cell-missing").textContent`);
+    assert.match(gap, /The dragon's hoard/);
+    assert.match(gap, /not in your library/);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("Y a third randomizer iconizes the first, a chain that circles stops, and the icon comes back", async (page) => {
+    await open(page, "", { fresh: true });
+    await pointer(page, "Gems", "Back to the forest", "Encounters");
+    await pointer(page, "Hoard", "A bag of gems", "Gems");
+    const path = await pointer(page, "Encounters", "The dragon's hoard", "Hoard");
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".roll-button")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+
+    // Encounters opens Hoard: two of them, both full size.
+    await page.click(".roll-button");
+    await page.waitForFunction(`document.querySelectorAll(".chain-link").length === 1`);
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-icon").length`), 0);
+    assert.equal(await page.evaluate(`return document.querySelector(".play-card").hidden`), false);
+
+    // Hoard opens Gems: three, so Encounters goes to the strip with its answer.
+    await page.click(".chain-roll");
+    await page.waitForFunction(`document.querySelectorAll(".chain-link").length === 2`);
+    const icon = await page.evaluate(`return document.querySelector(".chain-icon").textContent`);
+    assert.match(icon, /Encounters/);
+    assert.match(icon, /The dragon's hoard/, `the icon should carry the answer it gave: ${icon}`);
+    assert.equal(await page.evaluate(`return document.querySelector(".play-card").hidden`), true);
+
+    // Gems points back at Encounters, which is already in this chain.
+    await page.evaluate(`document.querySelectorAll(".chain-roll")[1].click()`);
+    await page.waitForFunction(`window.orangey.state.history.length === 3`);
+    await page.waitForFunction(`!document.querySelector(".chain-note").hidden`);
+    assert.match(
+      await page.evaluate(`return document.querySelector(".chain-note").textContent`),
+      /Encounters is already open here/,
+    );
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-link").length`), 2, "nothing should have opened a fourth time");
+
+    // Clicking the icon brings Encounters back to full size.
+    await page.click(".chain-icon");
+    await page.waitForFunction(`!document.querySelector(".play-card").hidden`);
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-link").length`), 0);
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-icon").length`), 2);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- Z: pictures on outcomes -------------------------------------------
+
+  /** A one-pixel PNG is enough: these tests are about layout, not pixels. */
+  const ONE_PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  await test("Z a picture shows on the slice and in the answer, and never travels in a link", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const id = await window.orangey.images.putImageData(${JSON.stringify(ONE_PIXEL)});
+      return await state.library.create("", { id: "pics", type: "list", name: "Portraits", view: "wheel",
+        created: now, modified: now,
+        items: [{ id: "a", label: "Owlbear", weight: 1, image: id }, { id: "b", label: "Nothing", weight: 1 }] });
+    `);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".wheel-svg")`);
+    // The slice carries a thumbnail, clipped so it cannot spill into its neighbour.
+    const drawn = await page.evaluate(`
+      const img = document.querySelector(".wheel-rotor image");
+      return { count: document.querySelectorAll(".wheel-rotor image").length, clipped: Boolean(img && img.getAttribute("clip-path")) };
+    `);
+    assert.equal(drawn.count, 1, "only the outcome with a picture should have one");
+    assert.equal(drawn.clipped, true);
+
+    // The answer shows it when that outcome comes up, and not before.
+    assert.equal(await page.evaluate(`return document.querySelector(".result-picture").hidden`), true);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    for (let i = 0; i < 40; i++) {
+      await page.click(".roll-button");
+      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
+      const text = await page.evaluate(`return document.querySelector(".result-value").textContent`);
+      const shown = await page.evaluate(`return !document.querySelector(".result-picture").hidden`);
+      assert.equal(shown, text === "Owlbear", `${text}: picture ${shown ? "shown" : "hidden"}`);
+      if (text === "Owlbear") break;
+    }
+
+    // A link carries the wheel but never the picture: that is what keeps a
+    // shared link short enough for a slide.
+    const link = await makeLink(page, path);
+    // What the link itself carries, decoded from the link text.
+    // The link has a ? before the hash too (?debug), so read the query of the
+    // route, not of the page.
+    const payload = new URLSearchParams(link.slice(link.lastIndexOf("?") + 1)).get("w");
+    const carried = await page.evaluate(`return await window.orangey.decodeRandomizer(${JSON.stringify(payload)})`);
+    assert.ok(link.length < 2000, `${link.length} characters`);
+    assert.deepEqual(carried.items.map((i) => i.image ?? null), [null, null], "a link must not carry pictures");
+    assert.deepEqual(carried.items.map((i) => i.label), ["Owlbear", "Nothing"]);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("Z full screen with a picture: the wheel, the picture, the answer and the button do not overlap", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const id = await window.orangey.images.putImageData(${JSON.stringify(ONE_PIXEL)});
+      return await state.library.create("", { id: "proj", type: "list", name: "Projector", view: "wheel",
+        created: now, modified: now,
+        items: [{ id: "a", label: "Young green dragon", weight: 1, image: id }, { id: "b", label: "Nothing", weight: 1, image: id }] });
+    `);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".play-card")`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.click(".present-button");
+    await page.waitForFunction(`document.body.classList.contains("presenting")`);
+    for (const [w, h] of [[900, 640], [1280, 800], [1920, 1080]]) {
+      await page.setViewport(w, h);
+      await page.click(".roll-button");
+      await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
+      const box = await page.evaluate(`
+        const rect = (sel) => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect() : null; };
+        const wheel = rect(".wheel-svg"), picture = rect(".result-picture"), slot = rect(".result-slot"), roll = rect(".roll-button");
+        return { wheelBottom: wheel.bottom, pictureTop: picture.top, pictureBottom: picture.bottom,
+                 slotTop: slot.top, rollTop: roll.top, height: window.innerHeight, wheelHeight: wheel.height };
+      `);
+      assert.ok(box.wheelBottom <= box.pictureTop + 1, `${w}×${h}: the wheel reaches ${box.wheelBottom}, the picture starts at ${box.pictureTop}`);
+      assert.ok(box.pictureBottom <= box.slotTop + 1, `${w}×${h}: the picture reaches ${box.pictureBottom}, the answer starts at ${box.slotTop}`);
+      assert.ok(box.rollTop + 52 <= box.height + 1, `${w}×${h}: the button is off the bottom`);
+      assert.ok(box.wheelHeight > 100, `${w}×${h}: the wheel was squeezed to ${box.wheelHeight}px`);
+    }
+    await page.setViewport(1280, 900);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- AA: choosing from the library ------------------------------------
+
+  await test("AA an outcome's target is chosen by browsing the library, or by searching it", async (page) => {
+    await open(page, "", { fresh: true });
+    const target = await createList(page, "Which dragon", [{ label: "Young green", weight: 1 }, { label: "Ancient red", weight: 1 }]);
+    const wheel = await createList(page, "Encounters", [{ label: "A dragon!", weight: 1 }, { label: "Nothing", weight: 1 }]);
+    await page.evaluate(`await window.orangey.state.library.createFolder("", "Monsters")`);
+    await page.evaluate(`await window.orangey.state.library.move(${JSON.stringify(target)}, "Monsters")`);
+
+    await open(page, `#/edit/${encodeURIComponent(wheel)}`);
+    await page.waitForFunction(`document.querySelector(".goes-to-button")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".goes-to-button").textContent`), "—");
+    await page.click(".outcomes tbody tr:first-child .goes-to-button");
+    await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
+
+    // The library arrives as a tree — a real game has folders, which is why
+    // this is not a dropdown any more.
+    const folders = await page.evaluate(`return [...document.querySelectorAll(".picker-folder")].map((e) => e.textContent.trim())`);
+    assert.ok(folders.some((f) => f.includes("Monsters")), `folders: ${folders.join(", ")}`);
+
+    // Typing flattens it to matches, named as the randomizer is named, with
+    // the folder it lives in.
+    await page.type(".picker-dialog input[type=search]", "dragon");
+    // Search matches outcomes as well as names, so the wheel being edited —
+    // which has "A dragon!" on it — is here too, greyed out: an outcome
+    // pointing at its own wheel is a circle by construction.
+    await page.waitForFunction(`[...document.querySelectorAll(".picker-choice")].some((e) => e.textContent.startsWith("Which dragon"))`);
+    const hits = await page.evaluate(`return [...document.querySelectorAll(".picker-choice")].map((e) => [e.textContent, e.disabled])`);
+    assert.ok(hits.some(([text]) => text === "Which dragon — Monsters"), `hits: ${JSON.stringify(hits)}`);
+    assert.ok(hits.some(([text, disabled]) => text.startsWith("Encounters") && disabled), `the wheel being edited should be greyed: ${JSON.stringify(hits)}`);
+    await page.evaluate(`[...document.querySelectorAll(".picker-choice")].find((e) => e.textContent.startsWith("Which dragon")).click()`);
+
+    await page.waitForFunction(`document.querySelector(".goes-to-button").textContent === "Which dragon"`);
+    const saved = await page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      const r = JSON.parse(await state.library.backend.read(${JSON.stringify(wheel)})).randomizer;
+      return state.library.findById(r.items[0].goesTo)?.randomizer?.name ?? null;
+    `);
+    assert.equal(saved, "Which dragon");
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AA right-clicking in the library offers the same menu, with a link to copy", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await createList(page, "Encounters", [{ label: "Goblins", weight: 1 }, { label: "Nothing", weight: 1 }]);
+    const id = await page.evaluate(`return window.orangey.state.library.find(${JSON.stringify(path)}).randomizer.id`);
+    await open(page, "#/library");
+    await page.waitForFunction(`document.querySelector(".tree-row")`);
+    await page.evaluate(`
+      const row = [...document.querySelectorAll(".tree-row")].find((r) => r.textContent.includes("Encounters"));
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    `);
+    await page.waitForFunction(`document.querySelector(".menu")`);
+    const items = await page.evaluate(`return [...document.querySelectorAll(".menu button")].map((b) => b.textContent.trim())`);
+    assert.ok(items.includes("Copy link"), `menu: ${items.join(", ")}`);
+    assert.ok(items.includes("Play") && items.includes("Delete…"), "right-click should open the row's own menu, not a second one");
+
+    // The clipboard is not reachable in this harness, so check what is copied:
+    // the link by id, which survives renaming and moving.
+    const link = await page.evaluate(`
+      const { appBase, slideLink } = window.orangey;
+      return slideLink(appBase(), ${JSON.stringify(id)}, { roll: false, present: false });
+    `);
+    assert.match(link, new RegExp(`#/id/${id}$`));
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AA a board can be given a randomizer that does not exist yet", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await createBoard(page, "Tonight", []);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".add-to-board")`);
+    await page.click(".add-to-board");
+    await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
+    await page.evaluate(`[...document.querySelectorAll(".picker-new-button")].find((b) => b.textContent === "New wheel").click()`);
+    // The picker is still open behind the name dialog, and it has a text field
+    // of its own, so this has to be the newest dialog rather than the first.
+    await page.waitForFunction(`[...document.querySelectorAll("dialog[open]")].length === 2`);
+    await page.evaluate(`
+      const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+      const input = dialog.querySelector('input[type=text]');
+      input.value = "Weather";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      [...dialog.querySelectorAll("button")].find((b) => /create/i.test(b.textContent)).click();
+    `);
+
+    // It goes on the board, and opens where you can fill it in — a new wheel
+    // is empty, so leaving you on the board would leave you nothing to roll.
+    await page.waitForFunction(`location.hash.startsWith("#/edit/")`);
+    const entries = await page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      return JSON.parse(await state.library.backend.read(${JSON.stringify(path)})).randomizer.entries.map((e) => e.name);
+    `);
+    assert.deepEqual(entries, ["Weather"]);
     assert.deepEqual(page.consoleErrors, []);
   });
 

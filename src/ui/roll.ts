@@ -27,6 +27,8 @@ export interface Outcome {
   seed?: string;
   /** For lists: which outcome came up. */
   itemIndex?: number;
+  /** The picture the winning outcome carries, when it has one. */
+  image?: string;
   dice?: RollResult;
   side?: 0 | 1;
   numbers?: number[];
@@ -38,6 +40,10 @@ export interface Outcome {
 
 export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
   switch (r.type) {
+    case "board":
+      // A board has no outcome of its own: the board screen rolls what is on
+      // it, one randomizer at a time, and each records its own history row.
+      throw new Error("a board is rolled one randomizer at a time");
     case "list":
       return rollList(r, rng);
     case "dice": {
@@ -94,11 +100,13 @@ function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
     speak: `${r.name}: ${item.label}. Probability ${pct}.`,
     seed: rng.seed,
     itemIndex: index,
+    image: item.image,
     reaction: item.reaction,
   };
 }
 
 export function whyCannotRoll(r: Randomizer): string | null {
+  if (r.type === "board") return r.entries.length ? null : "This board has nothing on it yet.";
   if (r.type !== "list") return null;
   if (r.items.length === 0) return "This randomizer has no outcomes yet.";
   if (!r.items.some((i) => !i.disabled && i.weight > 0)) {
@@ -131,6 +139,9 @@ export function longestOutcome(r: Randomizer): string {
       const widest = longest([width(r.min), width(r.max)]);
       return Array.from({ length: Math.max(1, Math.min(r.count, 100)) }, () => widest).join(", ");
     }
+    case "board":
+      // Each cell on a board sizes its own panel from its own randomizer.
+      return "";
     case "dice": {
       // The bounds come from the expression, so one throwaway roll on its own
       // source tells us them without touching the app's sequence or history.

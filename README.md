@@ -11,6 +11,29 @@ you can copy, share, back up or keep in Git.
 
 ![Wireframe dice: d4 through d100 at rest, each showing its value](docs/screenshot-dice.png)
 
+![A board: three randomizers side by side, each with its own answer](docs/screenshot-board.png)
+
+![A wheel whose outcomes carry portraits, with one outcome opening another randomizer beside it](docs/screenshot-pictures.png)
+
+**Outcomes can carry pictures.** A portrait on an encounter shows as a
+thumbnail in its slice and fills the screen above the answer when it comes up.
+Pictures live beside your library rather than inside the randomizer's file, and
+they travel with an export — but never inside a shared link, which is what
+keeps links short.
+
+**An outcome can send you to another randomizer.** Set "Goes to" on an outcome
+and rolling it opens that randomizer beside the wheel, waiting for its own
+press. Chains keep the newest two in view and turn the rest into icons.
+
+**Boards** put several randomizers on one screen: an encounter table, the
+weather and an attack roll side by side, each with its own answer. Roll all
+spins everything at once, or click one to roll just that one. A board is a file
+in your library like anything else, and it points at your randomizers rather
+than copying them, so editing a table updates every board it is on. Share… on
+a board gives you a link that opens it here, and a download that packs the
+board together with everything on it — that archive is how a board goes to
+someone else.
+
 ## Try it
 
 **[orangey-app.github.io/orangey](https://orangey-app.github.io/orangey/)** —
@@ -182,16 +205,22 @@ readers as text, and nothing is conveyed by colour alone.
 
 ## Development
 
-No dependencies. Node 22.6 or newer, because the build uses Node's own
-TypeScript type stripping.
+The shipped app has no dependencies, and building it needs nothing but Node
+22.6 or newer, because the build uses Node's own TypeScript type stripping.
+The one dev dependency is TypeScript itself, used only by `npm run typecheck`.
 
 ```sh
 npm run check         # bundle, lint the rules the project depends on
+npm run typecheck     # tsc --strict over src/ (needs npm ci first)
 npm test              # unit tests (node --test)
 npm run build         # dist/ as a static site
-npm run build:single  # also dist/orangey.html, one self-contained file
+npm run build:single  # also orangey.html, one self-contained file, at the
+                      # repository root (committed) and in dist/
 npm run test:browser  # drive the built app in headless Chromium
 ```
+
+`check`, `test` and the builds need only Node, so a clean checkout can build
+the app without installing anything.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the layout, the rules the
 code depends on, and why there is no framework.

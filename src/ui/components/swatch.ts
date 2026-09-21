@@ -6,7 +6,7 @@
 import { chroma, hexToOklab, hueAngle, isHex } from "../../core/color.ts";
 import { PALETTE, type PaletteColor } from "../styles/palette.ts";
 import { MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS, type CustomColour } from "../../model/settings-file.ts";
-import { button, h } from "../dom.ts";
+import { appendChildren, button, h } from "../dom.ts";
 
 /**
  * The palette, grouped by hue and ordered light to dark within each group,
@@ -142,7 +142,8 @@ export function openSwatchPicker(anchor: HTMLElement, opts: SwatchPickerOptions)
     if (full) for (const c of addRow.querySelectorAll("input, button")) c.setAttribute("disabled", "");
   }
 
-  dialog.append(
+  appendChildren(
+    dialog,
     h("h2", { text: "Colour" }),
     nameOut,
     grid,

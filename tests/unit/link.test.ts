@@ -27,7 +27,7 @@ const wheel = (): ListRandomizer => ({
 });
 
 describe("a randomizer inside a link", () => {
-  test("round-trips a wheel with everything on it", async () => {
+  test("every kind of randomizer arrives on the other side unchanged", async () => {
     const before = wheel();
     const after = (await decodeRandomizer(await encodeRandomizer(before))) as ListRandomizer;
     assert.equal(after.name, before.name);
@@ -35,23 +35,26 @@ describe("a randomizer inside a link", () => {
     assert.equal(after.id, before.id, "the identity travels, so saving it can keep it");
     assert.equal(after.view, "wheel");
     assert.deepEqual(after.feel, before.feel, "the author's spin travels with the wheel");
-    assert.equal(after.items.length, 4);
     assert.deepEqual(
       after.items.map((i) => [i.label, i.weight, i.color ?? null, i.reaction ?? null, i.disabled ?? false]),
       before.items.map((i) => [i.label, i.weight, i.color ?? null, i.reaction ?? null, i.disabled ?? false]),
     );
-  });
 
-  test("round-trips dice, coins and number draws", async () => {
-    const cases: Randomizer[] = [
-      { ...emptyRandomizer("dice", "Attack"), expression: "4d6kh3+2" } as Randomizer,
-      { ...emptyRandomizer("coin", "Omen"), faces: ["Good", "Ill"], faceReactions: [null, "wince"] } as Randomizer,
-      { ...emptyRandomizer("number", "Roll under"), min: -5, max: 1000, integer: true, count: 3, unique: true } as Randomizer,
+    const cases: [string, Randomizer][] = [
+      ["a dice roller", { ...emptyRandomizer("dice", "Attack"), expression: "4d6kh3+2" } as Randomizer],
+      ["a coin with a tagged face", { ...emptyRandomizer("coin", "Omen"), faces: ["Good", "Ill"], faceReactions: [null, "wince"] } as Randomizer],
+      ["a number draw", { ...emptyRandomizer("number", "Roll under"), min: -5, max: 1000, integer: true, count: 3, unique: true } as Randomizer],
     ];
-    for (const before of cases) {
-      const after = await decodeRandomizer(await encodeRandomizer(before));
-      assert.equal(after.type, before.type);
-      assert.deepEqual({ ...after, created: "", modified: "" }, { ...before, created: "", modified: "" });
+    for (const [what, original] of cases) {
+      const back = await decodeRandomizer(await encodeRandomizer(original));
+      assert.deepEqual({ ...back, created: "", modified: "" }, { ...original, created: "", modified: "" }, what);
+    }
+
+    // The point of all of the above: the person who opens the link rolls the
+    // same randomizer, not one that merely looks like it.
+    for (let i = 0; i < 200; i++) {
+      const seed = `link${i}`;
+      assert.equal(rollRandomizer(after, new SeededSource(seed)).text, rollRandomizer(before, new SeededSource(seed)).text);
     }
   });
 
@@ -69,15 +72,6 @@ describe("a randomizer inside a link", () => {
     assert.ok(after.created && after.modified, "it becomes a randomizer of its own on arrival");
   });
 
-  test("it rolls the same wheel on the other side: same seed, same outcome", async () => {
-    const before = wheel();
-    const after = await decodeRandomizer(await encodeRandomizer(before));
-    for (let i = 0; i < 200; i++) {
-      const seed = `link${i}`;
-      assert.equal(rollRandomizer(after, new SeededSource(seed)).text, rollRandomizer(before, new SeededSource(seed)).text);
-    }
-  });
-
   test("a twenty-row encounter table fits comfortably in a link", async () => {
     const long: Randomizer = {
       ...(emptyRandomizer("list", "Twelve encounters") as ListRandomizer),
@@ -88,7 +82,14 @@ describe("a randomizer inside a link", () => {
     assert.ok(link.length < LINK_HARD_LIMIT);
   });
 
-  test("the link a dialog builds is the link the router reads", async () => {
+  test("nothing in the payload has to be escaped, so a deck cannot mangle it", async () => {
+    for (const name of ["Ünicode ✦ names", "commas, and & ampersands", "a/slash?and#hash"]) {
+      const r = { ...(emptyRandomizer("list", name) as ListRandomizer), items: [makeItem("x", 1)] } as Randomizer;
+      const payload = await encodeRandomizer(r);
+      assert.match(payload, /^[01][A-Za-z0-9_-]+$/, `payload needs escaping: ${payload.slice(0, 20)}`);
+      assert.equal((await decodeRandomizer(payload)).name, name);
+    }
+    // …and the link the dialog builds is the link the router reads back.
     const payload = await encodeRandomizer(wheel());
     const link = wheelLink("https://orangey-app.github.io/orangey/#/r/x", payload, { roll: true, present: false });
     const route = parseRoute(link.slice(link.indexOf("#")));
@@ -98,36 +99,22 @@ describe("a randomizer inside a link", () => {
     assert.equal((await decodeRandomizer(route.name === "linked" ? route.payload : "")).name, "Forest Encounters");
   });
 
-  test("nothing in the payload has to be escaped, so a deck cannot mangle it", async () => {
-    for (const name of ["Ünicode ✦ names", "commas, and & ampersands", "a/slash?and#hash"]) {
-      const r = { ...(emptyRandomizer("list", name) as ListRandomizer), items: [makeItem("x", 1)] } as Randomizer;
-      const payload = await encodeRandomizer(r);
-      assert.match(payload, /^[01][A-Za-z0-9_-]+$/, `payload needs escaping: ${payload.slice(0, 20)}`);
-      assert.equal((await decodeRandomizer(payload)).name, name);
-    }
-  });
-});
-
-describe("a link that did not survive", () => {
-  const refuse = async (payload: string, re: RegExp) => {
-    await assert.rejects(() => decodeRandomizer(payload), (e: unknown) => {
-      assert.ok(e instanceof ValidationError, `not a ValidationError: ${e}`);
-      assert.match(e.message, re);
-      return true;
-    });
-  };
-
-  test("empty, unknown marker, truncated, and not a randomizer — each says what is wrong", async () => {
-    await refuse("", /nothing after w=/);
-    await refuse("9abcdef", /newer Orangey/);
+  test("a link that did not survive says what is wrong with it", async () => {
+    const refuse = async (what: string, payload: string, re: RegExp) => {
+      await assert.rejects(() => decodeRandomizer(payload), (e: unknown) => {
+        assert.ok(e instanceof ValidationError, `${what}: not a ValidationError: ${e}`);
+        assert.match(e.message, re, what);
+        return true;
+      });
+    };
     const good = await encodeRandomizer(wheel());
-    await refuse(good.slice(0, Math.floor(good.length / 2)), /damaged/);
-    await refuse(`0${Buffer.from('{"nope":1}').toString("base64url")}`, /link\.type|link\.id|link\.name/);
-    await refuse(`0${Buffer.from("not json at all").toString("base64url")}`, /damaged/);
-  });
-
-  test("a wheel with no outcomes is refused rather than opened empty", async () => {
     const empty = { ...(emptyRandomizer("list", "Empty") as ListRandomizer), items: [] } as Randomizer;
-    await refuse(await encodeRandomizer(empty), /items/);
+    await refuse("nothing after w=", "", /nothing after w=/);
+    await refuse("a marker from a newer Orangey", "9abcdef", /newer Orangey/);
+    await refuse("a link a chat app cut in half", good.slice(0, Math.floor(good.length / 2)), /damaged/);
+    await refuse("json that is not a randomizer", `0${Buffer.from('{"nope":1}').toString("base64url")}`, /link\.type|link\.id|link\.name/);
+    await refuse("not json at all", `0${Buffer.from("not json at all").toString("base64url")}`, /damaged/);
+    // An empty wheel would open as a dead end rather than a randomizer.
+    await refuse("a wheel with no outcomes", await encodeRandomizer(empty), /items/);
   });
 });

@@ -28,9 +28,9 @@ export interface OrangeyFile {
 const RANDOMIZER_KEY_ORDER = [
   "id", "type", "name", "description", "tags", "view", "withoutReplacement",
   "expression", "faces", "faceReactions", "min", "max", "integer", "inclusiveMax", "count", "unique",
-  "feel", "created", "modified", "items",
+  "feel", "created", "modified", "items", "entries",
 ];
-const ITEM_KEY_ORDER = ["id", "label", "weight", "disabled", "description", "color", "reaction", "metadata"];
+const ITEM_KEY_ORDER = ["id", "label", "weight", "disabled", "description", "color", "reaction", "image", "goesTo", "metadata", "imageData"];
 
 function ordered(obj: Record<string, unknown>, order: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};

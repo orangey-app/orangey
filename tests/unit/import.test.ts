@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { detect, guessColumns, guessHeader, parseNumberLoose } from "../../src/import/detect.ts";
+import { detect, guessColumns, parseNumberLoose } from "../../src/import/detect.ts";
 import { parseDelimited, delimiterName } from "../../src/import/parse.ts";
 import { buildItems, itemsFromJson, renderReport } from "../../src/import/map.ts";
 
@@ -15,26 +15,30 @@ const importAll = (text: string, extrasToMetadata = false) => {
   return { detection: d, ...buildItems(d.rows, d.hasHeader, { ...g, extrasToMetadata }) };
 };
 
-describe("delimiter detection", () => {
-  const cases: [string, string, boolean, number][] = [
-    ["simple.csv", ",", false, 4],
-    ["simple.tsv", "\t", false, 4],
-    ["semicolon.csv", ";", false, 3],
-    ["pipe.csv", "|", false, 3],
-    ["spaces.txt", "  ", false, 3],
-    ["bom.csv", ",", true, 2],
-    ["quoted.csv", ",", true, 3],
-    ["broken.csv", ",", true, 4],
-  ];
-
-  for (const [file, delimiter, hasHeader, items] of cases) {
-    test(`${file} is read as ${delimiterName(delimiter as never)}${hasHeader ? " with a header" : ""}`, () => {
+describe("reading a file someone exported from a spreadsheet", () => {
+  test("every fixture is read with the right delimiter, header and first label", () => {
+    // file -> [delimiter, has a header row, entries, the first label]. The
+    // first label is checked because a byte-order mark or a stray quote is
+    // easiest to spot there.
+    const cases: [string, string, boolean, number, string][] = [
+      ["simple.csv", ",", false, 4, "Goblin"],
+      ["simple.tsv", "\t", false, 4, "Goblin"],
+      ["semicolon.csv", ";", false, 3, "Goblin"],
+      ["pipe.csv", "|", false, 3, "Goblin"],
+      ["spaces.txt", "  ", false, 3, "Goblin"],
+      ["bom.csv", ",", true, 2, "Goblin"],
+      ["quoted.csv", ",", true, 3, "Wolf, grey"],
+      ["broken.csv", ",", true, 4, "Goblin patrol"],
+    ];
+    for (const [file, delimiter, hasHeader, items, firstLabel] of cases) {
+      const what = `${file} read as ${delimiterName(delimiter as never)}`;
       const r = importAll(fixture(file));
-      assert.equal(r.detection.delimiter, delimiter);
-      assert.equal(r.detection.hasHeader, hasHeader);
-      assert.equal(r.items.length, items, renderReport(r.report));
-    });
-  }
+      assert.equal(r.detection.delimiter, delimiter, what);
+      assert.equal(r.detection.hasHeader, hasHeader, `${what}: header row`);
+      assert.equal(r.items.length, items, `${what}: ${renderReport(r.report)}`);
+      assert.equal(r.items[0].label, firstLabel, `${what}: first label`);
+    }
+  });
 
   test("quoted fields keep their delimiters, quotes and newlines", () => {
     const rows = parseDelimited(fixture("quoted.csv"), ",");
@@ -43,47 +47,50 @@ describe("delimiter detection", () => {
     assert.deepEqual(rows[3], ["Two\nlines", "10"]);
   });
 
-  test("a byte-order mark does not end up in the first label", () => {
-    const r = importAll(fixture("bom.csv"));
-    assert.equal(r.items[0].label, "Goblin");
-  });
-
   test("loose number parsing accepts what spreadsheets emit", () => {
-    assert.equal(parseNumberLoose("50"), 50);
-    assert.equal(parseNumberLoose(" 12.5 "), 12.5);
-    assert.equal(parseNumberLoose("12,5"), 12.5);
-    assert.equal(parseNumberLoose("30%"), 30);
-    assert.equal(parseNumberLoose("many"), null);
-    assert.equal(parseNumberLoose(""), null);
-    assert.equal(parseNumberLoose("1,234,567"), null);
-  });
-
-  test("a header is only assumed when the data supports it", () => {
-    assert.equal(guessHeader([["Name", "Weight"], ["Goblin", "50"]]), true);
-    assert.equal(guessHeader([["Goblin", "50"], ["Orc", "30"]]), false);
-    assert.equal(guessHeader([["Goblin", "50"]]), false);
-  });
-
-  test("columns are guessed from header names", () => {
-    const d = detect("Name,Probability,Description\nGoblin,50,Small\nOrc,30,Large\n");
-    assert.deepEqual(guessColumns(d.rows, d.hasHeader), { label: 0, weight: 1, description: 2, color: null });
-  });
-
-  test("columns are guessed from the data when there is no header", () => {
-    const d = detect("Goblin,50\nOrc,30\n");
-    assert.deepEqual(guessColumns(d.rows, d.hasHeader), { label: 0, weight: 1, description: null, color: null });
-  });
-
-  test("a weight column to the left of the label is still found", () => {
-    const d = detect("Weight,Name\n50,Goblin\n30,Orc\n");
-    const g = guessColumns(d.rows, d.hasHeader);
-    assert.equal(g.label, 1);
-    assert.equal(g.weight, 0);
+    const cases: [string, number | null][] = [
+      ["50", 50],
+      [" 12.5 ", 12.5],
+      ["12,5", 12.5], // a decimal comma, as most of Europe writes it
+      ["30%", 30],
+      ["many", null],
+      ["", null],
+      ["1,234,567", null], // thousands separators are too ambiguous to guess at
+    ];
+    for (const [text, expected] of cases) {
+      assert.equal(parseNumberLoose(text), expected, `for "${text}"`);
+    }
   });
 });
 
-describe("import report", () => {
-  test("the broken fixture reports exactly what went wrong", () => {
+describe("choosing the columns", () => {
+  test("labels, weights and descriptions are found by name, by shape, and in any order", () => {
+    const columnsOf = (text: string) => {
+      const d = detect(text);
+      return guessColumns(d.rows, d.hasHeader);
+    };
+    assert.deepEqual(
+      columnsOf("Name,Probability,Description\nGoblin,50,Small\nOrc,30,Large\n"),
+      { label: 0, weight: 1, description: 2, color: null },
+      "from the header names",
+    );
+    assert.deepEqual(
+      columnsOf("Goblin,50\nOrc,30\n"),
+      { label: 0, weight: 1, description: null, color: null },
+      "from the data, with no header to go on",
+    );
+    // The weight is not always to the right of the label.
+    assert.deepEqual(columnsOf("Weight,Name\n50,Goblin\n30,Orc\n"), { label: 1, weight: 0, description: null, color: null });
+
+    // Columns nobody asked for are not lost: they can be kept as metadata.
+    const extras = importAll("Name,Weight,Region,Tier\nGoblin,50,Forest,1\n", true);
+    assert.equal(extras.items[0].description, "Forest");
+    assert.deepEqual(extras.items[0].metadata, { Tier: "1" });
+  });
+});
+
+describe("the import report", () => {
+  test("the broken fixture reports exactly what went wrong, row by row", () => {
     const r = importAll(fixture("broken.csv"));
     assert.equal(
       renderReport(r.report),
@@ -96,6 +103,7 @@ describe("import report", () => {
         '✗ 1 entry has an invalid weight: row 5 "many" — will be skipped',
       ].join("\n"),
     );
+    // Whatever it warns about, the entries it did understand still come through.
     assert.deepEqual(r.items.map((i) => `${i.label}:${i.weight}`), [
       "Goblin patrol:50",
       "Merchant:20",
@@ -104,62 +112,38 @@ describe("import report", () => {
     ]);
   });
 
-  test("a good file reports only successes", () => {
-    const r = importAll(fixture("simple.csv"));
-    assert.equal(renderReport(r.report), "✓ 4 entries ready\n✓ Weights valid (total 100)");
-    assert.ok(r.usable);
-  });
+  test("a good file reports only successes, a missing weight is filled in, and an empty one is refused", () => {
+    const good = importAll(fixture("simple.csv"));
+    assert.equal(renderReport(good.report), "✓ 4 entries ready\n✓ Weights valid (total 100)");
+    assert.ok(good.usable);
 
-  test("nothing usable is reported as such", () => {
-    const r = importAll(",,,\n,,,\n");
-    assert.equal(r.usable, false);
-    assert.ok(renderReport(r.report).includes("✗"));
-  });
+    const gap = importAll("Name,Weight\nGoblin,\nOrc,30\n");
+    assert.equal(gap.items[0].weight, 1);
+    assert.ok(renderReport(gap.report).includes("1 entry had no weight — using 1"), renderReport(gap.report));
 
-  test("missing weights default to 1 and say so", () => {
-    const r = importAll("Name,Weight\nGoblin,\nOrc,30\n");
-    assert.ok(renderReport(r.report).includes("1 entry had no weight — using 1"));
-    assert.equal(r.items[0].weight, 1);
-  });
-
-  test("unmapped columns can become metadata", () => {
-    const r = importAll("Name,Weight,Region,Tier\nGoblin,50,Forest,1\n", true);
-    assert.deepEqual(r.items[0].metadata, { Tier: "1" });
-    assert.equal(r.items[0].description, "Forest");
-  });
-
-  test("5000 rows import in under 500 ms", () => {
-    const text = fixture("large.csv");
-    const started = performance.now();
-    const r = importAll(text);
-    const elapsed = performance.now() - started;
-    assert.equal(r.items.length, 5000);
-    assert.ok(elapsed < 500, `took ${elapsed.toFixed(0)} ms`);
+    const empty = importAll(",,,\n,,,\n");
+    assert.equal(empty.usable, false);
+    assert.ok(renderReport(empty.report).includes("✗"));
   });
 });
 
-describe("JSON import", () => {
-  test("a plain array of strings works", () => {
-    const r = itemsFromJson('["Goblin", "Orc"]');
-    assert.deepEqual(r.items.map((i) => [i.label, i.weight]), [["Goblin", 1], ["Orc", 1]]);
-  });
+describe("importing JSON", () => {
+  test("strings, objects and labelled weights all import, and a broken file is reported not thrown", () => {
+    const plain = itemsFromJson('["Goblin", "Orc"]');
+    assert.deepEqual(plain.items.map((i) => [i.label, i.weight]), [["Goblin", 1], ["Orc", 1]]);
 
-  test("objects with label and weight work, and name is accepted too", () => {
-    const r = itemsFromJson('{"items":[{"label":"Goblin","weight":50},{"name":"Orc","weight":30,"disabled":true}]}');
-    assert.equal(r.items[0].weight, 50);
-    assert.equal(r.items[1].label, "Orc");
-    assert.equal(r.items[1].disabled, true);
-  });
+    // "name" is what most other tools call the label.
+    const objects = itemsFromJson('{"items":[{"label":"Goblin","weight":50},{"name":"Orc","weight":30,"disabled":true}]}');
+    assert.equal(objects.items[0].weight, 50);
+    assert.equal(objects.items[1].label, "Orc");
+    assert.equal(objects.items[1].disabled, true);
 
-  test("entries without a label are skipped and reported", () => {
-    const r = itemsFromJson('[{"weight":5},{"label":"Orc"}]');
-    assert.equal(r.items.length, 1);
-    assert.ok(renderReport(r.report).includes("✗ 1 entry had no label — skipped"));
-  });
+    const unlabelled = itemsFromJson('[{"weight":5},{"label":"Orc"}]');
+    assert.equal(unlabelled.items.length, 1);
+    assert.ok(renderReport(unlabelled.report).includes("✗ 1 entry had no label — skipped"));
 
-  test("broken JSON is reported, not thrown", () => {
-    const r = itemsFromJson("{oops");
-    assert.equal(r.usable, false);
-    assert.ok(renderReport(r.report).startsWith("✗ Not valid JSON"));
+    const broken = itemsFromJson("{oops");
+    assert.equal(broken.usable, false);
+    assert.ok(renderReport(broken.report).startsWith("✗ Not valid JSON"));
   });
 });

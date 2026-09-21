@@ -3,10 +3,11 @@ import { state } from "./ui/state.ts";
 import { rollRandomizer } from "./ui/roll.ts";
 import { effectiveFeel } from "./ui/feel.ts";
 import { decodeRandomizer } from "./model/link.ts";
-import { navigate } from "./ui/router.ts";
+import { appBase, navigate, slideLink } from "./ui/router.ts";
 import { IndexedDbBackend } from "./storage/idb.ts";
 import { MemoryBackend } from "./storage/memory.ts";
 import { mascotTicker } from "./ui/mascot/ticker.ts";
+import { imageDataUrl, imageUrl, imageUrlSync, pruneImages, putImage, putImageData } from "./storage/images.ts";
 
 async function start(): Promise<void> {
   const root = document.getElementById("app");
@@ -31,9 +32,14 @@ async function start(): Promise<void> {
       effectiveFeel,
       decodeRandomizer,
       navigate,
+      appBase,
+      slideLink,
       backends: { IndexedDbBackend, MemoryBackend },
       mascot,
       mascotTicker,
+      // The image store, so a browser test can put a picture in without a
+      // file input. Behind ?debug like everything else here.
+      images: { putImage, putImageData, imageUrl, imageUrlSync, imageDataUrl, pruneImages },
     };
   }
 }

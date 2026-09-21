@@ -20,7 +20,19 @@ const IMPORT_RE = /^[ \t]*import\s+(?:([\s\S]*?)\s+from\s+)?["']([^"']+)["'];?[ 
 const EXPORT_LIST_RE = /^[ \t]*export\s*\{[^}]*\}\s*(?:from\s*["'][^"']+["'])?;?[ \t]*$/gm;
 const DECL_RE = /^(?:export\s+)?(?:async\s+)?(const|let|var|function|class)\s+([A-Za-z0-9_$]+)/gm;
 
-export function bundle(entryPath, { root = process.cwd() } = {}) {
+/** The bundled source, for `build.mjs`. */
+export function bundle(entryPath, options = {}) {
+  return bundleProgram(entryPath, options).code;
+}
+
+/**
+ * The bundled source plus the files that went into it, in load order.
+ *
+ * `check.mjs` needs the file list to tell a source file that nothing reaches
+ * from one that is simply new; `build.mjs` only wants the string, so `bundle`
+ * above keeps that shape.
+ */
+export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
   const entry = resolve(entryPath);
   const modules = new Map();
   const order = [];
@@ -81,7 +93,8 @@ export function bundle(entryPath, { root = process.cwd() } = {}) {
 
   load(entry);
 
-  return order
+  const code = order
     .map((file) => `\n// ---- ${relative(root, file)} ${"-".repeat(Math.max(0, 60 - relative(root, file).length))}\n${modules.get(file).trim()}\n`)
     .join("");
+  return { code, files: order.slice() };
 }

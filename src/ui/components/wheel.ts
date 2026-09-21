@@ -31,6 +31,7 @@ import type { ListItem } from "../../model/randomizer.ts";
 import { SEGMENT_POOL } from "../styles/palette.ts";
 import { easeSpin, motionScale, overshootFraction, settleForSpin, wheelDuration, type FeelSettings } from "../feel.ts";
 import { h, s, setChildren } from "../dom.ts";
+import { imageUrl, imageUrlSync } from "../../storage/images.ts";
 
 export const LABEL_LIMIT = 48;
 export const TICKER_LIMIT = 200;
@@ -137,6 +138,46 @@ export function createWheel(opts: WheelOptions): WheelView {
       });
     });
 
+    // A picture on an outcome is drawn inside its slice, clipped to the wedge,
+    // so a wheel of portraits can be recognised at a glance. The label stays:
+    // a thumbnail this small says "an owlbear", not which owlbear.
+    const pictures = segments.flatMap((seg) => {
+      const item = items[seg.index];
+      if (!item?.image) return [];
+      const url = imageUrlSync(item.image);
+      if (!url) {
+        void imageUrl(item.image).then(() => refresh());
+        return [];
+      }
+      const span = seg.endAngle - seg.startAngle;
+      if (span < 12) return [];
+      const key = `${opts.id()}-${seg.index}`.replace(/[^a-zA-Z0-9_-]/g, "");
+      const [cxImg, cyImg] = pointOnCircle(cx, cy, radius * 0.62, seg.midAngle);
+      const side = Math.min(radius * 0.40, 2 * radius * 0.62 * Math.sin((span * Math.PI) / 360) * 0.85);
+      // A round medallion, and the slice clipped around it: a square would
+      // read as a sticker laid on the wheel, and a picture that reached the
+      // edges would take the label's contrast with it.
+      return [
+        s("clipPath", { id: `slice-${key}` }, s("path", { d: arcPath(seg, cx, cy, radius) })),
+        s("clipPath", { id: `disc-${key}` }, s("circle", { cx: String(cxImg), cy: String(cyImg), r: String(side / 2) })),
+        s("g", { "clip-path": `url(#slice-${key})` },
+          s("image", {
+            href: url,
+            x: String(cxImg - side / 2),
+            y: String(cyImg - side / 2),
+            width: String(side),
+            height: String(side),
+            preserveAspectRatio: "xMidYMid slice",
+            "clip-path": `url(#disc-${key})`,
+          }),
+          s("circle", {
+            cx: String(cxImg), cy: String(cyImg), r: String(side / 2),
+            fill: "none", stroke: "var(--bg-raised)", "stroke-width": "1.5", "clip-path": `url(#disc-${key})`,
+          }),
+        ),
+      ];
+    });
+
     const labels = showLabels
       ? segments.flatMap((seg) => {
           const item = items[seg.index];
@@ -166,7 +207,7 @@ export function createWheel(opts: WheelOptions): WheelView {
         })
       : [];
 
-    rotor = s("g", { class: "wheel-rotor" }, ...paths, ...labels);
+    rotor = s("g", { class: "wheel-rotor" }, ...paths, ...pictures, ...labels);
     applyRotation();
 
     // At three o'clock, pointing in at the centre (POINTER_ANGLE).

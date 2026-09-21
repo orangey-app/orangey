@@ -20,7 +20,12 @@ interface Record_ {
   path: string;
   kind: "file" | "folder";
   text?: string;
+  /** Pictures. IndexedDB stores a typed array as it is, so no encoding here. */
+  bytes?: Uint8Array;
 }
+
+const idbEncoder = new TextEncoder();
+const idbDecoder = new TextDecoder();
 
 function openLibraryDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -83,17 +88,35 @@ export class IndexedDbBackend implements LibraryBackend {
       .map((r) => ({ name: basename(r.path), kind: r.kind }));
   }
 
-  async read(path: string): Promise<string> {
+  async #file(path: string): Promise<Record_> {
     const record = await runLibraryTx<Record_ | undefined>(this.#db, "readonly", (s) => s.get(path) as IDBRequest<Record_ | undefined>);
     if (!record || record.kind !== "file") throw new Error(`no file at ${path}`);
-    return record.text ?? "";
+    return record;
+  }
+
+  async read(path: string): Promise<string> {
+    const record = await this.#file(path);
+    return record.bytes ? idbDecoder.decode(record.bytes) : record.text ?? "";
   }
 
   async write(path: string, contents: string): Promise<void> {
-    const folders = this.#foldersAbove(path);
+    await this.#put({ path, kind: "file", text: contents });
+  }
+
+  async readBytes(path: string): Promise<Uint8Array> {
+    const record = await this.#file(path);
+    return record.bytes ?? idbEncoder.encode(record.text ?? "");
+  }
+
+  async writeBytes(path: string, bytes: Uint8Array): Promise<void> {
+    await this.#put({ path, kind: "file", bytes });
+  }
+
+  async #put(record: Record_): Promise<void> {
+    const folders = this.#foldersAbove(record.path);
     await runLibraryTx(this.#db, "readwrite", (s) => {
       for (const f of folders) s.put({ path: f, kind: "folder" } satisfies Record_);
-      s.put({ path, kind: "file", text: contents } satisfies Record_);
+      s.put(record);
     });
   }
 

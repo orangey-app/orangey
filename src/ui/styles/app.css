@@ -136,6 +136,10 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--gap); }
 .field-label { font-size: 13px; color: var(--ink-soft); font-weight: 550; }
 .field-hint { font-size: 12px; color: var(--ink-faint); }
+/* A setting that is only ever on or off: the box sits beside its label, not
+   above it like the sliders. */
+.feel-toggle { flex-direction: row; align-items: center; cursor: pointer; }
+.feel-toggle input { cursor: pointer; }
 
 .row { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; }
 .row.tight { gap: 6px; }
@@ -399,7 +403,10 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 
 /* ---- outcome table -------------------------------------------------------- */
 
-.outcomes { width: 100%; min-width: 620px; border-collapse: collapse; }
+/* Two columns joined the table (a picture, and where an outcome sends you),
+   so the minimum is wider than it was: below this the selects collapse to a
+   sliver you cannot read, and the wrapper scrolls instead. */
+.outcomes { width: 100%; min-width: 900px; border-collapse: collapse; }
 .outcomes th {
   text-align: left; font-size: 12px; color: var(--ink-soft); font-weight: 600;
   padding: 4px 6px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-raised);
@@ -654,3 +661,129 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .mascot-host.is-visible { opacity: 1; }
 body.presenting .mascot-slot { left: auto; right: 24px; bottom: 24px; width: 120px; height: 120px; }
 @media (prefers-reduced-motion: reduce) { .mascot-host { transition: none; } }
+
+/* ---- A roll struck through ------------------------------------------------
+ * The roll happened, so the row keeps its place and its time; the line says
+ * the table agreed not to count it, which is what a pencil through it on
+ * paper says. Both the History screen and the Recent rolls panel draw it.
+ */
+.history-list li.struck .when,
+.history-list li.struck .what { text-decoration: line-through; }
+.history-list li.struck .name,
+.history-list li.struck .detail { color: var(--ink-faint); }
+
+/* ---- pictures on outcomes -------------------------------------------------
+   The wheel carries a thumbnail; the answer carries the picture itself, sized
+   so that it never pushes the name or the Roll button off a laptop screen. */
+
+.result-picture {
+  display: block; margin: 0 auto 6px; max-width: 100%; max-height: 18vh;
+  border-radius: var(--radius); object-fit: contain;
+}
+body.presenting .result-picture { max-height: 40vh; }
+.cell .result-picture { max-height: 22vh; }
+.picture-cell { display: inline-flex; align-items: center; gap: 4px; }
+.picture-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--border); }
+.picture-col { white-space: nowrap; }
+.goes-to-cell { white-space: nowrap; }
+/* The description is the column that gives way when the window is narrow, but
+   it must not give way to nothing. */
+.outcomes .desc-cell input { min-width: 130px; }
+.outcomes th, .outcomes .goes-to-cell, .outcomes .picture-col { white-space: nowrap; }
+
+/* ---- boards ----------------------------------------------------------------
+   Several randomizers on one screen. The grid is sized by the cells rather
+   than by a column count, so a board of two is not stretched across a desktop
+   and a board of nine still fits a laptop. */
+
+.board-grid {
+  display: grid; gap: var(--gap);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: var(--gap);
+}
+.board-grid.board-empty { display: none; }
+.cell-holder { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg-raised); }
+.cell-holder.dragging { opacity: 0.5; }
+.cell-name { font-size: 15px; margin: 0 0 6px; }
+.cell-stage { display: grid; place-items: center; min-height: 120px; }
+.cell-remove { position: absolute; top: 6px; right: 6px; padding: 2px 8px; line-height: 1; }
+.cell-missing { color: var(--ink-soft); }
+/* A cell's answer is read from across a table, but there are several of them:
+   between the play screen's huge type and the size of the cell it sits in. */
+.cell .result-slot { font-size: clamp(20px, 3.4vw, 34px); min-height: 0; }
+.cell .result-slot.small { font-size: clamp(16px, 2.6vw, 26px); }
+.cell .result-detail { font-size: 12px; }
+.cell .result-panel { padding: 0; }
+body.presenting .cell .result-slot { font-size: clamp(24px, 4vw, 54px); }
+
+/* ---- choosing a randomizer ------------------------------------------------
+   The library, in a dialog: a tree while you browse, a flat list of matches
+   while you type. */
+
+.picker-dialog { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--gap); width: min(520px, 92vw); }
+.picker-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.picker-dialog h2 { margin-top: 0; }
+.picker-new { flex-wrap: wrap; margin-bottom: 8px; }
+.picker-tree { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 8px 0; padding: 4px; display: grid; gap: 2px; }
+.picker-row { width: 100%; text-align: left; justify-content: flex-start; }
+.picker-taken { opacity: 0.45; }
+.picker-note:empty { display: none; }
+.goes-to { flex-wrap: nowrap; }
+.goes-to-button { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goes-to-button.missing { color: var(--error); }
+
+.board-picker { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--gap); max-width: 420px; }
+.board-picker::backdrop { background: rgba(0, 0, 0, 0.35); }
+.picker-list { list-style: none; margin: 0 0 var(--gap); padding: 0; display: grid; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.picker-choice { width: 100%; text-align: left; }
+
+/* Full screen: the grid takes the height it is given, and the cells shrink to
+   fit rather than pushing the button off the bottom. */
+body.presenting .board .home-bar,
+body.presenting .board .cell-remove { display: none; }
+body.presenting .board-card { display: flex; flex-direction: column; min-height: 0; height: 100vh; }
+body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
+
+/* ---- an outcome that opens another randomizer ------------------------------
+   The randomizer that opened sits beside the one that sent you there, so the
+   table can see both at once. Anything earlier in the chain is an icon in the
+   strip above, with the answer it gave.
+
+   The chain's elements are siblings of the play card rather than a box around
+   it, because the full-screen rules above are written against `.play > .card`.
+   The two columns are a grid that exists only while something is open. */
+
+.play.has-chain {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--gap);
+  align-items: start;
+}
+.play.has-chain > * { grid-column: 1 / -1; }
+.play.has-chain > .play-card { grid-column: 1; }
+.play.has-chain > .chain-open { grid-column: 2; }
+/* The root has become an icon, so there is no first column to sit beside. */
+.play.has-chain.chain-wide > .chain-open { grid-column: 1 / -1; }
+@media (max-width: 720px) { .play.has-chain { display: block; } }
+
+.chain-open { display: flex; gap: var(--gap); align-items: start; }
+.chain-open > * { flex: 1 1 0; min-width: 0; }
+.chain-link {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--pad);
+  box-shadow: var(--shadow);
+  margin-bottom: var(--gap);
+}
+.chain-from { margin: 0 0 6px; }
+.chain-link .cell-name { margin-top: 0; }
+.chain-roll { width: 100%; min-height: 44px; margin-top: 8px; }
+.chain-note { margin: 0 0 var(--gap); }
+
+.chain-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
+.chain-icon { display: flex; align-items: baseline; gap: 8px; max-width: 240px; }
+.chain-icon-name { font-weight: 600; }
+.chain-icon-answer { color: var(--ink-faint); font-size: 13px; }
+.chain-icon-name,
+.chain-icon-answer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -7,12 +7,12 @@
   "private": false,
   "scripts": {
     "check": "node scripts/check.mjs",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"tests/unit/*.test.ts\"",
     "test:browser": "node tests/browser/run.mjs",
     "test:all": "npm run test && npm run test:browser",
     "build": "node scripts/build.mjs",
-    "build:single": "node scripts/build.mjs --single",
-    "dev": "node scripts/dev.mjs"
+    "build:single": "node scripts/build.mjs --single"
   },
   "engines": {
     "node": ">=22.6"

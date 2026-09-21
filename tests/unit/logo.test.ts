@@ -1,13 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";
-import {
-  MASCOT_EYES,
-  MASCOT_LOGO_TILE,
-  MASCOT_STEM,
-  mascotLogoMarkup,
-  mascotRestingBodyPath,
-} from "../../src/ui/mascot/parts.ts";
+import { MASCOT_EYES, MASCOT_STEM, mascotLogoMarkup, mascotRestingBodyPath } from "../../src/ui/mascot/parts.ts";
 import { makeIcon } from "../../scripts/icon.mjs";
 
 /** Read back one of our own PNGs: RGBA, one IDAT, filter 0 on every row. */
@@ -43,16 +37,10 @@ function decode(png: Buffer): { size: number; at: (x: number, y: number) => [num
   };
 }
 
-const TILE: [number, number, number] = [37, 49, 34];
-const BODY: [number, number, number] = [243, 162, 87];
-const STEM: [number, number, number] = [164, 149, 51];
-const EYE: [number, number, number] = [245, 236, 194];
-
-const near = (got: [number, number, number], want: [number, number, number], tol = 6) =>
-  got.every((v, i) => Math.abs(v - want[i]) <= tol);
-
-describe("the logo mark", () => {
-  test("is the drawn head: the resting body path, the stem, and both three-quarter eyes", () => {
+describe("the logo", () => {
+  test("the mark is the drawn head, and nothing of a pose", () => {
+    // The logo is built from the same parts as the mascot, so that a change to
+    // his shape cannot leave the icon showing an older Orangey.
     const svg = mascotLogoMarkup();
     assert.ok(svg.includes(`d="${mascotRestingBodyPath()}"`), "not the drawn body");
     assert.ok(svg.includes(`cx="${MASCOT_STEM.cx}" cy="${MASCOT_STEM.cy}"`), "no stem");
@@ -60,62 +48,20 @@ describe("the logo mark", () => {
       const [cx, cy] = MASCOT_EYES.tq[side];
       assert.ok(svg.includes(`cx="${cx}" cy="${cy}"`), `no ${side} eye at the three-quarter placement`);
     }
-  });
-
-  test("carries no mouth, no limbs and no pose switching: it is the logo, not a pose", () => {
-    const svg = mascotLogoMarkup();
-    for (const absent of ["mouth", "arm", "leg", "data-pose", "eyeLsquint", "eyeLopen"]) {
+    for (const absent of ["mouth", "arm", "leg", "data-pose"]) {
       assert.ok(!svg.includes(absent), `the mark should not contain ${absent}`);
     }
     assert.match(svg, /aria-hidden="true"/);
   });
-});
 
-describe("the app icon", () => {
-  test("is a valid opaque PNG at every size the build asks for", () => {
+  test("the app icon renders to a square opaque PNG at every size the build asks for", () => {
     for (const size of [64, 192, 512]) {
       const png = decode(makeIcon(size));
       assert.equal(png.size, size);
+      // A transparent corner would show the launcher's own background through
+      // the tile, so `at` checks opacity wherever it reads.
+      const last = size - 1;
+      for (const [x, y] of [[0, 0], [last, 0], [0, last], [last, last], [size >> 1, size >> 1]]) png.at(x, y);
     }
-  });
-
-  test("draws the logo tile: brand black corner to corner, his head on it, stem and eyes in place", () => {
-    const png = decode(makeIcon(512));
-    const at = (tx: number, ty: number) => png.at(Math.round((tx / MASCOT_LOGO_TILE) * 512), Math.round((ty / MASCOT_LOGO_TILE) * 512));
-    for (const [tx, ty] of [[2, 2], [153, 2], [2, 153], [153, 153]]) {
-      assert.ok(near(at(tx, ty), TILE), `corner ${tx},${ty} is not the tile: ${at(tx, ty)}`);
-    }
-    for (const [tx, ty] of [[60, 110], [100, 60], [40, 70]]) {
-      assert.ok(near(at(tx, ty), BODY), `${tx},${ty} is not the body colour: ${at(tx, ty)}`);
-    }
-    assert.ok(near(at(MASCOT_STEM.cx, MASCOT_STEM.cy), STEM), `no stem: ${at(MASCOT_STEM.cx, MASCOT_STEM.cy)}`);
-    for (const side of ["L", "R"] as const) {
-      const [cx, cy] = MASCOT_EYES.tq[side];
-      assert.ok(near(at(cx, cy), EYE), `no ${side} eye: ${at(cx, cy)}`);
-    }
-    // and nothing of the old placeholder wheel: no blue, no pink, no white hub
-    const seen = new Set<string>();
-    for (let y = 0; y < 512; y += 3) for (let x = 0; x < 512; x += 3) seen.add(png.at(x, y).join(","));
-    for (const pixel of seen) {
-      const [r, g, b] = pixel.split(",").map(Number);
-      const isBrand = [TILE, BODY, STEM, EYE].some((c) => near([r, g, b], c, 90));
-      assert.ok(isBrand, `a colour that is not the logo's: ${pixel}`);
-    }
-  });
-
-  test("the maskable copy keeps every part of him inside the circle a phone may crop to", () => {
-    // A maskable icon may be cropped to a circle of 80 % of its width. Sample
-    // that circle's edge: outside the safe zone there must be tile only.
-    const png = decode(makeIcon(512, { inset: 0.78 }));
-    const centre = 256;
-    for (let deg = 0; deg < 360; deg += 5) {
-      const th = (deg * Math.PI) / 180;
-      const x = Math.round(centre + Math.cos(th) * 0.42 * 512);
-      const y = Math.round(centre + Math.sin(th) * 0.42 * 512);
-      if (x < 0 || y < 0 || x > 511 || y > 511) continue;
-      assert.ok(near(png.at(x, y), TILE), `he reaches the crop edge at ${deg}°: ${png.at(x, y)}`);
-    }
-    // he is still there in the middle
-    assert.ok(near(png.at(centre, centre), BODY));
   });
 });

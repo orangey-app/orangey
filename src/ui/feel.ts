@@ -10,7 +10,7 @@
  * effective settings for a roll are the global ones with that merged on top.
  */
 
-import type { CoinFeel, DiceFeel, FeelOverride, FeelSettings, MascotFeel, MascotPresence, MotionLevel, SpinCurve, WheelFeel } from "../model/feel.ts";
+import type { CoinFeel, DiceFeel, FeelOverride, FeelSettings, MascotFeel, MotionLevel, SpinCurve, WheelFeel } from "../model/feel.ts";
 
 export type { CoinFeel, DiceFeel, DiceStyle, FeelOverride, FeelSettings, MascotFeel, MascotPresence, MotionLevel, SpinCurve, WheelFeel } from "../model/feel.ts";
 

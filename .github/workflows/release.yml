@@ -15,7 +15,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: npm ci
       - run: npm run check && npm test
+      - run: npm run typecheck
       - run: npm run build:single
       - name: Package the static site
         run: cd dist && zip -r ../orangey-site.zip . -x orangey.html

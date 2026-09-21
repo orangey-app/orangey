@@ -9,7 +9,7 @@
  * mounts), then name it in a reaction. Nothing else needs to change.
  */
 
-import { registerMascotState, type MascotModel } from "./model.ts";
+import { registerMascotState } from "./model.ts";
 
 /* Idle: breathes, tilts its head, hops once in a while. Eye contact. */
 registerMascotState("idle", {

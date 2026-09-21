@@ -5,7 +5,9 @@
 import { button, h, setChildren } from "./dom.ts";
 import { state } from "./state.ts";
 import { backTarget, currentRoute, navigate, type Route } from "./router.ts";
+import { isBoard } from "../model/randomizer.ts";
 import { createPlayView } from "./views/play.ts";
+import { createBoardView } from "./views/board.ts";
 import { createLibraryView } from "./views/library.ts";
 import { createEditorView, type View } from "./views/editor.ts";
 import { createImportView } from "./views/importer.ts";
@@ -93,7 +95,7 @@ export function mountApp(root: HTMLElement): MascotHost {
           setMain(missing(route.path));
           break;
         }
-        setMain(createPlayView(node, route.params));
+        setMain(isBoard(node.randomizer) ? createBoardView(node, route.params) : createPlayView(node, route.params));
         void state.savePrefs({ lastPath: route.path });
         break;
       }
@@ -106,7 +108,7 @@ export function mountApp(root: HTMLElement): MascotHost {
           state.tell({ type: "link:fail", id: route.id });
           break;
         }
-        setMain(createPlayView(node, route.params));
+        setMain(isBoard(node.randomizer) ? createBoardView(node, route.params) : createPlayView(node, route.params));
         void state.savePrefs({ lastPath: node.path });
         break;
       }

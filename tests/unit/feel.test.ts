@@ -16,49 +16,55 @@ import {
   settleForSpin,
   spinPosition,
   wheelDuration,
+  type FeelSettings,
   type SpinCurve,
 } from "../../src/ui/feel.ts";
 
+const CURVES = ["gentle", "standard", "snappy"] as const;
+
 describe("feel settings", () => {
-  test("defaults survive normalisation unchanged", () => {
-    assert.deepEqual(normalizeFeel(DEFAULT_FEEL), DEFAULT_FEEL);
-  });
+  test("a settings file is normalised: unknown values fall back, numbers are clamped and rounded", () => {
+    // Settings are hand-editable and travel between versions, so nothing that
+    // arrives may throw or reach the animation as it was written.
+    assert.deepEqual(normalizeFeel(DEFAULT_FEEL), DEFAULT_FEEL, "the defaults survive untouched");
+    assert.deepEqual(normalizeFeel(undefined), DEFAULT_FEEL, "no settings at all are the defaults");
+    assert.deepEqual(normalizeFeel({ wheel: "nonsense" }), DEFAULT_FEEL, "a section of the wrong shape is the defaults");
 
-  test("missing or corrupt values fall back to the defaults", () => {
-    assert.deepEqual(normalizeFeel(undefined), DEFAULT_FEEL);
-    assert.deepEqual(normalizeFeel({ wheel: "nonsense" }), DEFAULT_FEEL);
-    assert.equal(normalizeFeel({ motion: "sideways" }).motion, "full");
-  });
-
-  test("out-of-range values are clamped rather than rejected", () => {
-    const f = normalizeFeel({
-      wheel: { durationMs: 999999, turns: 400, curve: "wobbly", settleDegrees: 400 },
-      dice: { tumbleMs: -50, bounces: 99, spread: 4 },
-      coin: { flips: 0, durationMs: 99999, arc: 9 },
-    });
-    assert.equal(f.wheel.durationMs, LIMITS.wheelDuration[1]);
-    assert.equal(f.wheel.turns, LIMITS.turns[1]);
-    assert.equal(f.wheel.curve, "standard");
-    assert.equal(f.wheel.settleDegrees, LIMITS.settleDegrees[1]);
-    assert.equal(f.dice.tumbleMs, LIMITS.tumble[0]);
-    assert.equal(f.dice.bounces, LIMITS.bounces[1]);
-    assert.equal(f.dice.spread, LIMITS.spread[1]);
-    assert.equal(f.coin.flips, LIMITS.coinFlips[0]);
-    assert.equal(f.coin.durationMs, LIMITS.coinDuration[1]);
-    assert.equal(f.coin.arc, LIMITS.coinArc[1]);
-  });
-
-  test("the roll-back that used to be a word is read as degrees", () => {
-    assert.equal(normalizeFeel({ wheel: { settle: "none" } }).wheel.settleDegrees, 0);
-    assert.equal(normalizeFeel({ wheel: { settle: "slight" } }).wheel.settleDegrees, 4);
-    assert.equal(normalizeFeel({ wheel: { settle: "bouncy" } }).wheel.settleDegrees, 11);
-    assert.equal(normalizeFeel({ wheel: { settleDegrees: 7, settle: "bouncy" } }).wheel.settleDegrees, 7, "the number wins");
-  });
-
-  test("turns and bounces are whole numbers", () => {
-    const f = normalizeFeel({ wheel: { turns: 4.7 }, dice: { bounces: 1.4 } });
-    assert.equal(f.wheel.turns, 5);
-    assert.equal(f.dice.bounces, 1);
+    const at = (f: FeelSettings, path: string): unknown =>
+      path.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], f);
+    const cases: [string, unknown, [string, unknown][]][] = [
+      ["a wheel spun far past every limit", { wheel: { durationMs: 999999, turns: 400, curve: "wobbly", settleDegrees: 400 } }, [
+        ["wheel.durationMs", LIMITS.wheelDuration[1]],
+        ["wheel.turns", LIMITS.turns[1]],
+        ["wheel.curve", "standard"],
+        ["wheel.settleDegrees", LIMITS.settleDegrees[1]],
+      ]],
+      ["dice and coins out of range in both directions", { dice: { tumbleMs: -50, bounces: 99, spread: 4 }, coin: { flips: 0, durationMs: 99999, arc: 9 } }, [
+        ["dice.tumbleMs", LIMITS.tumble[0]],
+        ["dice.bounces", LIMITS.bounces[1]],
+        ["dice.spread", LIMITS.spread[1]],
+        ["coin.flips", LIMITS.coinFlips[0]],
+        ["coin.durationMs", LIMITS.coinDuration[1]],
+        ["coin.arc", LIMITS.coinArc[1]],
+      ]],
+      ["a motion level nobody ships", { motion: "sideways" }, [["motion", "full"]]],
+      // Counts of whole things cannot be fractional: half a turn is not a turn.
+      ["fractional turns and bounces", { wheel: { turns: 4.7 }, dice: { bounces: 1.4 } }, [["wheel.turns", 5], ["dice.bounces", 1]]],
+      // The roll-back used to be a word, and settings files written then are
+      // still on people's machines.
+      ["the old word 'none'", { wheel: { settle: "none" } }, [["wheel.settleDegrees", 0]]],
+      ["the old word 'slight'", { wheel: { settle: "slight" } }, [["wheel.settleDegrees", 4]]],
+      ["the old word 'bouncy'", { wheel: { settle: "bouncy" } }, [["wheel.settleDegrees", 11]]],
+      ["a number beside the old word: the number wins", { wheel: { settleDegrees: 7, settle: "bouncy" } }, [["wheel.settleDegrees", 7]]],
+      // Haptics buzz the device, so only a real `true` switches them on.
+      ["haptics left unsaid", {}, [["haptics", false]]],
+      ["haptics as a truthy string", { haptics: "yes" }, [["haptics", false]]],
+      ["haptics as a real true", { haptics: true }, [["haptics", true]]],
+    ];
+    for (const [what, input, expectations] of cases) {
+      const f = normalizeFeel(input);
+      for (const [path, expected] of expectations) assert.equal(at(f, path), expected, `${what}: ${path}`);
+    }
   });
 
   test("quick is 0.4x and instant is zero", () => {
@@ -71,28 +77,17 @@ describe("feel settings", () => {
     assert.equal(coinDuration(f), DEFAULT_FEEL.coin.durationMs * 0.4);
     assert.equal(wheelDuration({ ...DEFAULT_FEEL, motion: "instant" }), 0);
   });
-
-  test("haptics default to off and only accept a real true", () => {
-    assert.equal(normalizeFeel({}).haptics, false);
-    assert.equal(normalizeFeel({ haptics: "yes" }).haptics, false);
-    assert.equal(normalizeFeel({ haptics: true }).haptics, true);
-  });
 });
 
 describe("the spin curve", () => {
-  test("starts and ends at rest", () => {
-    for (const curve of ["gentle", "standard", "snappy"] as const) {
+  test("every curve starts and ends at rest, and never goes backwards on the way", () => {
+    for (const curve of CURVES) {
       assert.equal(spinPosition(0, curve), 0);
       assert.equal(spinPosition(1, curve), 1);
       // Eases in: the first twentieth of the time covers well under a twentieth of the distance.
       assert.ok(spinPosition(0.05, curve) < 0.05 * 0.6, `${curve} does not ease in`);
       // Eases out: the last twentieth covers well under a twentieth too.
       assert.ok(1 - spinPosition(0.95, curve) < 0.05 * 0.6, `${curve} does not ease out`);
-    }
-  });
-
-  test("is monotonic", () => {
-    for (const curve of ["gentle", "standard", "snappy"] as const) {
       let last = -1;
       for (let t = 0; t <= 1.0001; t += 0.01) {
         const p = spinPosition(t, curve);
@@ -102,14 +97,11 @@ describe("the spin curve", () => {
     }
   });
 
-  test("a snappier curve is further along at the halfway point", () => {
+  test("a snappier curve gets further, sooner — but even snappy has ground to cover late in the spin", () => {
     assert.ok(spinPosition(0.5, "snappy") > spinPosition(0.5, "standard"));
     assert.ok(spinPosition(0.5, "standard") > spinPosition(0.5, "gentle"));
     assert.equal(curveExponent("gentle"), 2);
     assert.equal(curveExponent("snappy"), 4);
-  });
-
-  test("even snappy still has ground to cover late in the spin", () => {
     // At exponent 5 a six-turn snappy spin had 3° of 2340° left by t=0.70: the
     // last third of the duration was a wheel standing still.
     const delta = 6 * 360 + 180;
@@ -147,7 +139,6 @@ describe("the spin curve", () => {
     }
     return out;
   };
-  const CURVES = ["gentle", "standard", "snappy"] as const;
   const ROLLBACKS = [1, 4, 11, 30];
 
   test("the wheel passes the target by exactly the roll-back it was given", () => {
@@ -208,21 +199,21 @@ describe("the spin curve", () => {
 });
 
 describe("roll-back and bounce", () => {
-  test("each spin uses between half and all of the maximum", () => {
+  test("a roll-back is a fixed number of degrees, between half the setting and all of it, and the landing bounce follows it", () => {
+    // Half to all, so no two spins settle identically, but the setting is
+    // still what the GM sees on the wheel.
     const seen = [0, 0.25, 0.5, 0.999].map((r) => settleForSpin(DEFAULT_FEEL, () => r));
     assert.ok(Math.abs(seen[0] - 5.5) < 1e-9, `at the low end ${seen[0]}`);
     assert.ok(seen[3] < 11 && seen[3] > 10.9);
     for (const v of seen) assert.ok(v >= 5.5 && v <= 11);
     assert.equal(settleForSpin({ ...DEFAULT_FEEL, wheel: { ...DEFAULT_FEEL.wheel, settleDegrees: 0 } }), 0);
-  });
-
-  test("the overshoot is a fixed number of degrees whatever the spin length", () => {
+    // Degrees, not a fraction of the spin: a long spin rolls back as far as a short one.
     assert.ok(Math.abs(overshootFraction(8, 360) * 360 - overshootFraction(8, 3600) * 3600) < 1e-9);
     assert.equal(overshootFraction(0, 360), 0);
     assert.equal(overshootFraction(8, 0), 0);
-  });
 
-  test("the landing bounce grows with the roll-back and follows the motion level", () => {
+    // The bounce the wheel lands with is the roll-back made visible, so it
+    // grows with the setting and disappears when there is none.
     const at = (deg: number, motion: "full" | "quick" | "instant" = "full") =>
       bounceMs({ ...DEFAULT_FEEL, motion, wheel: { ...DEFAULT_FEEL.wheel, settleDegrees: deg } });
     assert.equal(at(0), 0);
@@ -233,11 +224,11 @@ describe("roll-back and bounce", () => {
 });
 
 describe("a randomizer's own settings", () => {
-  test("an override keeps only known keys, clamped", () => {
+  test("an override keeps only known keys, clamped, and motion stays global", () => {
     const o = normalizeOverride({ wheel: { turns: 99, bogus: 1 }, dice: { style: "wireframe" }, motion: "instant", coin: {} });
     assert.deepEqual(o, { wheel: { turns: 12 }, dice: { style: "wireframe" } });
     assert.equal(normalizeOverride(null), undefined);
-    assert.equal(normalizeOverride({ wheel: {} }), undefined);
+    assert.equal(normalizeOverride({ wheel: {} }), undefined, "an override that says nothing is no override");
     assert.equal(normalizeOverride({ motion: "instant" }), undefined, "motion is global only");
   });
 
@@ -248,12 +239,10 @@ describe("a randomizer's own settings", () => {
     assert.equal(e.wheel.durationMs, 3000, "untouched keys come from the global settings");
     assert.equal(e.dice.style, "flat");
     assert.deepEqual(effectiveFeel(global, undefined), global);
-  });
-
-  test("the play-time switch forces instant without changing anything else", () => {
-    const e = effectiveFeel(DEFAULT_FEEL, { wheel: { turns: 3 } }, true);
-    assert.equal(e.motion, "instant");
-    assert.equal(e.wheel.turns, 3);
-    assert.equal(wheelDuration(e), 0);
+    // The play-time switch forces instant without changing anything else.
+    const atPlay = effectiveFeel(DEFAULT_FEEL, { wheel: { turns: 3 } }, true);
+    assert.equal(atPlay.motion, "instant");
+    assert.equal(atPlay.wheel.turns, 3);
+    assert.equal(wheelDuration(atPlay), 0);
   });
 });

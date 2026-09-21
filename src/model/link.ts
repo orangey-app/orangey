@@ -66,7 +66,11 @@ export function packRandomizer(r: Randomizer): Record<string, unknown> {
   delete packed.modified;
   if (r.type === "list") {
     packed.items = r.items.map((item) => {
-      const { id: _id, ...rest } = item;
+      // No pictures, ever. The bytes are not in the link and inlining them
+      // would make an address nobody can paste, so a wheel opened from a link
+      // simply has none — and the id of a picture in someone else's library
+      // would mean nothing here anyway.
+      const { id: _id, image: _image, imageData: _imageData, ...rest } = item;
       return rest;
     });
   }

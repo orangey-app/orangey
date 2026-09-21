@@ -16,6 +16,10 @@ import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { openSwatchPicker } from "../components/swatch.ts";
 import { reactionControl } from "../components/reaction.ts";
+import { pictureCell } from "../components/picture.ts";
+import { pickRandomizer } from "../components/picker.ts";
+import { pruneImages } from "../../storage/images.ts";
+import { usedImageIds } from "../storage-actions.ts";
 import { longestOutcome, rollRandomizer, whyCannotRoll } from "../roll.ts";
 import { createResultPanel } from "../components/result.ts";
 import { navigate } from "../router.ts";
@@ -268,6 +272,30 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       onChange: (next) => update(item.id, (i) => ({ ...i, reaction: next ?? undefined })),
     });
 
+    const picture = pictureCell({
+      current: () => item.image,
+      subject: () => item.label,
+      onChange: (id) => update(item.id, (i) => ({ ...i, image: id })),
+    });
+
+    // Where this outcome sends you. A table that points at another table is
+    // how encounter tables have always been written. A dropdown of every
+    // randomizer was fine with six of them; a real game has folders, so this
+    // opens the library instead.
+    const target = item.goesTo ? state.library.findById(item.goesTo) : null;
+    const goesToLabel = item.goesTo
+      ? (target?.randomizer?.name ?? "(not in your library)")
+      : "—";
+    const goesTo = h("span", { class: "row tight goes-to" },
+      button(goesToLabel, () => void chooseTarget(item), {
+        class: `ghost goes-to-button${item.goesTo && !target ? " missing" : ""}`,
+        "aria-label": `Where ${item.label} sends you: ${goesToLabel}`,
+      }),
+      ...(item.goesTo
+        ? [iconButton(`Stop ${item.label} sending you anywhere`, "✕", () => update(item.id, (i) => ({ ...i, goesTo: undefined })), { class: "icon-button clear-goes-to" })]
+        : []),
+    );
+
     const disableButton = iconButton(
       item.disabled ? `Enable ${item.label}` : `Disable ${item.label}`,
       item.disabled ? "☐" : "☑",
@@ -289,10 +317,29 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       h("td", { class: "weight-cell" }, weight),
       h("td", { class: "pct", text: `${percent.toFixed(1)}%` }),
       h("td", { class: "reaction-cell" }, reaction),
+      h("td", { class: "picture-col" }, picture),
+      h("td", { class: "goes-to-cell" }, goesTo),
       h("td", { class: "desc-cell" }, description),
       h("td", { class: "actions" }, disableButton, duplicateButton, deleteButton),
     );
     return tr;
+  }
+
+  /** Pick what this outcome sends you to, from the library or a link. */
+  async function chooseTarget(item: ListItem): Promise<void> {
+    const picked = await pickRandomizer({
+      title: `Where does "${item.label}" send you?`,
+      taken: () => new Set([model.id]),
+      allowNew: true,
+      allowLink: true,
+    });
+    if (!picked) return;
+    update(item.id, (i) => ({ ...i, goesTo: picked.randomizer.id }));
+    // A randomizer made for this is empty, so it opens where you can fill it in.
+    if (picked.fresh) {
+      await state.library.flush();
+      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
+    }
   }
 
   function onRowKey(e: KeyboardEvent, item: ListItem, index: number, field: "label" | "weight"): void {
@@ -484,6 +531,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
         h("th", { text: "Weight" }),
         h("th", { class: "pct", text: "%" }),
         h("th", { text: "Orangey", title: "What the mascot does when this outcome comes up" }),
+        h("th", { text: "Picture", title: "Shown when this outcome comes up" }),
+        h("th", { text: "Goes to", title: "Rolling this outcome opens another randomizer beside the wheel" }),
         h("th", { text: "Description" }),
         h("th", { text: "Actions" }),
       ),
@@ -529,7 +578,12 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
-      void state.library.flush();
+      // Pictures taken off an outcome are swept up when the editor closes,
+      // not when the ✕ is pressed: the same picture may be on another outcome
+      // or another randomizer, and undo may yet bring this one back.
+      void state.library.flush().then(() =>
+        pruneImages(usedImageIds(state.library.files().map((f) => f.randomizer!).filter(Boolean))),
+      );
     },
   };
 }

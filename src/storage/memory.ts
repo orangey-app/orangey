@@ -10,11 +10,19 @@
 import type { Entry, LibraryBackend } from "./library.ts";
 import { basename, parent } from "./paths.ts";
 
+const memoryEncoder = new TextEncoder();
+const memoryDecoder = new TextDecoder();
+
 export class MemoryBackend implements LibraryBackend {
   readonly kind = "memory";
   readonly label = "This session only";
   readonly writable = true;
-  #files = new Map<string, string>();
+  /**
+   * One map for both kinds of file. A file is held as whatever it was written
+   * as, and converted on the way out, so moving or removing a folder does not
+   * have to know which of its files are pictures.
+   */
+  #files = new Map<string, string | Uint8Array>();
   #folders = new Set<string>([""]);
 
   async list(path: string): Promise<Entry[]> {
@@ -29,14 +37,27 @@ export class MemoryBackend implements LibraryBackend {
   }
 
   async read(path: string): Promise<string> {
-    const text = this.#files.get(path);
-    if (text === undefined) throw new Error(`no file at ${path}`);
-    return text;
+    const content = this.#files.get(path);
+    if (content === undefined) throw new Error(`no file at ${path}`);
+    return typeof content === "string" ? content : memoryDecoder.decode(content);
   }
 
   async write(path: string, contents: string): Promise<void> {
     this.#ensureFolders(parent(path));
     this.#files.set(path, contents);
+  }
+
+  async readBytes(path: string): Promise<Uint8Array> {
+    const content = this.#files.get(path);
+    if (content === undefined) throw new Error(`no file at ${path}`);
+    return typeof content === "string" ? memoryEncoder.encode(content) : content;
+  }
+
+  async writeBytes(path: string, bytes: Uint8Array): Promise<void> {
+    this.#ensureFolders(parent(path));
+    // A copy: the caller may reuse or resize the buffer it handed us, and a
+    // file that changes under the library is a bug with no witness.
+    this.#files.set(path, bytes.slice());
   }
 
   async mkdir(path: string): Promise<void> {
@@ -58,10 +79,10 @@ export class MemoryBackend implements LibraryBackend {
         this.#folders.add(to + f.slice(from.length));
       }
     }
-    for (const [p, text] of [...this.#files]) {
+    for (const [p, content] of [...this.#files]) {
       if (p.startsWith(`${from}/`)) {
         this.#files.delete(p);
-        this.#files.set(to + p.slice(from.length), text);
+        this.#files.set(to + p.slice(from.length), content);
       }
     }
   }
@@ -81,6 +102,6 @@ export class MemoryBackend implements LibraryBackend {
 
   /** Test helper: everything the backend holds, for assertions. */
   snapshot(): Record<string, string> {
-    return Object.fromEntries(this.#files);
+    return Object.fromEntries([...this.#files].map(([p, c]) => [p, typeof c === "string" ? c : memoryDecoder.decode(c)]));
   }
 }

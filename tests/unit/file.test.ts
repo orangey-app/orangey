@@ -4,6 +4,7 @@ import { FORMAT_VERSION, fileNameFor, parseFile, serialize, slugify, wrap } from
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import { ValidationError } from "../../src/model/validate.ts";
 
+/** A randomizer using every optional field a saved file can carry. */
 function sample(): ListRandomizer {
   return {
     id: "5f1c0000-0000-4000-8000-000000000001",
@@ -11,142 +12,100 @@ function sample(): ListRandomizer {
     name: "Forest Encounters",
     description: "Daytime, levels 1–4",
     view: "wheel",
+    feel: { wheel: { turns: 3, settleDegrees: 20 } },
     created: "2026-09-08T18:00:00.000Z",
     modified: "2026-09-08T18:20:00.000Z",
     items: [
       { id: "a1", label: "Goblin patrol", weight: 50 },
       { id: "a2", label: "Merchant", weight: 20, description: "Friendly, overpriced" },
-      { id: "a3", label: "Wolf pack", weight: 20, disabled: true },
-      { id: "a4", label: "Dragon", weight: 1, color: "#a33a30" },
+      { id: "a3", label: "Wolf pack", weight: 20, disabled: true, reaction: "wince" },
+      { id: "a4", label: "Dragon", weight: 1, color: "#a33a30", reaction: "cheer" },
     ],
-  };
+  } as ListRandomizer;
 }
 
-describe("file format", () => {
-  test("round-trips byte for byte", () => {
+/** A saved file taken apart, so a test can break one field of it. */
+type Doc = { version: number; randomizer: { items: Record<string, unknown>[]; feel?: unknown }; [key: string]: unknown };
+
+const doctored = (change: (doc: Doc) => void): string => {
+  const doc = JSON.parse(serialize(wrap(sample()))) as Doc;
+  change(doc);
+  return JSON.stringify(doc);
+};
+
+describe("the file format", () => {
+  test("a randomizer round-trips through save and load unchanged", async () => {
     const text = serialize(wrap(sample()));
-    const again = serialize(parseFile(text).file);
-    assert.equal(again, text);
+    assert.equal(serialize(parseFile(text).file), text, "the sample did not come back byte for byte");
+    const parsed = parseFile(text).file.randomizer as ListRandomizer;
+    // The fields most easily lost on the way: a disabled outcome keeps the
+    // weight it will have again when it is switched back on, and the tags,
+    // colours and feel settings all survive.
+    const wolf = parsed.items.find((i) => i.label === "Wolf pack")!;
+    assert.equal(wolf.disabled, true);
+    assert.equal(wolf.weight, 20);
+    assert.equal(wolf.reaction, "wince");
+    assert.equal(parsed.items[3].color, "#a33a30");
+    assert.equal(parsed.items[0].reaction, undefined);
+    assert.deepEqual((parsed as { feel?: unknown }).feel, { wheel: { turns: 3, settleDegrees: 20 } });
+
+    for (const type of ["list", "dice", "coin", "number"] as const) {
+      const empty = serialize(wrap(emptyRandomizer(type, `A ${type}`)));
+      assert.equal(serialize(parseFile(empty).file), empty, `for ${type}`);
+    }
+    const coin = { ...emptyRandomizer("coin", "Fate"), faces: ["Yes", "No"] as [string, string], faceReactions: [null, "wince"] as [null, "wince"] };
+    assert.deepEqual((parseFile(serialize(wrap(coin))).file.randomizer as typeof coin).faceReactions, [null, "wince"]);
   });
 
   test("is two-space indented, LF terminated, with keys in a stable order", () => {
+    // Files sit in the user's own folders, often under version control, so a
+    // save that reorders keys would show up as a diff nobody asked for.
     const text = serialize(wrap(sample()));
     assert.ok(text.endsWith("}\n"));
     assert.ok(!text.includes("\r"));
     assert.ok(text.includes('\n  "version": 1,'));
     const keys = [...text.matchAll(/^ {4}"(\w+)":/gm)].map((m) => m[1]);
-    assert.deepEqual(keys.slice(0, 6), ["id", "type", "name", "description", "view", "created"]);
-    const itemKeys = [...text.matchAll(/^ {8}"(\w+)":/gm)].map((m) => m[1]);
-    assert.equal(itemKeys[0], "id");
-    assert.equal(itemKeys[1], "label");
-    assert.equal(itemKeys[2], "weight");
-  });
-
-  test("disabled outcomes keep their weight in the file", () => {
-    const parsed = parseFile(serialize(wrap(sample()))).file.randomizer as ListRandomizer;
-    const wolf = parsed.items.find((i) => i.label === "Wolf pack")!;
-    assert.equal(wolf.disabled, true);
-    assert.equal(wolf.weight, 20);
-  });
-
-  test("an outcome's Orangey tag is saved after its colour and round-trips", () => {
-    const r = sample();
-    r.items[3] = { ...r.items[3], reaction: "cheer" };
-    r.items[2] = { ...r.items[2], reaction: "wince" };
-    const text = serialize(wrap(r));
+    assert.deepEqual(keys.slice(0, 5), ["id", "type", "name", "description", "view"]);
+    assert.ok(keys.indexOf("feel") < keys.indexOf("created"), "feel is written before the timestamps");
+    const items = text.slice(text.indexOf('"items"'));
+    const itemKeys = [...items.matchAll(/^ {8}"(\w+)":/gm)].map((m) => m[1]);
+    assert.deepEqual(itemKeys.slice(0, 3), ["id", "label", "weight"]);
     const dragon = text.slice(text.indexOf('"Dragon"'));
     assert.ok(dragon.indexOf('"color"') < dragon.indexOf('"reaction": "cheer"'), "reaction follows colour");
-    const parsed = parseFile(text).file.randomizer as ListRandomizer;
-    assert.equal(parsed.items[3].reaction, "cheer");
-    assert.equal(parsed.items[2].reaction, "wince");
-    assert.equal(parsed.items[0].reaction, undefined);
-    assert.equal(serialize(parseFile(text).file), text);
   });
 
-  test("a tag that is not cheer or wince is refused, with the path", () => {
-    const doc = JSON.parse(serialize(wrap(sample())));
-    doc.randomizer.items[0].reaction = "dance";
-    assert.throws(() => parseFile(JSON.stringify(doc)), (e: unknown) => {
-      assert.ok(e instanceof ValidationError);
-      assert.match(String(e.message), /items\[0\]\.reaction/);
-      return true;
-    });
-  });
-
-  test("a coin's faceReactions are one entry per face, null for none", () => {
-    const coin = { ...emptyRandomizer("coin", "Fate"), faces: ["Yes", "No"] as [string, string], faceReactions: [null, "wince"] as [null, "wince"] };
-    const text = serialize(wrap(coin));
-    assert.ok(text.indexOf('"faces"') < text.indexOf('"faceReactions"'));
-    const parsed = parseFile(text).file.randomizer;
-    assert.deepEqual((parsed as typeof coin).faceReactions, [null, "wince"]);
-    const doc = JSON.parse(text);
-    doc.randomizer.faceReactions = ["cheer"];
-    assert.throws(() => parseFile(JSON.stringify(doc)), /faceReactions/);
-    doc.randomizer.faceReactions = ["cheer", "sulk"];
-    assert.throws(() => parseFile(JSON.stringify(doc)), /faceReactions\[1\]/);
-  });
-
-  test("unknown keys survive a round trip", () => {
-    const doc = JSON.parse(serialize(wrap(sample())));
-    doc.futureThing = { a: 1 };
-    const out = parseFile(JSON.stringify(doc));
-    assert.deepEqual(out.file.unknown, { futureThing: { a: 1 } });
-    assert.ok(serialize(out.file).includes("futureThing"));
-  });
-
-  test("a newer format version opens read-only with an explanation", () => {
-    const doc = JSON.parse(serialize(wrap(sample())));
-    doc.version = FORMAT_VERSION + 1;
-    const out = parseFile(JSON.stringify(doc));
-    assert.equal(out.readOnly, true);
-    assert.match(out.warnings[0], /newer Orangey/);
-  });
-
-  test("validation messages name the failing path", () => {
-    const doc = JSON.parse(serialize(wrap(sample())));
-    doc.randomizer.items[3].weight = -2;
-    doc.randomizer.items[1].label = "";
-    try {
-      parseFile(JSON.stringify(doc));
-      assert.fail("expected a ValidationError");
-    } catch (e) {
-      assert.ok(e instanceof ValidationError);
-      const paths = e.issues.map((i) => i.path);
-      assert.ok(paths.includes("randomizer.items[3].weight"), paths.join(", "));
-      assert.ok(paths.includes("randomizer.items[1].label"), paths.join(", "));
+  test("a malformed file is refused, and the message names what is wrong with it", () => {
+    const cases: [string, string, RegExp][] = [
+      ["not JSON at all", "{nope", /not valid JSON/],
+      ["a negative weight", doctored((d) => (d.randomizer.items[3].weight = -2)), /randomizer\.items\[3\]\.weight/],
+      ["an outcome with no label", doctored((d) => (d.randomizer.items[1].label = "")), /randomizer\.items\[1\]\.label/],
+      ["a tag that is neither cheer nor wince", doctored((d) => (d.randomizer.items[0].reaction = "dance")), /items\[0\]\.reaction/],
+      ["a list with nothing in it", doctored((d) => (d.randomizer.items = [])), /items/],
+      ["feel that is not an object", doctored((d) => (d.randomizer.feel = "fast")), /feel/],
+      ["one face reaction for a two-faced coin", serialize(wrap({ ...emptyRandomizer("coin", "Fate"), faceReactions: ["cheer"] } as never)), /faceReactions/],
+    ];
+    for (const [what, text, message] of cases) {
+      assert.throws(() => parseFile(text), (e: unknown) => {
+        assert.ok(e instanceof ValidationError, `${what}: threw ${e}`);
+        assert.match(e.message, message, `for ${what}`);
+        return true;
+      }, `${what} should have been refused`);
     }
   });
 
-  test("a bare randomizer object is accepted", () => {
-    const out = parseFile(JSON.stringify(sample()));
-    assert.equal(out.file.randomizer.name, "Forest Encounters");
-  });
+  test("a file from another version of Orangey still opens, and keeps what it knows", () => {
+    // A bare randomizer object is what people paste out of older files and
+    // out of other tools; unknown keys belong to a version we have not been
+    // written for yet, and throwing them away would quietly damage the file.
+    assert.equal(parseFile(JSON.stringify(sample())).file.randomizer.name, "Forest Encounters");
 
-  test("broken JSON fails with a readable message", () => {
-    assert.throws(() => parseFile("{nope"), (e: unknown) => e instanceof ValidationError && /not valid JSON/.test(e.message));
-  });
+    const withExtras = parseFile(doctored((d) => (d.futureThing = { a: 1 })));
+    assert.deepEqual(withExtras.file.unknown, { futureThing: { a: 1 } });
+    assert.ok(serialize(withExtras.file).includes("futureThing"));
 
-  test("a randomizer's own feel settings round-trip in a stable position", () => {
-    const r = { ...sample(), feel: { wheel: { turns: 3, settleDegrees: 20 } } };
-    const text = serialize(wrap(r));
-    assert.equal(serialize(parseFile(text).file), text);
-    const keys = [...text.matchAll(/^ {4}"(\w+)":/gm)].map((m) => m[1]);
-    assert.ok(keys.indexOf("feel") < keys.indexOf("created"), "feel is written before the timestamps");
-    assert.deepEqual((parseFile(text).file.randomizer as { feel?: unknown }).feel, { wheel: { turns: 3, settleDegrees: 20 } });
-  });
-
-  test("a feel field that is not an object is rejected", () => {
-    const doc = JSON.parse(serialize(wrap(sample())));
-    doc.randomizer.feel = "fast";
-    assert.throws(() => parseFile(JSON.stringify(doc)), ValidationError);
-  });
-
-  test("every randomizer type round-trips", () => {
-    for (const type of ["list", "dice", "coin", "number"] as const) {
-      const r = emptyRandomizer(type, `A ${type}`);
-      const text = serialize(wrap(r));
-      assert.equal(serialize(parseFile(text).file), text, `for ${type}`);
-    }
+    const newer = parseFile(doctored((d) => (d.version = FORMAT_VERSION + 1)));
+    assert.equal(newer.readOnly, true, "a newer file must not be saved back over");
+    assert.match(newer.warnings[0], /newer Orangey/);
   });
 
   test("file names are slugged and de-duplicated", () => {
@@ -158,21 +117,14 @@ describe("file format", () => {
       fileNameFor("Forest Encounters", ["forest-encounters.orangey.json"]),
       "forest-encounters-2.orangey.json",
     );
+    // Some file systems do not tell case apart, so neither may we.
     assert.equal(
       fileNameFor("Forest Encounters", ["FOREST-ENCOUNTERS.orangey.json", "forest-encounters-2.orangey.json"]),
       "forest-encounters-3.orangey.json",
     );
   });
 
-  test("a list must have at least one outcome", () => {
-    const doc = JSON.parse(serialize(wrap(sample())));
-    doc.randomizer.items = [];
-    assert.throws(() => parseFile(JSON.stringify(doc)), ValidationError);
-  });
-
   test("makeItem gives every outcome its own id", () => {
-    const a = makeItem("x");
-    const b = makeItem("x");
-    assert.notEqual(a.id, b.id);
+    assert.notEqual(makeItem("x").id, makeItem("x").id);
   });
 });

@@ -10,11 +10,13 @@
 import { emptyRandomizer, newId, type Randomizer } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
-import { button, formatTime, h, setChildren } from "../dom.ts";
+import { button, h, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { createCoin, createDiceTray } from "../components/dice.ts";
 import { createResultPanel } from "../components/result.ts";
+import { createRecentRolls } from "../components/recent.ts";
+import { createChainRow } from "../components/chain.ts";
 import { longestOutcome, rollRandomizer, whyCannotRoll, type Outcome } from "../roll.ts";
 import { summarize } from "../mascot/events.ts";
 import { effectiveFeel, motionScale } from "../feel.ts";
@@ -59,7 +61,7 @@ export function createPlayView(
     if (randomizer.type === "list") {
       if (randomizer.view === "wheel") {
         wheel = createWheel({
-          items: () => (randomizer as { items: never[] }).items,
+          items: () => (randomizer.type === "list" ? randomizer.items : []),
           id: () => randomizer.id,
           onActivate: () => void doRoll(),
         });
@@ -217,6 +219,8 @@ export function createPlayView(
     reserveResult();
     result.clear("Ready");
     buildStage();
+    // Nothing the old randomizer opened has anything to do with this one.
+    chain.reset();
   }
 
   /** Fix the result panel's height from what this randomizer can produce. */
@@ -241,52 +245,55 @@ export function createPlayView(
     navigate(`#/r/${encodeURIComponent(path)}`);
   }, { class: "ghost save-randomizer" });
 
-  const historyList = h("ul", { class: "history-list" });
-  function renderHistory(): void {
-    setChildren(historyList, 
-      ...state.history.slice(0, 8).map((entry) =>
-        h("li", {},
-          h("span", { class: "when", text: formatTime(entry.at) }),
-          h("span", { class: "what" },
-            h("span", { class: "name", text: entry.randomizerName }),
-            " ",
-            h("span", { class: "detail", text: entry.resultText }),
-          ),
-        ),
-      ),
-    );
-  }
+  // The panel is about whatever is open, so its Clear takes only those rolls.
+  // The quick screen has no one randomizer open — every preset press is a new
+  // ad-hoc one — so there it is about everything, which is also all the table
+  // can see from here.
+  const recent = createRecentRolls({
+    ids: () => (fixed ? [randomizer.id] : []),
+    scopeName: () => randomizer.name,
+  });
 
   const header = h("div", { class: "row" }, h("div", {}, title, subtitle), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
 
   // Orangey's place: the corner of the result panel, where he can react to
   // the number without ever sitting on the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
+  const playCard = h("div", { class: "card play-card" }, header, stage, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
-    h("div", { class: "card play-card" },
-      header,
-      stage,
-      result.el,
-      rollButton,
-    ),
-    h("div", { class: "card" },
-      h("div", { class: "row" },
-        h("h2", { text: "Recent rolls", style: { margin: "0" } }),
-        h("div", { class: "spacer" }),
-        button("All history", () => navigate("#/history"), { class: "ghost" }),
-      ),
-      historyList,
-    ),
+    playCard,
+    recent.el,
   );
+
+  /**
+   * An outcome that points at another randomizer opens it beside this one.
+   *
+   * The chain's elements are put in as siblings of the play card rather than
+   * as a box around it: the full-screen rules are written against
+   * `.play > .card`, and a wrapper would quietly take the projector with it.
+   * The two columns are a grid on `.play` that exists only while something is
+   * open, which is what the classes here say.
+   */
+  const chain = createChainRow({
+    id: () => randomizer.id,
+    name: () => randomizer.name,
+    card: playCard,
+    layout: (open, wide) => {
+      el.classList.toggle("has-chain", open);
+      el.classList.toggle("chain-wide", wide);
+    },
+  });
+  el.insertBefore(chain.strip, playCard);
+  el.insertBefore(chain.open, recent.el);
+  el.insertBefore(chain.note, recent.el);
 
   reserveResult();
   buildStage();
-  renderHistory();
   // Settings can change the seed while this view is alive, and the seed line
   // is part of what the panel reserves room for.
   const unsubscribe = state.subscribe(() => {
-    renderHistory();
+    recent.refresh();
     reserveResult();
   });
 
@@ -448,7 +455,9 @@ export function createPlayView(
     if (typing) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
-      void doRoll();
+      // A chain is rolled from its newest end: that is the randomizer the
+      // table is waiting on, and the one behind it has already answered.
+      if (!chain.rollNewest()) void doRoll();
     }
   };
   document.addEventListener("keydown", onKey);
@@ -460,6 +469,7 @@ export function createPlayView(
       // The full-screen class belongs to the app, which clears it before each
       // render: a view being torn down must not undo what the view replacing
       // it has already set up.
+      chain.destroy();
       unsubscribe();
     },
   };
@@ -475,5 +485,7 @@ function describeType(r: Randomizer): string {
       return `${r.faces[0]} or ${r.faces[1]}`;
     case "number":
       return `${r.min} to ${r.max}`;
+    case "board":
+      return `${r.entries.length} randomizer${r.entries.length === 1 ? "" : "s"}`;
   }
 }

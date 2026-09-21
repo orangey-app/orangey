@@ -1,13 +1,36 @@
 /**
  * History (plan C7/L). Append-only: a roll cannot honestly be un-rolled, so
- * there is "remove entry" and no undo (decision D13).
+ * there is "remove entry" and no undo (decision D13). A roll that the table
+ * agreed not to count is struck instead: the line stays, drawn through.
  */
 
 import { button, formatTime, h, setChildren } from "../dom.ts";
-import { state } from "../state.ts";
+import { state, type HistoryRow } from "../state.ts";
 import { navigate } from "../router.ts";
 import { download } from "./library.ts";
 import type { View } from "./editor.ts";
+
+/**
+ * The history as a spreadsheet. A struck roll is exported like any other,
+ * with the column saying it was struck: the log of a session is only complete
+ * if what the table set aside is in it too.
+ */
+export function historyCsv(rows: HistoryRow[]): string {
+  const table = [
+    ["time", "randomizer", "type", "result", "seed", "struck"],
+    ...rows.map((e) => [
+      new Date(e.at).toISOString(),
+      e.randomizerName,
+      e.type,
+      e.resultText,
+      e.seed ?? "",
+      e.struck ? "yes" : "",
+    ]),
+  ];
+  return table
+    .map((r) => r.map((cell) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(","))
+    .join("\n");
+}
 
 export function createHistoryView(): View {
   const list = h("ul", { class: "history-list" });
@@ -19,7 +42,7 @@ export function createHistoryView(): View {
       : "No rolls yet.";
     setChildren(list, 
       ...state.history.map((entry) =>
-        h("li", {},
+        h("li", { class: entry.struck ? "struck" : "" },
           h("span", { class: "when", text: formatTime(entry.at) }),
           h("span", { class: "what" },
             h("span", { class: "name", text: entry.randomizerName }),
@@ -37,6 +60,7 @@ export function createHistoryView(): View {
             }
             state.toast("That randomizer is no longer in your library.");
           }, { class: "ghost" }),
+          button(entry.struck ? "Unstrike" : "Strike", () => void state.setStruck(entry.id, !entry.struck), { class: "ghost" }),
           button("Copy", () => {
             void navigator.clipboard?.writeText(`${entry.randomizerName}: ${entry.resultText}`);
             state.toast("Copied");
@@ -48,20 +72,7 @@ export function createHistoryView(): View {
   }
 
   function exportCsv(): void {
-    const rows = [
-      ["time", "randomizer", "type", "result", "seed"],
-      ...state.history.map((e) => [
-        new Date(e.at).toISOString(),
-        e.randomizerName,
-        e.type,
-        e.resultText,
-        e.seed ?? "",
-      ]),
-    ];
-    const csv = rows
-      .map((r) => r.map((cell) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(","))
-      .join("\n");
-    download("orangey-history.csv", `${csv}\n`, "text/csv");
+    download("orangey-history.csv", `${historyCsv(state.history)}\n`, "text/csv");
   }
 
   function exportText(): void {

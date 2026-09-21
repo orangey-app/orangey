@@ -30,7 +30,7 @@ export async function deflate(bytes: Uint8Array): Promise<{ data: Uint8Array; me
   const CS = (globalThis as { CompressionStream?: typeof CompressionStream }).CompressionStream;
   if (!CS) return { data: bytes, method: 0 };
   try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new CS("deflate-raw"));
+    const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CS("deflate-raw"));
     const out = new Uint8Array(await new Response(stream).arrayBuffer());
     return out.length < bytes.length ? { data: out, method: 8 } : { data: bytes, method: 0 };
   } catch {
@@ -42,14 +42,26 @@ export async function inflate(bytes: Uint8Array, method: number): Promise<Uint8A
   if (method === 0) return bytes;
   const DS = (globalThis as { DecompressionStream?: typeof DecompressionStream }).DecompressionStream;
   if (!DS) throw new Error("this browser cannot read compressed ZIP entries");
-  const stream = new Blob([bytes]).stream().pipeThrough(new DS("deflate-raw"));
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DS("deflate-raw"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 export interface ZipEntry {
   path: string;
-  text: string;
+  /** The entry as text. A picture has none: its bytes are the entry. */
+  text?: string;
+  /** The entry as bytes. Set for a picture, and for nothing else. */
+  bytes?: Uint8Array;
 }
+
+/**
+ * Which entries are pictures.
+ *
+ * They are kept as bytes on both sides: putting a PNG through a TextDecoder
+ * on the way out of an archive and an encoder on the way back in does not
+ * return the PNG.
+ */
+const PICTURE_ENTRY = /\.(png|jpe?g|webp|gif)$/i;
 
 class Writer {
   parts: Uint8Array[] = [];
@@ -86,7 +98,7 @@ export async function createZip(entries: ZipEntry[]): Promise<Uint8Array> {
 
   for (const entry of entries) {
     const name = encoder.encode(entry.path);
-    const raw = encoder.encode(entry.text);
+    const raw = entry.bytes ?? encoder.encode(entry.text ?? "");
     const { data, method } = await deflate(raw);
     const crc = crc32(raw);
     const offset = w.length;
@@ -177,7 +189,8 @@ export async function readZip(bytes: Uint8Array): Promise<ZipEntry[]> {
     const data = bytes.subarray(dataStart, dataStart + packed);
 
     if (!path.endsWith("/")) {
-      entries.push({ path, text: decoder.decode(await inflate(data, method)) });
+      const content = await inflate(data, method);
+      entries.push(PICTURE_ENTRY.test(path) ? { path, bytes: content } : { path, text: decoder.decode(content) });
     }
     at += 46 + nameLen + extraLen + commentLen;
   }

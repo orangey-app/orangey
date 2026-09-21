@@ -6,7 +6,7 @@
  * you learn in one place is true in the other.
  */
 
-import { LIMITS, type CoinFeel, type DiceFeel, type FeelSettings, type WheelFeel } from "../feel.ts";
+import { DEFAULT_FEEL, LIMITS, type CoinFeel, type DiceFeel, type FeelSettings, type WheelFeel } from "../feel.ts";
 import { button, h } from "../dom.ts";
 
 export function slider(
@@ -36,6 +36,14 @@ export function choice<T extends string>(label: string, options: readonly T[], c
   );
 }
 
+/** A switch for a setting that is only ever on or off. */
+export function toggle(label: string, checked: boolean, onChange: (on: boolean) => void): HTMLElement {
+  const input = h("input", { type: "checkbox", "aria-label": label });
+  (input as HTMLInputElement).checked = checked;
+  input.addEventListener("change", () => onChange((input as HTMLInputElement).checked));
+  return h("label", { class: "field row tight feel-toggle" }, input, h("span", { class: "field-label", text: label }));
+}
+
 export interface SectionPanel {
   el: HTMLElement;
 }
@@ -44,10 +52,12 @@ export function wheelControls(values: WheelFeel, onChange: (patch: Partial<Wheel
   return h("div", { class: "feel-section" },
     slider("Spin length", values.durationMs, LIMITS.wheelDuration, 100, (v) => `${(v / 1000).toFixed(1)} s`, (v) => onChange({ durationMs: v })),
     slider("Turns", values.turns, LIMITS.turns, 1, (v) => `${v}`, (v) => onChange({ turns: v })),
-    choice("Wind-down", ["gentle", "standard", "snappy"] as const, values.curve, (v) => onChange({ curve: v })),
-    slider("Roll-back, at most", values.settleDegrees, LIMITS.settleDegrees, 1,
-      (v) => (v === 0 ? "none" : `${v}°`), (v) => onChange({ settleDegrees: v })),
-    h("p", { class: "faint", text: "Each spin swings past its target by a random share of this — between half and all of it — before settling back." }),
+    // The wind-down used to be a three-way choice here. One wind-down is
+    // enough: the spin length is what people actually reach for. Files and
+    // links that carry a curve still load, it is simply not offered.
+    toggle("Roll-back", values.settleDegrees > 0, (on) =>
+      onChange({ settleDegrees: on ? DEFAULT_FEEL.wheel.settleDegrees : 0 })),
+    h("p", { class: "faint", text: "With the roll-back on, each spin carries a little past its result and settles back onto it." }),
     ...extras,
   );
 }

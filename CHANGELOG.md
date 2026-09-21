@@ -2,6 +2,91 @@
 
 ## Unreleased
 
+- **Where an outcome sends you is chosen from the library, not a dropdown.**
+  "Goes to" opens your library as a tree, with folders to open and a search box
+  that flattens to matches across all of them — a list of every randomizer you
+  own is fine with six and unusable with sixty. It also takes a pasted link,
+  and can make the randomizer for you: a new one is added, set as the target,
+  and opened so you can fill it in.
+- **A board can be given a randomizer that does not exist yet.** Add… offers
+  New wheel, dice, coin and number beside your library, because a board is
+  usually assembled while thinking about tonight and half of what you want has
+  not been written yet.
+- **Right-click in the library** opens the same menu the ⋯ button does, and
+  that menu now has **Copy link** — the link that opens that randomizer by id,
+  so renaming or moving it later does not break what you pasted.
+
+- **An outcome can carry a picture.** Put a portrait on "Owlbear" and the table
+  sees an owlbear when the wheel lands on it: a round thumbnail sits in the
+  slice, and the picture itself fills the space above the answer. Pictures are
+  added in the outcome table, shrunk to 1600px on the way in, and kept beside
+  the library rather than inside the randomizer's file — so a wheel of a dozen
+  portraits is still a small, readable JSON, and a folder-backed library holds
+  real PNGs you can swap out.
+- **Pictures travel with a file, never in a link.** Export file inlines them so
+  a single `.orangey.json` is whole; the ZIP export keeps them as separate
+  files; an import takes either. A link carries the wheel and not the pictures,
+  which is what keeps it short enough for a slide.
+- **An outcome can send you to another randomizer.** Set "Goes to" on an
+  outcome and rolling it opens that randomizer beside the wheel, waiting for
+  its own press — a table that points at another table, which is how encounter
+  tables have always been written. The newest two stay full size and earlier
+  ones become icons showing the answer they gave; clicking one brings it back.
+  A chain that circles back on itself stops and says so, and an outcome
+  pointing at something deleted says which randomizer is missing.
+
+- **Boards: several randomizers on one screen.** A board is a file in your
+  library like a randomizer is. Put an encounter table, the weather and a d20
+  on it, and they sit side by side, each with its own wheel or dice, its own
+  answer and its own spin settings. **Roll all** spins everything at once;
+  clicking one cell rolls just that one; full screen shows the same grid and
+  space rolls everything. A board holds at most twelve, because past that the
+  cells are too small to read across a table.
+- **A board points at your randomizers rather than copying them**, by id, so
+  renaming or moving one does not break the board and editing a table updates
+  every board it is on. A randomizer you have deleted leaves a card saying
+  which one is missing, rather than the board quietly shrinking. Add to a board
+  with **Add…**, or by dragging from the library; drag a cell onto another to
+  reorder.
+- **A board travels as a file.** Share… on a board gives a link that opens it
+  in the library it is already in — for a slide or a bookmark — and a download
+  that packs the board together with every randomizer on it. One randomizer
+  fits in an address; a board is several, and the link would outgrow what decks
+  and chat apps carry. The library's ⋯ menu offers the same export, and
+  importing an archive says so when a board arrives without one of its pieces.
+- **Clear clears what is in front of you.** On a board, the rolls of the
+  randomizers on it; on the play screen, the rolls of the randomizer you have
+  open; on the History screen, everything. Each says what is about to go
+  ("Clear 6 rolls from this board?"). The Recent rolls panel has its own Clear
+  now, where it is needed mid-game.
+- **A roll can be struck.** It stays where it is with a line through it, in
+  Recent rolls and in the History screen, so a set-aside roll is visible rather
+  than missing. The CSV export carries a struck column.
+
+- **The wheel has three settings instead of four.** The wind-down choice
+  (gentle / standard / snappy) is gone — one wind-down, the standard one, and
+  the spin length is the control people actually reach for. The roll-back is a
+  switch rather than a slider in degrees. Settings files, randomizer overrides
+  and shared links that carry a curve or a number of degrees still load: the
+  curve is honoured and simply not offered, and any roll-back above zero reads
+  as on.
+- **A much smaller test suite.** 299 unit tests became 105 and 95 browser
+  tests became 44, with the browser run down from minutes to 79 seconds.
+  Repeated tests became table-driven ones, the mascot's rules moved from the
+  browser into unit tests, and the combination matrix went: it re-walked paths
+  the feature tests already cover. Coverage was deliberately dropped in places
+  — polyhedron geometry, palette curation (which `npm run check` enforces
+  anyway), ZIP internals, most animation detail and most of the mascot. What
+  remains was checked by breaking the app on purpose in seven ways — the
+  pointer moved back to twelve o'clock, the roll-back bolted onto the end of
+  the curve again, weights ignored, a 1 beside a 20 counted as a maximum, the
+  link limit cut, labels flipped, the label measurer made to under-report —
+  and every one was caught.
+- **`orangey.html` is in the repository.** The whole app as one file, at the
+  root, rebuilt by `npm run build:single` — hand it to someone, open it from a
+  memory stick, or download it from GitHub; nothing to install and nothing to
+  serve.
+
 - **The roll-back is part of the spin now, not something added to the end of
   it.** The wheel used to follow its curve to the finish and then, from exactly
   three-quarters of the way through, have a bounce added on top. That addition

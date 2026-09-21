@@ -4,11 +4,12 @@
  */
 
 import { CryptoSource, SeededSource, type RandomSource } from "../core/rng.ts";
-import { appdb, type HistoryEntry, type Prefs } from "../storage/appdb.ts";
+import { appdb, HISTORY_CAP, type HistoryEntry, type Prefs } from "../storage/appdb.ts";
 import { LibraryService, type LibraryBackend } from "../storage/library.ts";
 import { MemoryBackend } from "../storage/memory.ts";
 import { openOpfs, reopenFolder } from "../storage/fsdir.ts";
 import { IndexedDbBackend } from "../storage/idb.ts";
+import { useImageStore } from "../storage/images.ts";
 import type { Randomizer } from "../model/randomizer.ts";
 import { newId } from "../model/randomizer.ts";
 import { DEFAULT_FEEL, normalizeFeel, prefersReducedMotion, type FeelSettings } from "./feel.ts";
@@ -16,6 +17,35 @@ import { starters } from "../model/starters.ts";
 import { normalizeColours, parseSettings, portableSettings, serializeSettings, type CustomColour } from "../model/settings-file.ts";
 import type { Outcome } from "./roll.ts";
 import { emitMascotEvent, type MascotEvent } from "./mascot/events.ts";
+
+/**
+ * A history entry as the app holds it. Striking a roll does not remove it —
+ * the roll happened, and a line through it says so — so the flag rides along
+ * in the record IndexedDB already keeps. An entry written before this existed
+ * arrives without the field, which reads as not struck.
+ */
+export interface HistoryRow extends HistoryEntry {
+  struck?: boolean;
+}
+
+/**
+ * The randomizer a row came from. A dice roll carries its expression rather
+ * than an id in `repeat`, so for those the id on the entry is what says which
+ * randomizer rolled it.
+ */
+export function rollOwnerId(row: HistoryRow): string | null {
+  return row.repeat?.kind === "randomizer" ? row.repeat.id : row.randomizerId;
+}
+
+/** The rows belonging to these randomizers; no ids at all means all of them. */
+export function rollsInScope(rows: HistoryRow[], ids: string[]): HistoryRow[] {
+  if (ids.length === 0) return rows;
+  const wanted = new Set(ids);
+  return rows.filter((row) => {
+    const owner = rollOwnerId(row);
+    return owner !== null && wanted.has(owner);
+  });
+}
 
 export interface Toast {
   id: string;
@@ -43,7 +73,7 @@ export const DEFAULT_PREFS: Prefs = {
 class AppState {
   prefs: Prefs = { ...DEFAULT_PREFS };
   library = new LibraryService(new MemoryBackend());
-  history: HistoryEntry[] = [];
+  history: HistoryRow[] = [];
   lastOutcome: { outcome: Outcome; randomizer: Randomizer } | null = null;
   toasts: Toast[] = [];
   ready = false;
@@ -88,6 +118,7 @@ class AppState {
     backend ??= await IndexedDbBackend.open();
     backend ??= new MemoryBackend();
     this.library = new LibraryService(backend);
+    useImageStore(backend);
     await this.library.refresh();
 
     // First run: a few real randomizers, so the app is not an empty page.
@@ -178,7 +209,7 @@ class AppState {
 
   async record(randomizer: Randomizer, outcome: Outcome): Promise<void> {
     this.lastOutcome = { outcome, randomizer };
-    const entry: HistoryEntry = {
+    const entry: HistoryRow = {
       id: newId(),
       at: Date.now(),
       randomizerId: randomizer.id,
@@ -207,6 +238,38 @@ class AppState {
     this.history = [];
     this.emit();
     await appdb.clearHistory();
+  }
+
+  /**
+   * Clear the rolls of particular randomizers — what a Recent rolls panel has
+   * in front of the user — and nothing else. No ids means the whole history.
+   *
+   * Memory holds the most recent rolls only, so the store is walked as well:
+   * an older roll of the same randomizer is part of what was asked for.
+   */
+  async clearHistoryFor(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      await this.clearHistory();
+      return;
+    }
+    const doomed = new Set(rollsInScope(this.history, ids).map((row) => row.id));
+    this.history = this.history.filter((row) => !doomed.has(row.id));
+    this.emit();
+    const stored = await appdb.history(HISTORY_CAP);
+    for (const row of rollsInScope(stored, ids)) await appdb.removeHistory(row.id);
+  }
+
+  /**
+   * Strike a roll through, or take the line off again. The entry goes back to
+   * the store whole, because the store keeps records rather than fields.
+   */
+  async setStruck(id: string, struck: boolean): Promise<void> {
+    const row = this.history.find((entry) => entry.id === id);
+    if (!row || row.struck === struck) return;
+    const next: HistoryRow = { ...row, struck };
+    this.history = this.history.map((entry) => (entry.id === id ? next : entry));
+    this.emit();
+    await appdb.addHistory(next);
   }
 
   toast(text: string, actionLabel?: string, action?: () => void, ms = 10000): void {

@@ -10,8 +10,17 @@ import { Check } from "./validate.ts";
 import { isHex } from "../core/color.ts";
 import type { FeelOverride } from "./feel.ts";
 
-export const RANDOMIZER_TYPES = ["list", "dice", "coin", "number"] as const;
+/** The types that can be rolled. A board is not one of them; it holds them. */
+export const ROLLABLE_TYPES = ["list", "dice", "coin", "number"] as const;
+export const RANDOMIZER_TYPES = [...ROLLABLE_TYPES, "board"] as const;
+export type RollableType = (typeof ROLLABLE_TYPES)[number];
 export type RandomizerType = (typeof RANDOMIZER_TYPES)[number];
+
+/**
+ * How many randomizers one board may hold. Past a dozen the cells are too
+ * small to read across the table, which is what a board is for.
+ */
+export const BOARD_LIMIT = 12;
 
 /**
  * What Orangey does when a particular outcome comes up. Wheels and coins have
@@ -45,6 +54,24 @@ export interface ListItem extends Weighted {
   metadata?: Record<string, string | number | boolean>;
   /** Orangey's reaction when this outcome comes up. */
   reaction?: OutcomeReaction;
+  /**
+   * A picture shown when this outcome comes up: an id in the image store,
+   * which keeps the bytes beside the library rather than in this file.
+   */
+  image?: string;
+  /**
+   * The same picture inline, as a data: URL. Only ever present in a file on
+   * its way in or out of the app — a single-file export is self-contained, and
+   * an import puts the bytes in the store and swaps this for `image`. Links
+   * never carry it.
+   */
+  imageData?: string;
+  /**
+   * This outcome sends you to another randomizer, by id: rolling it opens that
+   * one beside this wheel. A table that points at another table is the whole
+   * reason encounter tables are written the way they are.
+   */
+  goesTo?: string;
 }
 
 export interface ListRandomizer extends RandomizerBase {
@@ -77,11 +104,33 @@ export interface NumberRandomizer extends RandomizerBase {
   unique: boolean;
 }
 
-export type Randomizer = ListRandomizer | DiceRandomizer | CoinRandomizer | NumberRandomizer;
+/**
+ * A board: several randomizers on one screen, rolled together or one at a
+ * time. It refers to them by id, so renaming or moving one does not break the
+ * board, and carries the name each had when it was added — enough to say what
+ * is missing when a randomizer has been deleted.
+ */
+export interface BoardEntry {
+  id: string;
+  name: string;
+}
+
+export interface BoardRandomizer extends RandomizerBase {
+  type: "board";
+  entries: BoardEntry[];
+}
+
+/** Everything that can actually be rolled. */
+export type Rollable = ListRandomizer | DiceRandomizer | CoinRandomizer | NumberRandomizer;
+export type Randomizer = Rollable | BoardRandomizer;
+
+export function isBoard(r: Randomizer): r is BoardRandomizer {
+  return r.type === "board";
+}
 
 export function newId(): string {
-  const c = globalThis.crypto;
-  if (c && "randomUUID" in c) return c.randomUUID();
+  const c = globalThis.crypto as Crypto;
+  if (typeof c.randomUUID === "function") return c.randomUUID();
   const b = new Uint8Array(16);
   c.getRandomValues(b);
   return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
@@ -110,16 +159,20 @@ export function emptyRandomizer(type: RandomizerType, name: string): Randomizer 
       return { ...base, type: "coin", faces: ["Heads", "Tails"] };
     case "number":
       return { ...base, type: "number", min: 1, max: 100, integer: true, inclusiveMax: true, count: 1, unique: false };
+    case "board":
+      return { ...base, type: "board", entries: [] };
   }
 }
 
 /** Does this randomizer have anything that can come up right now? */
 export function canRoll(r: Randomizer): boolean {
+  // A board rolls what is on it; on its own it has nothing to come up.
+  if (r.type === "board") return r.entries.length > 0;
   if (r.type !== "list") return true;
   return r.items.some(isRollable);
 }
 
-export function validateRandomizer(v: unknown, check = new Check(), path = "randomizer"): check is Check {
+export function validateRandomizer(v: unknown, check = new Check(), path = "randomizer"): boolean {
   if (!check.object(path, v)) return false;
   const o = v as Record<string, unknown>;
   check.string(`${path}.id`, o.id, { min: 1 });
@@ -159,6 +212,26 @@ export function validateRandomizer(v: unknown, check = new Check(), path = "rand
         });
       }
       break;
+    case "board": {
+      if (check.array(`${path}.entries`, o.entries)) {
+        const entries = o.entries as unknown[];
+        if (entries.length > BOARD_LIMIT) check.fail(`${path}.entries`, `a board holds at most ${BOARD_LIMIT} randomizers`);
+        const seen = new Set<string>();
+        entries.forEach((e, i) => {
+          if (!check.object(`${path}.entries[${i}]`, e)) return;
+          const entry = e as Record<string, unknown>;
+          check.string(`${path}.entries[${i}].id`, entry.id, { min: 1 });
+          check.string(`${path}.entries[${i}].name`, entry.name, { min: 1, max: 120 });
+          if (typeof entry.id === "string") {
+            // The same randomizer twice would roll itself against itself and
+            // give two answers to one question.
+            if (seen.has(entry.id)) check.fail(`${path}.entries[${i}].id`, "already on this board");
+            seen.add(entry.id);
+          }
+        });
+      }
+      break;
+    }
     case "number":
       check.number(`${path}.min`, o.min);
       check.number(`${path}.max`, o.max);
@@ -174,6 +247,9 @@ export function validateRandomizer(v: unknown, check = new Check(), path = "rand
   return check.ok;
 }
 
+/** A picture small enough to sit in a file: 1600px on its long edge, at most. */
+export const IMAGE_MAX_EDGE = 1600;
+
 export function validateItem(v: unknown, check: Check, path: string): void {
   if (!check.object(path, v)) return;
   const o = v as Record<string, unknown>;
@@ -184,6 +260,15 @@ export function validateItem(v: unknown, check: Check, path: string): void {
   if (o.description !== undefined) check.string(`${path}.description`, o.description, { max: 2000 });
   if (o.color !== undefined && !isHex(o.color)) check.fail(`${path}.color`, "expected a colour like #a33a30");
   if (o.reaction !== undefined) check.oneOf(`${path}.reaction`, o.reaction, OUTCOME_REACTIONS);
+  if (o.image !== undefined) check.string(`${path}.image`, o.image, { min: 1, max: 200 });
+  if (o.goesTo !== undefined) check.string(`${path}.goesTo`, o.goesTo, { min: 1, max: 200 });
+  if (o.imageData !== undefined) {
+    // Only a picture, and only inline: a file arriving with a link in this
+    // field would be asking the app to fetch something when a wheel is drawn.
+    if (check.string(`${path}.imageData`, o.imageData, { min: 1 }) && !/^data:image\/(png|jpeg|webp|gif);base64,/.test(o.imageData as string)) {
+      check.fail(`${path}.imageData`, "expected an inline picture (a data:image/… URL)");
+    }
+  }
   if (o.metadata !== undefined && check.object(`${path}.metadata`, o.metadata)) {
     for (const [k, mv] of Object.entries(o.metadata as Record<string, unknown>)) {
       if (!["string", "number", "boolean"].includes(typeof mv)) {

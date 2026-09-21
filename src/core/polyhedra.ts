@@ -347,17 +347,6 @@ function icosahedron(): Solid {
   });
 }
 
-/** Newell's method: a normal that is right for any planar polygon. */
-function polygonNormal(points: Vec3[]): Vec3 {
-  let n: Vec3 = [0, 0, 0];
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    n = vAdd(n, [(a[1] - b[1]) * (a[2] + b[2]), (a[2] - b[2]) * (a[0] + b[0]), (a[0] - b[0]) * (a[1] + b[1])]);
-  }
-  return vNormalize(n);
-}
-
 /**
  * The pentagonal trapezohedron: ten kite faces, which is the shape of a real
  * ten-sider. Not Platonic, but using a d10-shaped d10 matters more than

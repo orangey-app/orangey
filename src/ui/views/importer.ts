@@ -11,10 +11,14 @@ import { buildItems, itemsFromJson, type ImportResult, type Mapping } from "../.
 import { delimiterName, looksLikeJson, parseDelimited, type Delimiter } from "../../import/parse.ts";
 import { emptyRandomizer, type ListRandomizer, type Randomizer } from "../../model/randomizer.ts";
 import { decodeRandomizer } from "../../model/link.ts";
-import { parseFile } from "../../model/file.ts";
+import { parseFile, serialize, wrap } from "../../model/file.ts";
 import { FILE_SUFFIX } from "../../model/file.ts";
-import { readZip } from "../../storage/zip.ts";
-import { button, h, setChildren } from "../dom.ts";
+import { readZip, type ZipEntry } from "../../storage/zip.ts";
+import { IMAGE_DIR } from "../../storage/library.ts";
+import { restoreImage } from "../../storage/images.ts";
+import { basename } from "../../storage/paths.ts";
+import { absorbImages, missingOnBoards } from "../storage-actions.ts";
+import { appendChildren, button, h, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { navigate } from "../router.ts";
 import type { View } from "./editor.ts";
@@ -167,7 +171,8 @@ export function createImportView(initialText = ""): View {
     }
 
     const rows = outcome.items.slice(0, 10);
-    preview.append(
+    appendChildren(
+      preview,
       h("h2", { text: "Check before creating" }),
       h("pre", { class: "report" },
         ...outcome.report.map((line) =>
@@ -220,9 +225,18 @@ export function createImportView(initialText = ""): View {
   }
 
   function describeLinkType(r: Randomizer): string {
-    if (r.type === "dice") return r.expression;
-    if (r.type === "coin") return `${r.faces[0]} or ${r.faces[1]}`;
-    return `${r.min} to ${r.max}`;
+    switch (r.type) {
+      case "dice":
+        return r.expression;
+      case "coin":
+        return `${r.faces[0]} or ${r.faces[1]}`;
+      case "number":
+        return `${r.min} to ${r.max}`;
+      case "list":
+        return `${r.items.length} outcome${r.items.length === 1 ? "" : "s"}`;
+      case "board":
+        return `${r.entries.length} randomizer${r.entries.length === 1 ? "" : "s"}`;
+    }
   }
 
   async function saveLinked(): Promise<void> {
@@ -282,12 +296,18 @@ export function createImportView(initialText = ""): View {
     if (file.name.toLowerCase().endsWith(".zip")) {
       try {
         const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
-        const result = await state.library.importArchive(entries, askCollision);
+        const result = await state.library.importArchive(await absorbArchive(entries), askCollision);
+        // A board arriving without one of its randomizers is worth saying now,
+        // rather than leaving the person to find the gap on the board.
+        const gaps = missingOnBoards(state.library)
+          .map((b) => `${b.name} is missing ${b.missing.join(", ")}`)
+          .join("; ");
         state.toast(
           `Imported ${result.added} file${result.added === 1 ? "" : "s"}` +
             `${result.replaced ? `, replaced ${result.replaced}` : ""}` +
             `${result.skipped ? `, skipped ${result.skipped}` : ""}` +
-            `${result.failed ? `, ${result.failed} unreadable` : ""}`,
+            `${result.failed ? `, ${result.failed} unreadable` : ""}` +
+            `${gaps ? `. ${gaps}` : ""}`,
         );
         navigate("#/library");
       } catch (e) {
@@ -299,8 +319,11 @@ export function createImportView(initialText = ""): View {
     if (file.name.toLowerCase().endsWith(FILE_SUFFIX)) {
       try {
         const parsed = parseFile(content);
-        const path = await state.library.create("", parsed.file.randomizer);
-        state.toast(`Imported "${parsed.file.randomizer.name}"`);
+        // A file made for travelling carries its pictures inside it; they go
+        // to the store now, so what lands in the library is an ordinary file.
+        const randomizer = await absorbImages(parsed.file.randomizer);
+        const path = await state.library.create("", randomizer);
+        state.toast(`Imported "${randomizer.name}"`);
         navigate(`#/r/${encodeURIComponent(path)}`);
         return;
       } catch (e) {
@@ -360,4 +383,37 @@ export function createImportView(initialText = ""): View {
       document.removeEventListener("dragover", onDragOver);
     },
   };
+}
+
+/**
+ * An archive on its way in: the pictures first, then the randomizers.
+ *
+ * The pictures keep the ids they arrived with, because the randomizers beside
+ * them name those ids and a fresh id would point every outcome at nothing. An
+ * archive of single-file exports carries its pictures inline instead, so those
+ * are absorbed here too and the entry is rewritten to name what was stored.
+ */
+async function absorbArchive(entries: ZipEntry[]): Promise<{ path: string; text: string }[]> {
+  const files: { path: string; text: string }[] = [];
+  for (const entry of entries) {
+    if (entry.bytes) {
+      if (entry.path.startsWith(`${IMAGE_DIR}/`)) {
+        await restoreImage(basename(entry.path).replace(/\.[^.]+$/, ""), entry.bytes);
+      }
+      continue;
+    }
+    const text = entry.text ?? "";
+    if (!text.includes('"imageData"')) {
+      files.push({ path: entry.path, text });
+      continue;
+    }
+    try {
+      files.push({ path: entry.path, text: serialize(wrap(await absorbImages(parseFile(text).file.randomizer))) });
+    } catch {
+      // Not readable: hand it over as it came, so the import counts it as the
+      // one unreadable file it is rather than losing it silently.
+      files.push({ path: entry.path, text });
+    }
+  }
+  return files;
 }

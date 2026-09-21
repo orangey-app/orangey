@@ -45,6 +45,17 @@ function append(el: Element, children: Child[]): void {
   }
 }
 
+/**
+ * Append children to an element, skipping nulls.
+ *
+ * Native `append()` stringifies null into the text "null", which is exactly
+ * what a conditional child produces when the condition is false. Use this
+ * wherever the children are built conditionally.
+ */
+export function appendChildren(el: Element, ...children: Child[]): void {
+  append(el, children);
+}
+
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   props: Props | null = null,

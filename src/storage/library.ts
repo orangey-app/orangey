@@ -18,6 +18,15 @@ export interface Entry {
   kind: "folder" | "file";
 }
 
+/**
+ * Where the image store keeps its files, at the top of the library.
+ *
+ * It is named here rather than in `images.ts` because the tree builder has to
+ * know the name to leave it out, and a folder importing the store it is
+ * meant to ignore would be a cycle.
+ */
+export const IMAGE_DIR = "images";
+
 export interface LibraryBackend {
   readonly kind: "memory" | "opfs" | "idb" | "fsa" | "tauri";
   /** Human-readable location, shown in the UI ("Browser storage", a folder name). */
@@ -26,6 +35,14 @@ export interface LibraryBackend {
   list(path: string): Promise<Entry[]>;
   read(path: string): Promise<string>;
   write(path: string, contents: string): Promise<void>;
+  /**
+   * The same two for files that are not text. Pictures go through these, so a
+   * library kept in a folder holds real .png files a person can open, look at
+   * and replace with another — base64 inside a text file would make the
+   * folder a container rather than a folder.
+   */
+  readBytes(path: string): Promise<Uint8Array>;
+  writeBytes(path: string, bytes: Uint8Array): Promise<void>;
   mkdir(path: string): Promise<void>;
   move(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
@@ -91,6 +108,10 @@ export class LibraryService {
     const files: LibraryNode[] = [];
     for (const e of entries) {
       const child = join(path, e.name);
+      // The image store's folder is the app's bookkeeping, not part of anyone's
+      // library, so it is never a folder you can open, move or save into. Only
+      // at the top: a folder of pictures the user made themselves is theirs.
+      if (path === "" && e.kind === "folder" && e.name === IMAGE_DIR) continue;
       if (e.kind === "folder") folders.push(await this.#readFolder(child, e.name));
       else if (isRandomizerFile(e.name)) files.push(await this.#readFile(child, e.name));
     }

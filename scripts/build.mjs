@@ -110,18 +110,20 @@ writeFileSync(
 // --- single file -------------------------------------------------------------
 
 if (single) {
-  writeFileSync(
-    join(dist, "orangey.html"),
-    page({
-      head: `<meta name="orangey-build" content="single">\n<link rel="icon" href="data:image/png;base64,${makeIcon(64).toString("base64")}">`,
-      styleTag: `<style>\n${css}\n</style>`,
-      scriptTag: `<script type="module">\n${js}\n</script>`,
-    }),
-  );
+  const html = page({
+    head: `<meta name="orangey-build" content="single">\n<link rel="icon" href="data:image/png;base64,${makeIcon(64).toString("base64")}">`,
+    styleTag: `<style>\n${css}\n</style>`,
+    scriptTag: `<script type="module">\n${js}\n</script>`,
+  });
+  writeFileSync(join(dist, "orangey.html"), html);
+  // The same file at the root of the repository, where it is committed: the
+  // whole app as one file someone can be handed, download from GitHub, or open
+  // from a memory stick, with nothing installed and nothing to serve.
+  writeFileSync(join(root, "orangey.html"), html);
 }
 
 const size = (name) => `${(readFileSync(join(dist, name)).length / 1024).toFixed(1)} kB`;
 console.log("built dist/ — relative paths, so it works at any address");
 console.log(`  app.js       ${size("app.js")}`);
 console.log(`  app.css      ${size("app.css")}`);
-if (single) console.log(`  orangey.html ${size("orangey.html")}`);
+if (single) console.log(`  orangey.html ${size("orangey.html")} (also written to the repository root)`);

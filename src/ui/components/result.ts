@@ -15,6 +15,7 @@
  */
 
 import { h } from "../dom.ts";
+import { imageUrl, imageUrlSync } from "../../storage/images.ts";
 import type { Outcome } from "../roll.ts";
 
 export interface ResultPanel {
@@ -51,7 +52,29 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
   const detail = h("div", { class: "result-detail" });
   const meta = h("div", { class: "result-meta" });
   const live = h("div", { class: "sr-only", role: "status", "aria-live": "polite", "aria-atomic": "true" });
-  const el = h("div", { class: "result-panel" }, slot, detail, meta, live);
+  // The picture an outcome carries sits above its name: the table looks at the
+  // picture, the name is what gets written down.
+  const picture = h("img", { class: "result-picture", alt: "" });
+  picture.hidden = true;
+  const el = h("div", { class: "result-panel" }, picture, slot, detail, meta, live);
+
+  function showPicture(id: string | undefined, alt: string): void {
+    if (!id) {
+      picture.hidden = true;
+      picture.removeAttribute("src");
+      return;
+    }
+    const url = imageUrlSync(id);
+    if (!url) {
+      void imageUrl(id).then((ready) => {
+        if (ready) showPicture(id, alt);
+      });
+      return;
+    }
+    (picture as HTMLImageElement).src = url;
+    picture.alt = alt;
+    picture.hidden = false;
+  }
 
   return {
     el,
@@ -63,10 +86,12 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
       value.title = outcome.text;
       detail.textContent = outcome.detail ?? "";
       meta.textContent = outcome.seed ? `seed ${outcome.seed}` : "";
+      showPicture(outcome.image, outcome.text);
       if (announce) live.textContent = outcome.speak;
     },
     pending(text = "Rolling…") {
       el.classList.add("is-pending");
+      showPicture(undefined, "");
       value.textContent = text;
       value.classList.remove("is-max", "is-min");
       value.removeAttribute("title");
@@ -75,6 +100,7 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
     },
     clear(text = placeholder) {
       el.classList.remove("is-pending");
+      showPicture(undefined, "");
       value.textContent = text;
       value.classList.remove("is-max", "is-min");
       value.removeAttribute("title");

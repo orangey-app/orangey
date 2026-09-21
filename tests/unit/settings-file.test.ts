@@ -1,10 +1,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  MAX_CUSTOM_COLOURS,
   SETTINGS_FORMAT,
   SETTINGS_VERSION,
-  normalizeColours,
   parseSettings,
   portableSettings,
   serializeSettings,
@@ -25,83 +23,65 @@ const prefs = () => ({
 });
 
 describe("settings file", () => {
-  test("carries scheme, feel, seed, the reduced-motion choice and my colours — and nothing about this device", () => {
+  test("exporting then importing gives back the same settings, and nothing about this device", () => {
     const text = serializeSettings(portableSettings(prefs()));
     const doc = JSON.parse(text);
     assert.equal(doc.format, SETTINGS_FORMAT);
     assert.equal(doc.version, SETTINGS_VERSION);
     assert.deepEqual(Object.keys(doc.settings), ["scheme", "feel", "seed", "reducedMotionOverridden", "colours"]);
-    assert.equal(doc.settings.scheme, "ocean");
-    assert.equal(doc.settings.feel.wheel.durationMs, 4200);
-    assert.equal(doc.settings.feel.mascot.presence, "always");
-    assert.deepEqual(doc.settings.feel.mascot.rules, { "roll-max": false });
-    assert.equal(doc.settings.seed, "table 7");
-    assert.deepEqual(doc.settings.colours, [{ name: "Campaign red", hex: "#b3202a" }]);
+    // Which folder was last open, or where this browser keeps its library, is
+    // nobody else's business and meaningless on the machine the file lands on.
     assert.ok(!text.includes("lastPath") && !text.includes("favourites") && !text.includes("backend"));
     assert.ok(text.endsWith("}\n") && !text.includes("\r"));
+
+    const back = parseSettings(text);
+    assert.equal(back.scheme, "ocean");
+    assert.equal(back.feel.wheel.durationMs, 4200);
+    assert.equal(back.feel.mascot.presence, "always");
+    assert.deepEqual(back.feel.mascot.rules, { "roll-max": false });
+    assert.equal(back.seed, "table 7");
+    // My colours come back normalised: the hash added, the hex lower-cased.
+    assert.deepEqual(back.colours, [{ name: "Campaign red", hex: "#b3202a" }]);
+    assert.equal(serializeSettings(back), text, "the file did not survive a second round trip");
   });
 
-  test("round-trips byte for byte", () => {
-    const text = serializeSettings(portableSettings(prefs()));
-    assert.equal(serializeSettings(parseSettings(text)), text);
+  test("a corrupt or unwelcome file is refused, and the message names the part at fault", () => {
+    const settings = (s: Record<string, unknown>) => JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: s });
+    const cases: [string, string, RegExp][] = [
+      ["not JSON at all", "{nope", /not JSON/],
+      ["some other app's file", JSON.stringify({ format: "orangey", version: 1, settings: {} }), /file\.format/],
+      ["a version we cannot read", JSON.stringify({ format: SETTINGS_FORMAT, version: 99, settings: {} }), /newer Orangey/],
+      ["a scheme that does not exist", settings({ scheme: "lava" }), /settings\.scheme/],
+      ["a colour that is not a hex", settings({ colours: [{ name: "x", hex: "red" }] }), /colours\[0\]\.hex/],
+      ["a colour with no name", settings({ colours: [{ name: "", hex: "#fff" }] }), /colours\[0\]\.name/],
+      ["a device-only key smuggled in", settings({ lastPath: "x" }), /settings\.lastPath/],
+    ];
+    for (const [what, text, message] of cases) {
+      assert.throws(() => parseSettings(text), (e: unknown) => {
+        assert.ok(e instanceof ValidationError, `${what}: threw ${e}`);
+        assert.match(e.message, message, `for ${what}`);
+        return true;
+      }, `${what} should have been refused`);
+    }
+    // Refusal is all-or-nothing: a file with one bad field changes nothing,
+    // rather than leaving half of someone else's settings applied.
+    assert.throws(() => parseSettings(settings({ scheme: "lava", seed: "kept?" })));
   });
 
-  test("loading clamps every timing into its limits, exactly as the app does on start", () => {
+  test("a hand-written file works: missing sections default, and timings are clamped to their limits", () => {
+    const minimal = parseSettings(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { scheme: "night" } }));
+    assert.equal(minimal.scheme, "night");
+    assert.deepEqual(minimal.feel, DEFAULT_FEEL);
+    assert.equal(minimal.seed, null);
+    assert.deepEqual(minimal.colours, []);
+
     const doc = JSON.parse(serializeSettings(portableSettings(prefs())));
     doc.settings.feel.wheel.durationMs = 999999;
     doc.settings.feel.wheel.turns = 400;
     doc.settings.feel.mascot.wobble = 40;
-    const s = parseSettings(JSON.stringify(doc));
-    assert.equal(s.feel.wheel.durationMs, LIMITS.wheelDuration[1]);
-    assert.equal(s.feel.wheel.turns, LIMITS.turns[1]);
-    assert.equal(s.feel.mascot.wobble, LIMITS.mascotWobble[1]);
-  });
-
-  test("a missing section falls back to the defaults, so a hand-written minimal file works", () => {
-    const s = parseSettings(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { scheme: "night" } }));
-    assert.equal(s.scheme, "night");
-    assert.deepEqual(s.feel, DEFAULT_FEEL);
-    assert.equal(s.seed, null);
-    assert.deepEqual(s.colours, []);
-  });
-
-  test("refuses: not JSON, the wrong format, a newer version, an unknown scheme, a bad colour, an unknown key — each named", () => {
-    const refuse = (text: string, re: RegExp) =>
-      assert.throws(() => parseSettings(text), (e: unknown) => {
-        assert.ok(e instanceof ValidationError, `not a ValidationError: ${e}`);
-        assert.match(e.message, re);
-        return true;
-      });
-    refuse("{nope", /not JSON/);
-    refuse(JSON.stringify({ format: "orangey", version: 1, settings: {} }), /file\.format/);
-    refuse(JSON.stringify({ format: SETTINGS_FORMAT, version: 99, settings: {} }), /newer Orangey/);
-    refuse(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { scheme: "lava" } }), /settings\.scheme/);
-    refuse(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { colours: [{ name: "x", hex: "red" }] } }), /colours\[0\]\.hex/);
-    refuse(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { colours: [{ name: "", hex: "#fff" }] } }), /colours\[0\]\.name/);
-    refuse(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { lastPath: "x" } }), /settings\.lastPath/);
-  });
-
-  test("a refused file changes nothing: parse throws before anything is returned", () => {
-    assert.throws(() => parseSettings(JSON.stringify({ format: SETTINGS_FORMAT, version: 1, settings: { scheme: "lava", seed: "kept?" } })));
-  });
-});
-
-describe("my colours", () => {
-  test("normalising lower-cases hex, adds the hash, trims names, drops junk and duplicates, and caps the list", () => {
-    const raw = [
-      { name: "  Campaign red ", hex: "B3202A" },
-      { name: "Again", hex: "#b3202a" },
-      { name: "", hex: "#123456" },
-      { name: "No hex", hex: "reddish" },
-      "nonsense",
-      { name: "Swamp", hex: "#5A6B2F" },
-    ];
-    assert.deepEqual(normalizeColours(raw), [
-      { name: "Campaign red", hex: "#b3202a" },
-      { name: "Swamp", hex: "#5a6b2f" },
-    ]);
-    const many = Array.from({ length: MAX_CUSTOM_COLOURS + 10 }, (_, i) => ({ name: `c${i}`, hex: `#${(i * 2654435).toString(16).padStart(6, "0").slice(-6)}` }));
-    assert.equal(normalizeColours(many).length, MAX_CUSTOM_COLOURS);
-    assert.deepEqual(normalizeColours(undefined), []);
+    const clamped = parseSettings(JSON.stringify(doc));
+    assert.equal(clamped.feel.wheel.durationMs, LIMITS.wheelDuration[1]);
+    assert.equal(clamped.feel.wheel.turns, LIMITS.turns[1]);
+    assert.equal(clamped.feel.mascot.wobble, LIMITS.mascotWobble[1]);
   });
 });

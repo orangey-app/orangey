@@ -13,9 +13,10 @@ describe("dice notation", () => {
       ["4d6kh3", "4d6kh3"],
       ["2d20kh1", "2d20kh1"],
       ["2d20kl1", "2d20kl1"],
+      ["3d8dl1", "3d8dl1"],
+      ["4d6dh1", "4d6dh1"],
       ["d%", "d100"],
       ["1d20 + 5 - 2", "d20 + 5 - 2"],
-      ["3d8dl1", "3d8dl1"],
       ["  2D6  +  3 ", "2d6 + 3"],
       ["-d4+10", "-d4 + 10"],
     ];
@@ -58,9 +59,13 @@ describe("dice notation", () => {
       "d20 [8] + 5 - 2 = 11",
       "3d8dl1 [7, 4, (3)] = 11",
     ]);
+    // The spoken form names the dice that were left out, so a screen reader
+    // hears why the total is not the sum of what it just read.
+    assert.equal(speakResult(rollDice("4d6kh3", new SeededSource("test"))), "4d6kh3: 5, 2, 5, dropping 1. Total 12.");
+    assert.equal(rollDice("d6", new SeededSource("abc")).seed, "abc", "the seed travels with the result");
   });
 
-  test("keep and drop select the right dice", () => {
+  test("keep and drop take the right dice, and the bounds account for them", () => {
     const rng = new SeededSource("keepdrop");
     for (let i = 0; i < 500; i++) {
       const r = rollDice("4d6kh3", rng);
@@ -72,10 +77,12 @@ describe("dice notation", () => {
       assert.ok(Math.min(...kept) >= Math.max(...dropped), `kept ${kept} vs dropped ${dropped}`);
       assert.equal(r.total, kept.reduce((a, b) => a + b, 0));
     }
-  });
-
-  test("totals always lie within the theoretical bounds", () => {
-    const rng = new SeededSource("bounds");
+    // A bound counts only the dice that survive the keep or drop.
+    for (const [expr, min, max] of [["4d6kh3", 3, 18], ["3d8dl1", 2, 16]] as const) {
+      const r = rollDice(expr, rng);
+      assert.equal(r.min, min, `${expr} lower bound`);
+      assert.equal(r.max, max, `${expr} upper bound`);
+    }
     for (const expr of ["d20", "2d6+3", "4d6kh3", "3d8dl1", "d100", "10d10", "d20-5", "-2d6+20"]) {
       for (let i = 0; i < 300; i++) {
         const r = rollDice(expr, rng);
@@ -84,17 +91,7 @@ describe("dice notation", () => {
     }
   });
 
-  test("bounds account for keep and drop", () => {
-    const rng = new SeededSource("b2");
-    const r = rollDice("4d6kh3", rng);
-    assert.equal(r.min, 3);
-    assert.equal(r.max, 18);
-    const d = rollDice("3d8dl1", rng);
-    assert.equal(d.min, 2);
-    assert.equal(d.max, 16);
-  });
-
-  test("maximum and minimum flags only fire on the extremes", () => {
+  test("an extreme means every kept die showed its face, not that the total is unusual", () => {
     const rng = new SeededSource("crit");
     let sawMax = false;
     let sawMin = false;
@@ -113,14 +110,17 @@ describe("dice notation", () => {
       }
     }
     assert.ok(sawMax && sawMin, "expected to see both extremes in 2000 d20 rolls");
-  });
-
-  test("spoken form names dropped dice", () => {
-    const r = rollDice("4d6kh3", new SeededSource("test"));
-    assert.equal(speakResult(r), "4d6kh3: 5, 2, 5, dropping 1. Total 12.");
-  });
-
-  test("the seed travels with the result", () => {
-    assert.equal(rollDice("d6", new SeededSource("abc")).seed, "abc");
+    // The rule is per die, not per total: a 1 and a 20 on 2d20 totals 21,
+    // halfway up the range, and is neither a maximum nor a minimum. Cheering
+    // it would mean cheering an ordinary roll.
+    let sawSplit = false;
+    for (let i = 0; i < 4000; i++) {
+      const r = rollDice("2d20", rng);
+      const values = r.terms[0].dice!.map((d) => d.value);
+      assert.equal(r.isMaximum, values.every((v) => v === 20), `2d20 showing ${values}`);
+      assert.equal(r.isMinimum, values.every((v) => v === 1), `2d20 showing ${values}`);
+      if (values.includes(1) && values.includes(20)) sawSplit = true;
+    }
+    assert.ok(sawSplit, "expected a 1 beside a 20 in 4000 rolls of 2d20");
   });
 });

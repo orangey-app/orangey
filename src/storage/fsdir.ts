@@ -51,19 +51,39 @@ export class DirectoryBackend implements LibraryBackend {
     return file.text();
   }
 
+  async write(path: string, contents: string): Promise<void> {
+    await this.#writeFile(path, contents);
+  }
+
+  /**
+   * Pictures are written as themselves. A .png in the library folder is a .png
+   * on the disk, so the owner can open it, edit it in whatever they draw with,
+   * and drop a new one over it.
+   */
+  async readBytes(path: string): Promise<Uint8Array> {
+    const dir = await this.#dir(parent(path));
+    const handle = await dir.getFileHandle(basename(path));
+    const file = await handle.getFile();
+    return new Uint8Array(await file.arrayBuffer());
+  }
+
+  async writeBytes(path: string, bytes: Uint8Array): Promise<void> {
+    await this.#writeFile(path, bytes);
+  }
+
   /**
    * Write through a temporary file and rename, so an interrupted write cannot
    * leave a half-written randomizer behind. Where rename is unavailable we
    * write in place and accept the smaller guarantee rather than failing.
    */
-  async write(path: string, contents: string): Promise<void> {
+  async #writeFile(path: string, contents: string | Uint8Array): Promise<void> {
     const dir = await this.#dir(parent(path), true);
     const name = basename(path);
     const tmpName = `.${name}.tmp`;
     try {
       const tmp = await dir.getFileHandle(tmpName, { create: true });
       const stream = await tmp.createWritable();
-      await stream.write(contents);
+      await stream.write(contents as FileSystemWriteChunkType);
       await stream.close();
       // @ts-ignore - move() is not in every lib.dom yet
       if (typeof tmp.move === "function") {
@@ -73,13 +93,13 @@ export class DirectoryBackend implements LibraryBackend {
       }
       const target = await dir.getFileHandle(name, { create: true });
       const out = await target.createWritable();
-      await out.write(contents);
+      await out.write(contents as FileSystemWriteChunkType);
       await out.close();
       await dir.removeEntry(tmpName).catch(() => {});
     } catch {
       const target = await dir.getFileHandle(name, { create: true });
       const out = await target.createWritable();
-      await out.write(contents);
+      await out.write(contents as FileSystemWriteChunkType);
       await out.close();
     }
   }
@@ -104,7 +124,9 @@ export class DirectoryBackend implements LibraryBackend {
       return;
     }
     if (handle.kind === "file") {
-      await this.write(to, await this.read(from));
+      // Bytes, not text: a folder being moved may hold pictures, and a PNG
+      // that went out through a TextDecoder would arrive unopenable.
+      await this.writeBytes(to, await this.readBytes(from));
       await this.remove(from);
       return;
     }
@@ -118,7 +140,7 @@ export class DirectoryBackend implements LibraryBackend {
       const src = `${from}/${entry.name}`;
       const dst = `${to}/${entry.name}`;
       if (entry.kind === "folder") await this.#copyTree(src, dst);
-      else await this.write(dst, await this.read(src));
+      else await this.writeBytes(dst, await this.readBytes(src));
     }
   }
 

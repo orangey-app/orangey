@@ -47,7 +47,6 @@ function score(rows: string[][]): { score: number; columns: number } {
 export function detect(text: string): Detection {
   let bestDelimiter: Delimiter = ",";
   let bestScore = -1;
-  let bestRows: string[][] = [];
 
   for (const d of DELIMITERS) {
     const rows = parseDelimited(text, d).slice(0, 50);
@@ -55,7 +54,6 @@ export function detect(text: string): Detection {
     if (s.score > bestScore) {
       bestScore = s.score;
       bestDelimiter = d;
-      bestRows = rows;
     }
   }
 

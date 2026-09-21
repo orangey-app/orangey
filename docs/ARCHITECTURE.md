@@ -43,6 +43,23 @@ together at the landing. This is why pressing Esc mid-spin is safe: skipping
 jumps to the landing, and the answer it reveals is the one that was already
 rolled.
 
+**Pictures live beside the library, not in it.** An outcome's `image` is an id
+into `src/storage/images.ts`, which writes `images/<id>.png` through the library
+backend — so the folder backend holds real PNGs, and a randomizer file stays
+small and diffable. `imageData` is the same picture inline, and exists ONLY in a
+file on its way in or out: `portableRandomizer` puts it there for a single-file
+export, `absorbImages` takes it back out on import, and `packRandomizer` strips
+both fields so no link can carry a picture. Object URLs are made once per id and
+cached, which is why a render calls `imageUrlSync` and warms the cache with
+`imageUrl` rather than creating a URL per frame.
+
+**A board holds references, not randomizers.** `BoardRandomizer.entries` is a
+list of `{ id, name }`: the id is what the board rolls, the name is what it can
+say when that randomizer is gone. `src/ui/views/board.ts` resolves them through
+`library.findById` on every render, and rebuilds its cells only when that
+resolution changes — rebuilding on every change of state would throw away the
+answers the cells are showing, including the one the roll had just produced.
+
 **A wheel is a cycle.** Colour assignment constrains the last segment against
 both its predecessor *and* segment 0. A left-to-right pass that forgets this
 puts two identical slices together at twelve o'clock.

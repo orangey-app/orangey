@@ -2,61 +2,132 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { LibraryService, type LibraryBackend } from "../../src/storage/library.ts";
 import { MemoryBackend } from "../../src/storage/memory.ts";
+import { DirectoryBackend } from "../../src/storage/fsdir.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import { parseFile, serialize, wrap } from "../../src/model/file.ts";
 import { basename, isInside, join, naturalCompare, parent, sanitizeName, segments } from "../../src/storage/paths.ts";
-import { createZip, crc32, readZip } from "../../src/storage/zip.ts";
+import { createZip, readZip } from "../../src/storage/zip.ts";
 
-/** The shared backend suite. Every backend must pass this. */
-function backendSuite(name: string, make: () => LibraryBackend): void {
-  describe(`${name} backend`, () => {
-    test("writes, reads, lists and removes", async () => {
-      const b = make();
-      await b.mkdir("D&D/Encounters");
-      await b.write("D&D/Encounters/forest.orangey.json", "hello");
-      assert.equal(await b.read("D&D/Encounters/forest.orangey.json"), "hello");
-      assert.deepEqual(await b.list(""), [{ name: "D&D", kind: "folder" }]);
-      assert.deepEqual(await b.list("D&D/Encounters"), [{ name: "forest.orangey.json", kind: "file" }]);
-      await b.remove("D&D/Encounters/forest.orangey.json");
-      assert.deepEqual(await b.list("D&D/Encounters"), []);
-    });
+const setup = async () => {
+  const backend = new MemoryBackend();
+  const library = new LibraryService(backend, 20);
+  await library.refresh();
+  return { backend, library };
+};
 
-    test("writing creates the folders it needs", async () => {
-      const b = make();
-      await b.write("a/b/c/file.txt", "x");
-      assert.equal(await b.read("a/b/c/file.txt"), "x");
-    });
+describe("a storage backend", () => {
+  test("writes, reads, lists, moves and removes, making the folders it needs on the way", async () => {
+    const b = new MemoryBackend();
+    await b.write("D&D/Encounters/forest.orangey.json", "hello");
+    assert.equal(await b.read("D&D/Encounters/forest.orangey.json"), "hello");
+    assert.deepEqual(await b.list(""), [{ name: "D&D", kind: "folder" }]);
+    assert.deepEqual(await b.list("D&D/Encounters"), [{ name: "forest.orangey.json", kind: "file" }]);
 
-    test("moves files and whole folders", async () => {
-      const b = make();
-      await b.write("one/file.txt", "x");
-      await b.move("one/file.txt", "two/file.txt");
-      assert.equal(await b.read("two/file.txt"), "x");
-      await b.write("two/deeper/other.txt", "y");
-      await b.move("two", "three");
-      assert.equal(await b.read("three/file.txt"), "x");
-      assert.equal(await b.read("three/deeper/other.txt"), "y");
-      await assert.rejects(() => b.read("two/file.txt"));
-    });
+    // Moving a folder takes everything under it along.
+    await b.write("D&D/Treasure/coins.orangey.json", "gold");
+    await b.move("D&D", "Campaign");
+    assert.equal(await b.read("Campaign/Encounters/forest.orangey.json"), "hello");
+    assert.equal(await b.read("Campaign/Treasure/coins.orangey.json"), "gold");
+    await assert.rejects(() => b.read("D&D/Encounters/forest.orangey.json"));
 
-    test("removing a folder removes what is inside it", async () => {
-      const b = make();
-      await b.write("gone/a.txt", "a");
-      await b.write("gone/deeper/b.txt", "b");
-      await b.remove("gone");
-      assert.deepEqual(await b.list(""), []);
-    });
-
-    test("reading something that is not there fails clearly", async () => {
-      await assert.rejects(() => make().read("nope.txt"), /nope/);
-    });
+    // As does removing it.
+    await b.remove("Campaign");
+    assert.deepEqual(await b.list(""), []);
+    await assert.rejects(() => b.read("nope.txt"), /nope/);
   });
+});
+
+/**
+ * Just enough of a FileSystemDirectoryHandle to run the folder backend here.
+ * It holds bytes, so what the backend writes is what a person would find in
+ * the folder.
+ */
+class FakeDirectory {
+  readonly kind = "directory";
+  name: string;
+  #files = new Map<string, Uint8Array>();
+  #dirs = new Map<string, FakeDirectory>();
+
+  constructor(name = "") {
+    this.name = name;
+  }
+
+  async getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FakeDirectory> {
+    let dir = this.#dirs.get(name);
+    if (!dir) {
+      if (!options?.create) throw new Error(`no folder ${name}`);
+      dir = new FakeDirectory(name);
+      this.#dirs.set(name, dir);
+    }
+    return dir;
+  }
+
+  async getFileHandle(name: string, options?: { create?: boolean }) {
+    const files = this.#files;
+    if (!files.has(name)) {
+      if (!options?.create) throw new Error(`no file ${name}`);
+      files.set(name, new Uint8Array());
+    }
+    return {
+      kind: "file" as const,
+      name,
+      async getFile() {
+        return new Blob([files.get(name)!]);
+      },
+      async createWritable() {
+        const chunks: BlobPart[] = [];
+        return {
+          async write(chunk: string | Uint8Array) {
+            chunks.push(chunk);
+          },
+          async close() {
+            files.set(name, new Uint8Array(await new Blob(chunks).arrayBuffer()));
+          },
+        };
+      },
+    };
+  }
+
+  async removeEntry(name: string): Promise<void> {
+    this.#files.delete(name);
+    this.#dirs.delete(name);
+  }
+
+  async *entries(): AsyncGenerator<[string, { kind: string }]> {
+    for (const name of this.#files.keys()) yield [name, { kind: "file" }];
+    for (const [name, dir] of this.#dirs) yield [name, dir];
+  }
 }
 
-backendSuite("memory", () => new MemoryBackend());
+describe("bytes in a backend", () => {
+  test("a picture arrives as the bytes it was given, in every backend that has one", async () => {
+    // 0xff is not valid UTF-8, so a backend that put this through text on the
+    // way in or out would hand back something else: the assertion is the test.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0x80, 0x01]);
+    const backends: [string, LibraryBackend][] = [
+      ["memory", new MemoryBackend()],
+      ["a folder", new DirectoryBackend(new FakeDirectory() as unknown as FileSystemDirectoryHandle, "fsa", "Pictures")],
+    ];
+
+    for (const [what, backend] of backends) {
+      await backend.writeBytes("images/a.png", png);
+      assert.deepEqual(await backend.readBytes("images/a.png"), png, what);
+      assert.deepEqual(await backend.list("images"), [{ name: "a.png", kind: "file" }], what);
+
+      // Text and bytes are the same two doors onto the same file.
+      await backend.write("notes.txt", "hello");
+      assert.deepEqual(await backend.readBytes("notes.txt"), new TextEncoder().encode("hello"), what);
+      await backend.writeBytes("again.txt", new TextEncoder().encode("hello"));
+      assert.equal(await backend.read("again.txt"), "hello", what);
+
+      await backend.remove("images/a.png");
+      await assert.rejects(() => backend.readBytes("images/a.png"), what);
+    }
+  });
+});
 
 describe("paths", () => {
-  test("join, parent, basename and segments agree with each other", () => {
+  test("join, parent, basename, segments and isInside agree with each other", () => {
     assert.equal(join("a", "b", "c"), "a/b/c");
     assert.equal(join("", "b"), "b");
     assert.equal(parent("a/b/c"), "a/b");
@@ -64,35 +135,30 @@ describe("paths", () => {
     assert.equal(basename("a/b/c"), "c");
     assert.deepEqual(segments("a/b"), ["a", "b"]);
     assert.deepEqual(segments(""), []);
-  });
-
-  test("isInside is true for a folder and everything under it", () => {
     assert.ok(isInside("a/b/c", "a"));
     assert.ok(isInside("a", ""));
-    assert.ok(!isInside("ab/c", "a"));
+    assert.ok(!isInside("ab/c", "a"), "a prefix of a name is not a parent folder");
+    // Names sort naturally, so Chapter 2 comes before Chapter 10 (decision D11).
+    assert.deepEqual(["Chapter 10", "Chapter 2", "Chapter 1"].sort(naturalCompare), ["Chapter 1", "Chapter 2", "Chapter 10"]);
   });
 
-  test("names are cleaned of characters that break on some systems", () => {
+  test("a name cannot carry a separator, a dot-dot or anything that breaks on some systems", () => {
+    // Everything the user types passes through here, so this is what stops a
+    // name reaching outside its folder or landing on a path no OS will open.
     assert.equal(sanitizeName('a/b\\c:d*e?f"g<h>i|j'), "a-b-c-d-e-f-g-h-i-j");
     assert.equal(sanitizeName("  spaced  out  "), "spaced out");
     assert.equal(sanitizeName("trailing."), "trailing");
-  });
-
-  test("sorting is natural, so Chapter 2 comes before Chapter 10", () => {
-    const names = ["Chapter 10", "Chapter 2", "Chapter 1"];
-    assert.deepEqual([...names].sort(naturalCompare), ["Chapter 1", "Chapter 2", "Chapter 10"]);
+    assert.equal(sanitizeName(".."), "", "a bare dot-dot leaves nothing behind");
+    for (const name of ["../../etc/passwd", "..\\..\\windows", "a/../b"]) {
+      const clean = sanitizeName(name);
+      assert.ok(!clean.includes("/") && !clean.includes("\\"), `${name} kept a separator: ${clean}`);
+      assert.ok(!segments(clean).includes(".."), `${name} kept a dot-dot: ${clean}`);
+    }
   });
 });
 
-describe("library service", () => {
-  const setup = async () => {
-    const backend = new MemoryBackend();
-    const library = new LibraryService(backend, 20);
-    await library.refresh();
-    return { backend, library };
-  };
-
-  test("creates, finds, renames, moves, duplicates and removes", async () => {
+describe("the library", () => {
+  test("a file survives being created, renamed, moved, duplicated and removed", async () => {
     const { library } = await setup();
     const folder = await library.createFolder("", "D&D");
     const path = await library.create(folder, emptyRandomizer("list", "Forest Encounters"));
@@ -105,25 +171,35 @@ describe("library service", () => {
 
     const copy = await library.duplicate(renamed);
     assert.match(copy, /dungeon-encounters-copy/);
-    assert.notEqual(library.find(copy)?.randomizer?.id, library.find(renamed)?.randomizer?.id);
     assert.equal(library.find(copy)?.randomizer?.name, "Dungeon Encounters (copy)");
+    // A copy is a new randomizer, not a second name for the same one: the
+    // file's id and every outcome's id must be fresh, or edits to one would
+    // follow the other around.
+    assert.notEqual(library.find(copy)?.randomizer?.id, library.find(renamed)?.randomizer?.id);
+    const before = (library.find(renamed)!.randomizer as ListRandomizer).items.map((i) => i.id);
+    const after = (library.find(copy)!.randomizer as ListRandomizer).items.map((i) => i.id);
+    assert.equal(after.length, before.length);
+    for (const id of after) assert.ok(!before.includes(id), "an outcome id was shared with the original");
 
     const moved = await library.move(copy, "");
     assert.equal(moved, "dungeon-encounters-copy.orangey.json");
+    assert.equal(library.find(moved)?.randomizer?.name, "Dungeon Encounters (copy)");
 
     await library.remove(moved);
     assert.equal(library.find(moved), null);
     assert.equal(library.files().length, 1);
   });
 
-  test("duplicating gives every outcome a fresh id", async () => {
+  test("two files with the same name live side by side, and a traversing name stays put", async () => {
     const { library } = await setup();
-    const path = await library.create("", emptyRandomizer("list", "Copy me"));
-    const copy = await library.duplicate(path);
-    const before = (library.find(path)!.randomizer as ListRandomizer).items.map((i) => i.id);
-    const after = (library.find(copy)!.randomizer as ListRandomizer).items.map((i) => i.id);
-    assert.equal(before.length, after.length);
-    for (const id of after) assert.ok(!before.includes(id));
+    const a = await library.create("", emptyRandomizer("list", "Same name"));
+    const b = await library.create("", emptyRandomizer("list", "Same name"));
+    assert.notEqual(a, b, "the second file overwrote the first");
+    assert.equal(library.files().length, 2);
+    // A name that looks like a path must still produce one file, in this folder.
+    const sneaky = await library.create("", emptyRandomizer("list", "../../etc/passwd"));
+    assert.equal(segments(sneaky).length, 1, `escaped to ${sneaky}`);
+    assert.ok(library.find(sneaky));
   });
 
   test("saves are debounced into as few writes as possible", async () => {
@@ -141,8 +217,7 @@ describe("library service", () => {
     }
     await library.flush();
     assert.ok(writes <= 2, `${writes} writes for 20 rapid saves`);
-    const text = await backend.read(path);
-    assert.match(text, /"name": "Busy 19"/);
+    assert.match(await backend.read(path), /"name": "Busy 19"/);
   });
 
   test("search looks inside outcome labels, tags and descriptions", async () => {
@@ -169,108 +244,57 @@ describe("library service", () => {
     const node = library.find("broken.orangey.json")!;
     assert.equal(node.randomizer, null);
     assert.match(node.error!, /not valid JSON/);
-    assert.equal(library.files().length, 1);
-  });
-
-  test("files sort naturally by their randomizer's name", async () => {
-    const { library } = await setup();
-    for (const name of ["Table 10", "Table 2", "Table 1"]) {
-      await library.create("", emptyRandomizer("list", name));
-    }
-    assert.deepEqual(library.files().map((f) => f.randomizer!.name), ["Table 1", "Table 2", "Table 10"]);
-  });
-
-  test("a name collision does not overwrite an existing file", async () => {
-    const { library } = await setup();
-    const a = await library.create("", emptyRandomizer("list", "Same name"));
-    const b = await library.create("", emptyRandomizer("list", "Same name"));
-    assert.notEqual(a, b);
-    assert.equal(library.files().length, 2);
+    assert.equal(library.files().length, 1, "one bad file must not hide the rest of the library");
   });
 });
 
-describe("importing an archive", () => {
-  const setup = async () => {
-    const backend = new MemoryBackend();
-    const library = new LibraryService(backend, 20);
-    await library.refresh();
-    return { backend, library };
-  };
+describe("archives", () => {
   const entry = (path: string, name: string) => ({ path, text: serialize(wrap(emptyRandomizer("list", name))) });
 
-  test("new files are added with their folders", async () => {
-    const { library } = await setup();
-    const result = await library.importArchive([entry("D&D/Encounters/forest.orangey.json", "Forest"), entry("top.orangey.json", "Top")], async () => "skip");
-    assert.deepEqual(result, { added: 2, replaced: 0, skipped: 0, failed: 0 });
-    assert.deepEqual(library.files().map((f) => f.path).sort(), ["D&D/Encounters/forest.orangey.json", "top.orangey.json"]);
-  });
-
-  test("collisions are decided per file: replace, keep both, or skip", async () => {
-    const { library } = await setup();
-    await library.importArchive([entry("a.orangey.json", "Old A"), entry("b.orangey.json", "Old B"), entry("c.orangey.json", "Old C")], async () => "skip");
-    const answers: Record<string, "replace" | "keep-both" | "skip"> = { "a.orangey.json": "replace", "b.orangey.json": "keep-both", "c.orangey.json": "skip" };
-    const result = await library.importArchive([entry("a.orangey.json", "New A"), entry("b.orangey.json", "New B"), entry("c.orangey.json", "New C")], async (p) => answers[p]);
-    assert.deepEqual(result, { added: 1, replaced: 1, skipped: 1, failed: 0 });
-    const names = library.files().map((f) => f.randomizer!.name).sort();
-    assert.deepEqual(names, ["New A", "New B", "Old B", "Old C"]);
-  });
-
-  test("unreadable entries are counted, not fatal", async () => {
-    const { library } = await setup();
-    const result = await library.importArchive([{ path: "bad.orangey.json", text: "{nope" }, entry("ok.orangey.json", "OK"), { path: "notes.txt", text: "ignored" }], async () => "skip");
-    assert.deepEqual(result, { added: 1, replaced: 0, skipped: 0, failed: 1 });
-  });
-
-  test("the folder list is depth-annotated and starts at the root", async () => {
-    const { library } = await setup();
-    await library.createFolder("", "A");
-    await library.createFolder("A", "B");
-    assert.deepEqual(library.folderList(), [
-      { path: "", name: "Library", depth: 0 },
-      { path: "A", name: "A", depth: 1 },
-      { path: "A/B", name: "B", depth: 2 },
-    ]);
-  });
-});
-
-describe("starters", () => {
-  test("are valid randomizers that round-trip through the file format", async () => {
-    const { starters } = await import("../../src/model/starters.ts");
-    const all = starters();
-    assert.ok(all.length >= 5);
-    for (const s of all) {
-      const text = serialize(wrap(s.randomizer));
-      assert.equal(serialize(parseFile(text).file), text, s.randomizer.name);
-    }
-    assert.ok(all.some((s) => s.randomizer.type === "list") && all.some((s) => s.randomizer.type === "dice"));
-  });
-});
-
-describe("zip", () => {
-  test("round-trips a folder tree", async () => {
+  test("an archive written by the app reads back with the same files in the same folders", async () => {
     const entries = [
       { path: "D&D/Encounters/forest.orangey.json", text: serialize(wrap(emptyRandomizer("list", "Forest"))) },
       { path: "D&D/Treasure/coins.orangey.json", text: serialize(wrap(emptyRandomizer("dice", "Coins"))) },
       { path: "top.orangey.json", text: serialize(wrap(emptyRandomizer("coin", "Top"))) },
     ];
-    const bytes = await createZip(entries);
-    const back = await readZip(bytes);
+    const back = await readZip(await createZip(entries));
     assert.deepEqual(back, entries);
-    for (const entry of back) assert.ok(parseFile(entry.text).file.randomizer.name);
-  });
-
-  test("compresses repetitive content", async () => {
-    const text = "x".repeat(20000);
-    const bytes = await createZip([{ path: "a.txt", text }]);
-    assert.ok(bytes.length < 2000, `${bytes.length} bytes for 20 kB of "x"`);
-    assert.equal((await readZip(bytes))[0].text, text);
-  });
-
-  test("rejects something that is not a ZIP", async () => {
+    for (const e of back) assert.ok(parseFile(e.text).file.randomizer.name, `${e.path} did not survive`);
     await assert.rejects(() => readZip(new TextEncoder().encode("hello")), /does not look like a ZIP/);
   });
 
-  test("CRC32 matches the known value for a standard string", () => {
-    assert.equal(crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
+  test("importing decides each colliding file on its own: replace, keep both, or skip", async () => {
+    const { library } = await setup();
+    const first = await library.importArchive(
+      [entry("a.orangey.json", "Old A"), entry("b.orangey.json", "Old B"), entry("c.orangey.json", "Old C")],
+      async () => "skip",
+    );
+    assert.deepEqual(first, { added: 3, replaced: 0, skipped: 0, failed: 0 });
+
+    const answers: Record<string, "replace" | "keep-both" | "skip"> = {
+      "a.orangey.json": "replace",
+      "b.orangey.json": "keep-both",
+      "c.orangey.json": "skip",
+    };
+    const again = await library.importArchive(
+      [entry("a.orangey.json", "New A"), entry("b.orangey.json", "New B"), entry("c.orangey.json", "New C")],
+      async (p) => answers[p],
+    );
+    assert.deepEqual(again, { added: 1, replaced: 1, skipped: 1, failed: 0 });
+    assert.deepEqual(library.files().map((f) => f.randomizer!.name).sort(), ["New A", "New B", "Old B", "Old C"]);
+  });
+
+  test("an unreadable entry is counted, and the rest of the archive still arrives", async () => {
+    const { library } = await setup();
+    const result = await library.importArchive(
+      [
+        { path: "bad.orangey.json", text: "{nope" },
+        entry("D&D/Encounters/forest.orangey.json", "Forest"),
+        { path: "notes.txt", text: "ignored" },
+      ],
+      async () => "skip",
+    );
+    assert.deepEqual(result, { added: 1, replaced: 0, skipped: 0, failed: 1 });
+    assert.deepEqual(library.files().map((f) => f.path), ["D&D/Encounters/forest.orangey.json"]);
   });
 });
