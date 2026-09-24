@@ -210,8 +210,9 @@ The shipped app has no dependencies, and building it needs nothing but Node
 The one dev dependency is TypeScript itself, used only by `npm run typecheck`.
 
 ```sh
+npm install           # only needed for typecheck; nothing else uses it
 npm run check         # bundle, lint the rules the project depends on
-npm run typecheck     # tsc --strict over src/ (needs npm ci first)
+npm run typecheck     # tsc --strict over src/ (needs npm install first)
 npm test              # unit tests (node --test)
 npm run build         # dist/ as a static site
 npm run build:single  # also orangey.html, one self-contained file, at the

@@ -73,6 +73,12 @@ Each item has `id`, `label` (1–200 characters), `weight`, and optionally
 `metadata` (flat string/number/boolean pairs, where extra spreadsheet columns
 end up).
 
+**A label or description may carry dice in braces.** `You find {2d6} silver`
+is stored exactly as written — the braces are part of the text, not a new
+field — and rolled when that outcome comes up, as
+[DICE.md](DICE.md) describes. A file read by anything that does not know about
+this still holds a sensible, if literal, label.
+
 **`reaction`** is what Orangey the mascot does when this outcome comes up:
 `"cheer"` or `"wince"`. Dice and number draws need no tag — a maximum roll is
 a cheer and a minimum a wince by themselves — but a wheel has no natural top or

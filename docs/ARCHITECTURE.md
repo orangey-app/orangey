@@ -176,11 +176,41 @@ that replay.
 build if a duration appears anywhere else, which is what makes the settings
 panel able to change how the whole app feels.
 
+**State is one bus, and a listener says what it cares about.** `src/ui/state.ts`
+holds the preferences, the library service and the seed, and views subscribe to
+it. A subscriber may name the topics it wants — `"library"`, `"prefs"`,
+`"seed"`, `"folder"` — and `emit` names the topics a change touched, so
+renaming a randomizer no longer makes the settings panel rebuild itself. A
+subscriber that names nothing still hears everything, which is what the small
+views want. The same module owns recovery from a failed save: it raises a
+toast rather than throwing into whichever handler happened to be running,
+because by then the user has already moved on.
+
 **Storage is an interface with three implementations.** `LibraryBackend` is
 list/read/write/mkdir/move/remove; OPFS and a user-picked folder share one
 implementation over `FileSystemDirectoryHandle`, memory is the third and is
 what the shared backend test suite runs against. A Tauri backend in 1.0 is a
 fourth implementation of the same six methods.
+
+**A save is debounced, and a failed save puts the text back.** `LibraryService`
+keeps edits in a `#pending` map keyed by path and writes them a moment later,
+so typing a name is one write rather than one per keystroke. The flushes are
+chained on `#flushing` so two of them can never interleave, and that promise is
+never left rejected — a `then` on a rejected chain would silently skip every
+later flush, which is how an unsaved edit used to disappear for good. A write
+that throws is re-queued, but only if nothing newer is already waiting under
+that path, so a slow failing flush cannot overwrite a fresh edit with a stale
+one. Structural work — create, move, rename, delete — calls `saveNow` and
+`flushNow` instead, because the next thing it does is read the folder back and
+a debounced write would not be there yet.
+
+**A picture is stored under the extension it actually has.** Every picture used
+to be written as `<id>.png` whatever it held, so a folder library filled up with
+JPEGs named `.png` that the operating system refused to preview. `images.ts`
+now sniffs the bytes, names the file `<id>.jpg`, `.webp`, `.gif` or `.png`
+accordingly, and keeps a map from id to extension so a store written by an
+older version still reads. The id in the randomizer file never carries the
+extension, so none of this is a format change.
 
 ## Build
 

@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.4.0
+
+- **A wheel can be a bag: draw without putting back.** Turn it on in the
+  editor and an outcome that comes up is out until you refill — the play
+  screen says "3 of 12 left" and gives you the button. What has been drawn is
+  kept on this device rather than in the file, so two people rolling the same
+  shared wheel each have their own bag.
+- **Dice notation understands exploding dice, rerolls, success pools and Fate
+  dice.** `3d6!` adds a die for every 6, `4d6r1` rerolls the ones, `4d6ro1`
+  rerolls them once, `5d10>=8` answers with how many made it, and `4dF` rolls
+  Fate dice. `adv` and `dis` are there for the two rolls everyone makes most.
+- **Dice can be written into an outcome.** "{2d4} wolves, hungry" arrives at
+  the table as "3 wolves, hungry", with the breakdown beside it. The braces are
+  the whole of the opt-in, so "a d20 system" is left alone.
+- **An imported table can give its weights as d100 ranges.** A column of
+  `01-65`, `66-85`, `86-99` is read the way a published table means it, and the
+  width of the range becomes the weight.
+- **Roll behind the screen.** Tick Hidden and a press rolls without showing
+  anything or writing anything down; the next press reveals it. For a game
+  master with the wheel on a projector who needs to know first.
+- **Roll several at once.** Set × to six and one press draws six outcomes, as
+  one roll with one line in the history. A bag gives what it has left.
+- **Favourites and what you rolled recently are on the home screen**, so the
+  wheel a table has used all evening is one tap away rather than three.
+- **Deleting a randomizer can be undone.** The toast offers Undo, and what
+  comes back is the same file with the same identity, so boards and "goes to"
+  links that pointed at it work again.
+- **A list can be exported as CSV**, with exactly the columns the import
+  wizard recognises, so a table can go out to a spreadsheet and come back.
+- **The screen stays awake in full screen.** A table can go several minutes
+  between rolls, which used to be long enough for a laptop to dim.
+- **History shows dates, not just times, and an export now contains
+  everything** that is stored rather than the recent slice on screen.
+- **A failed save no longer goes unnoticed, or unrecoverable.** If a write
+  fails you get one "Could not save your changes" with a Retry, the change
+  stays queued, and saving keeps working afterwards — where before, one
+  failure quietly stopped the app saving for the rest of the session.
+- **An edit that would make a file unreadable is refused rather than
+  written.** The editor keeps your half-typed dice expression and says why it
+  is not saved; the file on disk keeps its last good state.
+- **An update now reaches copies people already have.** The offline cache is
+  named from the app's content, so a deploy arrives instead of waiting for
+  the next version number.
+- **A folder library notices edits made outside Orangey**, re-reading itself
+  when you come back to the tab.
+- Under the hood: the whole of `src/` is type-checked on every CI run, the
+  outcome table no longer slows down as it grows, rolling lives in one place
+  instead of three, and a good deal of duplication and dead code is gone.
+  Several bugs went with it — wireframe dice freezing on a board, the ticker
+  landing on nothing past 400 outcomes, a missing picture looping for ever, a
+  malformed address blanking the page, and top-level fields in a file being
+  dropped on re-save.
+
 ## Unreleased
 
 - **Where an outcome sends you is chosen from the library, not a dropdown.**

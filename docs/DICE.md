@@ -66,6 +66,20 @@ exploding roll has no maximum, so the one reported is a floor and the result
 is flagged open-ended instead. A reroll narrows the range in the other
 direction: `d6r1` can never end on a 1, so its minimum is 2.
 
+## Dice inside an outcome
+
+A list outcome's label, and its description, may hold a dice expression in
+braces: `You find {2d6} silver` rolls two dice when that outcome comes up and
+reads back as `You find 7 silver`. Anything between the braces goes through the
+same parser; braces holding something that is not an expression are left
+exactly as they were typed, so a label that happens to contain `{loot}` is
+safe.
+
+The expansion happens **after** the outcome has been picked, never before, so
+adding braces to a label does not change which outcome a seeded session draws.
+A run with a seed therefore still replays exactly — the pick first, then the
+inline rolls, always in that order.
+
 ## Errors
 
 Parse errors carry the position of the offending character, because "invalid
