@@ -44,6 +44,11 @@ A reroll that would reject every face is refused rather than looping for
 ever, and Fate dice cannot explode: there is no single top face to explode
 on. Runaway rolls stop at 100 rerolls per die and 100 extra dice per term.
 
+In the tray, an explosion's dice and a reroll's replacement land in a throw
+of their own after the dice that caused them, the way they would at a table.
+Each die records which throw it belongs to (`wave`), so the tray never has to
+work it out; only the first three extra throws get a beat of their own.
+
 ## What you get back
 
 Every die is recorded individually, kept or dropped, so the app can show

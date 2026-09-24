@@ -23,11 +23,16 @@ keeps links short.
 
 **An outcome can send you to another randomizer.** Set "Goes to" on an outcome
 and rolling it opens that randomizer beside the wheel, waiting for its own
-press. Chains keep the newest two in view and turn the rest into icons.
+press. Chains keep the newest two in view and turn the rest into icons. On a
+board, the randomizer it opens appears as a dashed cell right after the one
+that sent you there.
 
 **Boards** put several randomizers on one screen: an encounter table, the
 weather and an attack roll side by side, each with its own answer. Roll all
-spins everything at once, or click one to roll just that one. A board is a file
+spins everything at once, or a cell's own Roll rolls just that one. **Edit
+board** is where cells are added, removed and reordered — a stray click at the
+table cannot change the board — and Add… also takes dice notation, so typing
+`2d6 + 3` puts that roll straight on the board. A board is a file
 in your library like anything else, and it points at your randomizers rather
 than copying them, so editing a table updates every board it is on. Share… on
 a board gives you a link that opens it here, and a download that packs the
@@ -173,9 +178,12 @@ you open a downloaded `orangey.html` straight from disk. In browsers that
 support it, the storage badge in the library offers **Use a folder on this
 computer…**, which points Orangey at a real folder instead — then Dropbox,
 Nextcloud or Git can sync it like any other files, and the folder is
-remembered next time. The same badge exports the whole tree as a ZIP, and the
-Import page takes that ZIP back, along with spreadsheets and single
-`.orangey.json` files. Randomizers can be dragged between folders.
+remembered next time. On an iPhone or iPad no browser can use a folder, and
+Safari clears the storage of a site left unopened for about a week: add
+Orangey to your Home Screen and export a ZIP now and then. The same badge
+exports the whole tree as a ZIP, and the Import page takes that ZIP back,
+along with spreadsheets and single `.orangey.json` files. Randomizers can be
+dragged between folders.
 
 The format is documented in [docs/FORMAT.md](docs/FORMAT.md); there are
 examples in [`examples/`](examples).

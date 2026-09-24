@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.5.0
+
+- **A board follows an outcome's link.** Roll a wheel on a board and, if the
+  outcome that came up points at another randomizer, that one opens as a
+  dashed cell right after it and waits for its own roll — the same rule as the
+  play screen. Every board cell now has its own Roll button, so a single cell
+  can be rolled whatever it is; Roll all answers everything afresh and closes
+  what the cells had opened.
+- **A board changes only when you mean it to.** A board opens ready to play:
+  Add…, the ✕ on each cell and dragging to reorder appear under **Edit
+  board**. Taking a randomizer off can be undone from the toast or with
+  Ctrl/Cmd+Z. An empty board opens ready to edit.
+- **Type dice straight onto a board.** In the Add… picker, and in an outcome's
+  "where does this send you?", type `2d6 + 3` and pick **Add 2d6 + 3**. The
+  dice go into a Dice folder in your library and are reused from there the
+  next time you type the same roll.
+- **Back goes back.** A randomizer made from a board's picker, or from an
+  outcome's "where does this send you?", opens in the editor; Back now returns
+  to the board or editor you came from instead of leaving you on the new
+  randomizer's play screen.
+- **Exploding dice and rerolls land in throws.** With `3d6!` the dice you
+  threw land first and the dice their explosions added are thrown in after
+  them, the way it happens at a table; a rerolled die lands, then its
+  replacement. Instant and reduced motion still land everything at once.
+- **History keeps the rest of the roll.** Dice written into an outcome
+  ("{2d4} wolves") are kept under the answer, and a roll made in a chained
+  randomizer says what sent you there. The CSV export gains `details` and
+  `from` columns at the end.
+- **iPhone and iPad are told how to keep a library safe.** No browser there
+  can keep the library in a folder and Safari clears unused sites' storage
+  after about a week, so Settings says so and recommends Add to Home Screen;
+  in a browser tab on an iPhone or iPad a one-time notice says the same.
+  Settings no longer suggests Chrome or Edge there, where they cannot help.
+- **New type.** Names, headings and answers are set in Arapey, and the numbers
+  on dice in Flamenco, centred on the face; both are built in and work
+  offline. Buttons, tables and wheel labels stay in the system font.
+- **Wheels are red, yellow and blue.** Slices take the primary colours in
+  turn, with green for the one slice that would otherwise meet its own colour.
+  Colours you set on an outcome still win. The pointer is drawn in the ink
+  colour, so it no longer disappears against a yellow slice.
+- Dropped and rerolled dice are shown faded rather than struck through.
+- Fixes: the number on a wireframe die sat off its face when nothing animated
+  (reduced motion, Skip); the browser tests left every test's tab running for
+  the rest of the suite, which let one test's late roll land in another test's
+  storage on Windows. The old 71-colour wheel pool and its curation script are
+  gone.
+
 ## 0.4.0
 
 - **A wheel can be a bag: draw without putting back.** Turn it on in the

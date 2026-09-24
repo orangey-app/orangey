@@ -65,9 +65,17 @@ say when that randomizer is gone. `src/ui/views/board.ts` resolves them through
 resolution changes — rebuilding on every change of state would throw away the
 answers the cells are showing, including the one the roll had just produced.
 
-**A wheel is a cycle.** Colour assignment constrains the last segment against
-both its predecessor *and* segment 0. A left-to-right pass that forgets this
-puts two identical slices together at twelve o'clock.
+**A wheel is a cycle.** Slices take red, yellow and blue in turn
+(`assignWheelColours` in `src/core/palette-assign.ts`), and the last one is
+checked against both its predecessor *and* segment 0: a left-to-right pass
+that forgets this puts two red slices together at twelve o'clock on a 4-, 7-
+or 10-outcome wheel. That slice, and any slice next to a colour the user chose,
+takes the spare green instead.
+
+**Fonts are built in.** `scripts/build.mjs` embeds `assets/fonts/` as data:
+URLs in the CSS, each face with its licence in a comment, so the single file
+stays one file and nothing is fetched. `--font-text` (Arapey) is for names,
+headings and answers; `--font-dice` (Flamenco, digits only) for dice.
 
 **`disabled` is a flag, not a weight of zero.** Turning an outcome off keeps
 its weight in the file so that turning it back on restores it exactly.
