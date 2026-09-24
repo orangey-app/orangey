@@ -18,6 +18,7 @@ import { MascotHost } from "./mascot/host.ts";
 import { decodeRandomizer } from "../model/link.ts";
 import { ValidationError } from "../model/validate.ts";
 import { mascotLogoMarkup } from "./mascot/parts.ts";
+import { storageAdvice, storageEnv } from "../storage/fsdir.ts";
 
 const SHORTCUTS: [string, string][] = [
   ["Space or Enter", "Roll"],
@@ -61,6 +62,24 @@ export function mountApp(root: HTMLElement): MascotHost {
   );
 
   root.append(topbar, h("div", { class: "panes" }, side, main), tabbar, toasts);
+
+  // On an iPhone or iPad in a browser tab, Safari will clear the library of a
+  // site left unopened for a week, and Add to Home Screen is what stops it.
+  // Said once, where it cannot be missed, and never again once dismissed —
+  // and never at all anywhere else. Settings keeps the same advice.
+  const advice = storageAdvice(storageEnv());
+  if (advice.homeScreenNotice && !state.prefs.homeScreenNoticeSeen) {
+    const notice = h("div", { class: "home-screen-notice", role: "note" },
+      h("p", { text: advice.note ?? "" }),
+      h("div", { class: "row tight" },
+        button("Got it", () => {
+          notice.remove();
+          void state.savePrefs({ homeScreenNoticeSeen: true });
+        }, { class: "primary dismiss-notice" }),
+      ),
+    );
+    topbar.after(notice);
+  }
 
   function setMain(view: View): void {
     mainView?.destroy?.();

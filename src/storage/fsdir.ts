@@ -167,6 +167,57 @@ export function canPickFolder(): boolean {
   return typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function";
 }
 
+/** What this browser can do about keeping a library, as far as the advice cares. */
+export interface StorageEnv {
+  canPickFolder: boolean;
+  /**
+   * Safari on iPhone and iPad — and every other browser there, since they all
+   * run on Safari's engine. Only those have `navigator.standalone`, so this is
+   * read from what the browser has rather than guessed from its name.
+   */
+  ios: boolean;
+  /** Running as a home-screen or Dock app rather than in a browser tab. */
+  standalone: boolean;
+}
+
+export function storageEnv(): StorageEnv {
+  const nav = globalThis.navigator as (Navigator & { standalone?: boolean }) | undefined;
+  const displayStandalone = typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(display-mode: standalone)").matches;
+  return {
+    canPickFolder: canPickFolder(),
+    ios: typeof nav?.standalone === "boolean",
+    standalone: nav?.standalone === true || displayStandalone,
+  };
+}
+
+/**
+ * What to tell someone whose library cannot live in a folder.
+ *
+ * A folder is where the library is safest, and most browsers that cannot pick
+ * one are Safari, which clears the storage of a site nobody has opened for
+ * about a week — unless it runs as a home-screen (iPhone, iPad) or Dock (Mac)
+ * app. The one-time notice is for the case where that matters most and the
+ * fix is one tap away: an iPhone or iPad, in a browser tab. Nowhere else.
+ */
+export function storageAdvice(env: StorageEnv): { note: string | null; homeScreenNotice: boolean } {
+  if (env.canPickFolder) return { note: null, homeScreenNotice: false };
+  if (env.ios) {
+    return env.standalone
+      ? {
+          note: "On iPhone and iPad no browser can keep the library in a folder, so it lives in Orangey's own storage. Running from the Home Screen keeps it safe from Safari's clear-out; export a ZIP now and then as your backup.",
+          homeScreenNotice: false,
+        }
+      : {
+          note: "On iPhone and iPad no browser can keep the library in a folder, and Safari clears the storage of a site nobody has opened for about a week. Add Orangey to your Home Screen (Share, then Add to Home Screen) and the library stays; export a ZIP now and then as your backup.",
+          homeScreenNotice: true,
+        };
+  }
+  return {
+    note: "This browser cannot keep the library in a folder; Chrome and Edge can, on Windows, Mac and Linux. Safari may clear the storage of a site nobody has opened for about a week, which adding it to the Dock (File, then Add to Dock) prevents. Either way, export a ZIP now and then as your backup.",
+    homeScreenNotice: false,
+  };
+}
+
 export async function pickFolder(): Promise<DirectoryBackend | null> {
   if (!canPickFolder()) return null;
   // @ts-ignore - not in every lib.dom

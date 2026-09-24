@@ -24,6 +24,7 @@ import { CryptoSource } from "../../core/rng.ts";
 import { SETTINGS_FILE_NAME, MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS } from "../../model/settings-file.ts";
 import { ValidationError } from "../../model/validate.ts";
 import { SINGLE_FILE_NAME, isSingleFile, releasesUrl } from "../single.ts";
+import { storageAdvice, storageEnv } from "../../storage/fsdir.ts";
 import { askToPersist, canUseFolder, describeStorage, exportLibraryZip, isPersisted, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import type { View } from "../view.ts";
 
@@ -284,7 +285,7 @@ export function createSettingsView(): View {
             ? button("Stop using that folder", () => void stopUsingFolder(), { class: "ghost stop-folder" })
             : null,
         )
-      : h("p", { class: "field-hint", text: "This browser has no folder picker, so the library stays in browser storage. Chrome and Edge can point it at a folder instead." });
+      : h("p", { class: "field-hint storage-advice", text: storageAdvice(storageEnv()).note ?? "" });
 
     return h("div", { class: "card storage-card" },
       h("h2", { text: "Storage" }),

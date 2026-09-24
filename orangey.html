@@ -969,6 +969,10 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .chain-icon-name,
 .chain-icon-answer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* The one-time Add to Home Screen notice on an iPhone or iPad in a tab. */
+.home-screen-notice { margin: 8px var(--gap) 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); }
+.home-screen-notice p { margin: 0 0 8px; }
+
 </style>
 </head>
 <body>
@@ -1595,6 +1599,8 @@ function sourceFor(seed                           )               {
                  
                                                                            
                           
+                                                                            
+                                 
  
 
 const DB_NAME = "orangey";
@@ -1688,10 +1694,29 @@ function txRead   (store        , fn                                      )     
  * telling the app a preference was saved while it could still be rolled back.
  */
 function txWrite(store        , fn                             )                {
-  return withTransaction      (store, "readwrite", (s, resolve, _reject, t) => {
+  const write = withTransaction      (store, "readwrite", (s, resolve, _reject, t) => {
     fn(s);
     t.addEventListener("complete", () => resolve());
   });
+  pendingWrites.add(write);
+  const done = () => pendingWrites.delete(write);
+  write.then(done, done);
+  return write;
+}
+
+/**
+ * Writes started and not yet committed or failed.
+ *
+ * A roll's history row is written a moment after the answer is on screen, so
+ * "the roll has happened" and "the roll is stored" are two different times.
+ * Whatever needs the second — a test about to close its page, above all —
+ * waits for this rather than guessing how long a write takes.
+ */
+const pendingWrites = new Set               ();
+
+/** Resolves once every write started so far has committed or failed. */
+async function storageSettled()                {
+  while (pendingWrites.size) await Promise.allSettled([...pendingWrites]);
 }
 
 const appdb = {
@@ -3512,6 +3537,57 @@ async function openOpfs()                                   {
 
 function canPickFolder()          {
   return typeof (globalThis                                     ).showDirectoryPicker === "function";
+}
+
+/** What this browser can do about keeping a library, as far as the advice cares. */
+                             
+                         
+     
+                                                                              
+                                                                               
+                                                                      
+     
+               
+                                                                           
+                      
+ 
+
+function storageEnv()             {
+  const nav = globalThis.navigator                                                      ;
+  const displayStandalone = typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(display-mode: standalone)").matches;
+  return {
+    canPickFolder: canPickFolder(),
+    ios: typeof nav?.standalone === "boolean",
+    standalone: nav?.standalone === true || displayStandalone,
+  };
+}
+
+/**
+ * What to tell someone whose library cannot live in a folder.
+ *
+ * A folder is where the library is safest, and most browsers that cannot pick
+ * one are Safari, which clears the storage of a site nobody has opened for
+ * about a week — unless it runs as a home-screen (iPhone, iPad) or Dock (Mac)
+ * app. The one-time notice is for the case where that matters most and the
+ * fix is one tap away: an iPhone or iPad, in a browser tab. Nowhere else.
+ */
+function storageAdvice(env            )                                                     {
+  if (env.canPickFolder) return { note: null, homeScreenNotice: false };
+  if (env.ios) {
+    return env.standalone
+      ? {
+          note: "On iPhone and iPad no browser can keep the library in a folder, so it lives in Orangey's own storage. Running from the Home Screen keeps it safe from Safari's clear-out; export a ZIP now and then as your backup.",
+          homeScreenNotice: false,
+        }
+      : {
+          note: "On iPhone and iPad no browser can keep the library in a folder, and Safari clears the storage of a site nobody has opened for about a week. Add Orangey to your Home Screen (Share, then Add to Home Screen) and the library stays; export a ZIP now and then as your backup.",
+          homeScreenNotice: true,
+        };
+  }
+  return {
+    note: "This browser cannot keep the library in a folder; Chrome and Edge can, on Windows, Mac and Linux. Safari may clear the storage of a site nobody has opened for about a week, which adding it to the Dock (File, then Add to Dock) prevents. Either way, export a ZIP now and then as your backup.",
+    homeScreenNotice: false,
+  };
 }
 
 async function pickFolder()                                   {
@@ -15684,6 +15760,7 @@ function releasesUrl()         {
 
 
 
+
                                        
 
 const PREVIEW_ITEMS = ["Goblin patrol", "Merchant", "Wolf pack", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
@@ -15943,7 +16020,7 @@ function createSettingsView()       {
             ? button("Stop using that folder", () => void stopUsingFolder(), { class: "ghost stop-folder" })
             : null,
         )
-      : h("p", { class: "field-hint", text: "This browser has no folder picker, so the library stays in browser storage. Chrome and Edge can point it at a folder instead." });
+      : h("p", { class: "field-hint storage-advice", text: storageAdvice(storageEnv()).note ?? "" });
 
     return h("div", { class: "card storage-card" },
       h("h2", { text: "Storage" }),
@@ -16324,6 +16401,7 @@ class MascotHost {
 
 
 
+
 const SHORTCUTS                     = [
   ["Space or Enter", "Roll"],
   ["Esc", "Skip the animation"],
@@ -16366,6 +16444,24 @@ function mountApp(root             )             {
   );
 
   root.append(topbar, h("div", { class: "panes" }, side, main), tabbar, toasts);
+
+  // On an iPhone or iPad in a browser tab, Safari will clear the library of a
+  // site left unopened for a week, and Add to Home Screen is what stops it.
+  // Said once, where it cannot be missed, and never again once dismissed —
+  // and never at all anywhere else. Settings keeps the same advice.
+  const advice = storageAdvice(storageEnv());
+  if (advice.homeScreenNotice && !state.prefs.homeScreenNoticeSeen) {
+    const notice = h("div", { class: "home-screen-notice", role: "note" },
+      h("p", { text: advice.note ?? "" }),
+      h("div", { class: "row tight" },
+        button("Got it", () => {
+          notice.remove();
+          void state.savePrefs({ homeScreenNoticeSeen: true });
+        }, { class: "primary dismiss-notice" }),
+      ),
+    );
+    topbar.after(notice);
+  }
 
   function setMain(view      )       {
     mainView?.destroy?.();
@@ -16660,6 +16756,9 @@ async function start()                {
       // The image store, so a browser test can put a picture in without a
       // file input. Behind ?debug like everything else here.
       images: { putImage, putImageData, imageUrl, imageUrlSync, imageDataUrl, pruneImages },
+      // So a test can wait for what it wrote to be stored before its page
+      // closes; otherwise a late write lands in the next test's fresh storage.
+      storageSettled,
     };
   }
 }

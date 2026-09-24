@@ -8,6 +8,7 @@ import { IndexedDbBackend } from "./storage/idb.ts";
 import { MemoryBackend } from "./storage/memory.ts";
 import { mascotTicker } from "./ui/mascot/ticker.ts";
 import { imageDataUrl, imageUrl, imageUrlSync, pruneImages, putImage, putImageData } from "./storage/images.ts";
+import { storageSettled } from "./storage/appdb.ts";
 
 async function start(): Promise<void> {
   const root = document.getElementById("app");
@@ -40,6 +41,9 @@ async function start(): Promise<void> {
       // The image store, so a browser test can put a picture in without a
       // file input. Behind ?debug like everything else here.
       images: { putImage, putImageData, imageUrl, imageUrlSync, imageDataUrl, pruneImages },
+      // So a test can wait for what it wrote to be stored before its page
+      // closes; otherwise a late write lands in the next test's fresh storage.
+      storageSettled,
     };
   }
 }

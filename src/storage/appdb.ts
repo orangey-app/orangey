@@ -53,6 +53,8 @@ export interface Prefs {
   scheme: string;
   /** Colours the user added to the palette; offered in the colour cell. */
   colours: CustomColour[];
+  /** The one-time Add to Home Screen notice has been seen and dismissed. */
+  homeScreenNoticeSeen?: boolean;
 }
 
 const DB_NAME = "orangey";
@@ -146,10 +148,29 @@ function txRead<T>(store: string, fn: (s: IDBObjectStore) => IDBRequest<T>): Pro
  * telling the app a preference was saved while it could still be rolled back.
  */
 function txWrite(store: string, fn: (s: IDBObjectStore) => void): Promise<void> {
-  return withTransaction<void>(store, "readwrite", (s, resolve, _reject, t) => {
+  const write = withTransaction<void>(store, "readwrite", (s, resolve, _reject, t) => {
     fn(s);
     t.addEventListener("complete", () => resolve());
   });
+  pendingWrites.add(write);
+  const done = () => pendingWrites.delete(write);
+  write.then(done, done);
+  return write;
+}
+
+/**
+ * Writes started and not yet committed or failed.
+ *
+ * A roll's history row is written a moment after the answer is on screen, so
+ * "the roll has happened" and "the roll is stored" are two different times.
+ * Whatever needs the second — a test about to close its page, above all —
+ * waits for this rather than guessing how long a write takes.
+ */
+const pendingWrites = new Set<Promise<void>>();
+
+/** Resolves once every write started so far has committed or failed. */
+export async function storageSettled(): Promise<void> {
+  while (pendingWrites.size) await Promise.allSettled([...pendingWrites]);
 }
 
 export const appdb = {

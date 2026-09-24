@@ -48,8 +48,30 @@ async function test(name, fn) {
     if (page.consoleErrors.length) console.log(`  page errors: ${page.consoleErrors.slice(0, 3).join(" | ")}`);
   } finally {
     clearTimeout(timer);
+    await settle(page);
     await page.close().catch(() => {});
   }
+}
+
+/**
+ * Wait for the page's storage writes to finish.
+ *
+ * A roll is on screen a moment before its history row is stored. A page
+ * closed in between let that row land after the next test had wiped storage,
+ * so the next test started with rolls it never made (seen on Windows as the
+ * hidden-roll test finding one or two history rows before its first roll).
+ * Bounded, because a page that has navigated away has nothing to wait for.
+ */
+async function settle(page) {
+  await Promise.race([
+    page.evaluate(`
+      if (window.orangey?.storageSettled) {
+        await window.orangey.state.library.flush().catch(() => {});
+        await window.orangey.storageSettled();
+      }
+    `).catch(() => {}),
+    new Promise((r) => setTimeout(r, 5000)),
+  ]);
 }
 
 /**
@@ -58,8 +80,16 @@ async function test(name, fn) {
  * assertions. Pass { fresh: false } to reload and keep what was stored.
  */
 const open = async (page, hash = "", { fresh = false } = {}) => {
+  // Whatever the page is still writing lands before it goes: a bag's draw is
+  // stored a moment after it shows, and a reload in that moment brought the
+  // bag back one draw fuller than it was.
+  await settle(page);
   if (fresh) {
     await page.goto(`${server.origin}/index.html?debug&noseed`);
+    // The app writes as it starts up; let that land before wiping, or it
+    // lands after the wipe instead.
+    await page.waitForFunction("window.orangey");
+    await settle(page);
     await page.clearStorage(server.origin);
   }
   // noseed: the starter randomizers would otherwise appear in every fresh
@@ -1170,6 +1200,21 @@ async function main() {
     assert.match(card.text, /clearing this site's data/);
     assert.equal(card.zip, true, "no ZIP export");
     assert.equal(card.persistState, true, "nothing said about eviction");
+    // Chrome has a folder picker, so it is told nothing extra. Take the picker
+    // away and pretend to be an iPhone tab: the card says what to do instead,
+    // and no longer claims Chrome or Edge could help — on an iPhone they cannot.
+    assert.equal(await page.evaluate(`return document.querySelector(".storage-advice")`), null);
+    await page.evaluate(`
+      Object.defineProperty(window, "showDirectoryPicker", { value: undefined, configurable: true });
+      Object.defineProperty(navigator, "standalone", { value: false, configurable: true });
+      window.orangey.navigate("#/history");
+    `);
+    await page.waitForFunction(`location.hash === "#/history"`);
+    await page.evaluate(`window.orangey.navigate("#/settings")`);
+    await page.waitForFunction(`document.querySelector(".storage-advice")`);
+    const advice = await page.evaluate(`return document.querySelector(".storage-advice").textContent`);
+    assert.match(advice, /Add Orangey to your Home Screen/);
+    assert.doesNotMatch(advice, /Chrome and Edge/);
     // the ZIP export really produces the library
     await page.evaluate(`
       window.__downloads = [];

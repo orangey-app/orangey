@@ -814,3 +814,7 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .chain-icon-answer { color: var(--ink-faint); font-size: 13px; }
 .chain-icon-name,
 .chain-icon-answer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The one-time Add to Home Screen notice on an iPhone or iPad in a tab. */
+.home-screen-notice { margin: 8px var(--gap) 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); }
+.home-screen-notice p { margin: 0 0 8px; }

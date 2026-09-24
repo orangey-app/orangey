@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { LibraryService, type LibraryBackend } from "../../src/storage/library.ts";
 import { MemoryBackend } from "../../src/storage/memory.ts";
-import { DirectoryBackend } from "../../src/storage/fsdir.ts";
+import { DirectoryBackend, storageAdvice } from "../../src/storage/fsdir.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import { parseFile, serialize, wrap } from "../../src/model/file.ts";
 import { basename, isInside, join, naturalCompare, parent, sanitizeName, segments } from "../../src/storage/paths.ts";
@@ -14,6 +14,26 @@ const setup = async () => {
   await library.refresh();
   return { backend, library };
 };
+
+describe("what a browser without a folder is told", () => {
+  test("the one-time notice is for an iPhone or iPad in a tab, and nowhere else", () => {
+    const picker = storageAdvice({ canPickFolder: true, ios: false, standalone: false });
+    assert.deepEqual(picker, { note: null, homeScreenNotice: false }, "Chrome and Edge are told nothing");
+
+    const tab = storageAdvice({ canPickFolder: false, ios: true, standalone: false });
+    assert.equal(tab.homeScreenNotice, true);
+    assert.match(tab.note ?? "", /Add to Home Screen/);
+
+    const home = storageAdvice({ canPickFolder: false, ios: true, standalone: true });
+    assert.equal(home.homeScreenNotice, false, "already on the Home Screen");
+    assert.match(home.note ?? "", /export a ZIP/);
+
+    const desktop = storageAdvice({ canPickFolder: false, ios: false, standalone: false });
+    assert.equal(desktop.homeScreenNotice, false, "Safari and Firefox on a computer get the note, not the notice");
+    assert.match(desktop.note ?? "", /Chrome and Edge can/);
+    assert.match(desktop.note ?? "", /Add to Dock/);
+  });
+});
 
 describe("a storage backend", () => {
   test("writes, reads, lists, moves and removes, making the folders it needs on the way", async () => {
