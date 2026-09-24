@@ -12,7 +12,8 @@
     "test:browser": "node tests/browser/run.mjs",
     "test:all": "npm run test && npm run test:browser",
     "build": "node scripts/build.mjs",
-    "build:single": "node scripts/build.mjs --single"
+    "build:single": "node scripts/build.mjs --single",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "engines": {
     "node": ">=22.6"

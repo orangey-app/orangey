@@ -21,10 +21,11 @@ import { mascotLogoMarkup } from "./mascot/parts.ts";
 import { storageAdvice, storageEnv } from "../storage/fsdir.ts";
 
 const SHORTCUTS: [string, string][] = [
-  ["Space or Enter", "Roll"],
+  ["Space or Enter", "Roll (on a board, roll all)"],
   ["Esc", "Skip the animation"],
   ["/", "Search the library"],
   ["?", "This list"],
+  ["Delete / F2", "Delete or rename the focused library entry"],
   ["Alt + ↑ / ↓", "Reorder an outcome"],
   ["Ctrl/Cmd + D", "Duplicate an outcome"],
   ["Ctrl/Cmd + Z", "Undo the last deletion"],

@@ -11,12 +11,14 @@ you can copy, share, back up or keep in Git.
 
 ![Wireframe dice: d4 through d100 at rest, each showing its value](docs/screenshot-dice.png)
 
-![A board: three randomizers side by side, each with its own answer](docs/screenshot-board.png)
+![A board: an encounter wheel, the weather and an ability score side by side, each with its own Roll, and a dashed cell the encounter opened](docs/screenshot-board.png)
 
-![A wheel whose outcomes carry portraits, with one outcome opening another randomizer beside it](docs/screenshot-pictures.png)
+![A wheel whose outcomes carry portraits in their slices, with one outcome opening another randomizer beside it](docs/screenshot-pictures.png)
 
-**Outcomes can carry pictures.** A portrait on an encounter shows as a
-thumbnail in its slice and fills the screen above the answer when it comes up.
+**Outcomes can carry pictures.** A portrait on an encounter shows in its
+slice in place of the name, and fills the screen above the answer when it
+comes up. **Slices show** in the editor switches a wheel to names, or to both
+side by side.
 Pictures live beside your library rather than inside the randomizer's file, and
 they travel with an export — but never inside a shared link, which is what
 keeps links short.
@@ -55,21 +57,31 @@ it, it works; every time after that, it works with the network switched off.
 
 ## What it does
 
-**Dice.** `d20`, `2d6 + 3`, `4d6kh3`, `2d20kh1` for advantage — the notation is
-in [docs/DICE.md](docs/DICE.md). Dropped dice are shown faded, not silently
-removed. Two styles: plain numbered squares, or wireframe solids — a
-tetrahedron for a d4, a cube for a d6, an octahedron, a pentagonal
-trapezohedron for the ten-siders, a dodecahedron, an icosahedron — that tumble
-about their own diagonals, change axis at every bounce, and come to rest with
-the face they are showing turned square-on, its number sized to sit inside it.
+**Dice.** `d20`, `2d6 + 3`, `4d6kh3`, `adv` and `dis`, exploding dice (`3d6!`),
+rerolls (`4d6r1`), success pools (`5d10>=8`) and Fate dice (`4dF`) — the
+notation is in [docs/DICE.md](docs/DICE.md). An outcome can carry dice in its
+text: "{2d4} wolves" rolls the 2d4 when that outcome comes up. Dropped dice are
+shown faded, not silently removed, and explosions and rerolls land in throws
+of their own after the first. Two styles: plain numbered squares, or
+wireframe solids — a tetrahedron for a d4, a cube for a d6, an octahedron, a
+pentagonal trapezohedron for the ten-siders, a dodecahedron, an icosahedron —
+that tumble about their own diagonals, change axis at every bounce, and come
+to rest with the face they are showing turned square-on, its number sized to
+sit inside it.
 
 **Wheels.** A list of outcomes with weights. Weights are just numbers and
 Orangey normalizes them, so `50/30/20` and `5/3/2` are the same wheel and
 nothing has to add up to 100. Segments take up the space their weight deserves.
+**Draw without putting back** turns a wheel into a bag: what came up stays out
+until the bag is empty. The **×** beside Roll draws several at once, and
+**Hidden** rolls behind the screen — the answer waits until you choose to
+reveal it.
 
 **Import.** Paste or drop a table — commas, semicolons, tabs, pipes and aligned
 columns are all detected — map the columns, read a report of exactly what will
-happen, and land in the editor with the table ready to fix:
+happen, and land in the editor with the table ready to fix. Printed d100
+tables work as they are: `01–65`, `66–85`, `00` become weights. Any list goes
+back out as CSV from its menu in the library.
 
 ```
 ✓ 24 entries ready
@@ -88,7 +100,15 @@ touching any of it.
 
 **Editing.** Every outcome can be disabled (kept in the list, out of the roll,
 weight preserved), duplicated or deleted, in place. Deletions are undoable for
-ten seconds. Rows can be reordered by dragging or with `Alt + ↑ / ↓`.
+ten seconds — an outcome, a randomizer from the library, or a cell taken off a
+board. Rows can be reordered by dragging or with `Alt + ↑ / ↓`.
+
+**History.** Every roll is kept with its date and time, the dice behind a
+total, and, for a chained roll, what sent you there. Strike a roll that did
+not count, repeat one with a press, and export the lot as CSV or text. The
+last few rolls also sit under the result as **Recent rolls**, and the home
+screen keeps your favourites and the randomizers you rolled lately one press
+away.
 
 **Nothing is spoiled.** The result is decided the moment you press Roll — that
 is what makes skipping safe — but nothing shows it until the animation lands.
@@ -127,7 +147,8 @@ If you run games from a deck, you can put a link on the slide itself. Open the
 randomizer, press **Link…**, and paste what it gives you onto a shape or an
 image — a die icon on the map, a button next to the encounter table. Clicking
 it during the presentation opens that wheel, rolls it, and fills the screen;
-closing the tab puts you back on the slide.
+closing the tab puts you back on the slide. While it fills the screen it keeps
+the screen awake.
 
 The link addresses the randomizer by its identity rather than its file name, so
 renaming a wheel or moving it to another folder will not break a deck you made
@@ -200,10 +221,11 @@ examples in [`examples/`](examples).
 
 | | |
 |---|---|
-| `Space` / `Enter` | roll |
+| `Space` / `Enter` | roll (on a board, roll all) |
 | `Esc` | skip the animation |
 | `/` | search the library |
 | `?` | all shortcuts |
+| `Delete` / `F2` | delete or rename the focused entry in the library |
 | `Alt + ↑ / ↓` | reorder an outcome |
 | `Ctrl/Cmd + D` | duplicate an outcome |
 | `Ctrl/Cmd + Z` | undo the last deletion |
@@ -226,6 +248,7 @@ npm run build         # dist/ as a static site
 npm run build:single  # also orangey.html, one self-contained file, at the
                       # repository root (committed) and in dist/
 npm run test:browser  # drive the built app in headless Chromium
+npm run screenshots   # retake docs/screenshot-*.png from the built app
 ```
 
 `check`, `test` and the builds need only Node, so a clean checkout can build
@@ -246,6 +269,6 @@ own. A fork that wants a different mascot removes `assets/mascot/` and
 
 Two fonts are built in, both under the SIL Open Font License 1.1: **Arapey**
 by Eduardo Tunni, for names, headings and answers, and the digits of
-**Flamenco** by LatinoType, for the numbers on dice. The font files and their
+**Young Serif** by Bastien Sozeau, for the numbers on dice. The font files and their
 licence texts are in `assets/fonts/`, and the build carries the licences
 into every built file.

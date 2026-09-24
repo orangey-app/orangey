@@ -51,6 +51,7 @@ export function createCell(
       id: () => randomizer.id,
       onActivate: () => void roller.roll(),
       size: 260,
+      slices: () => (randomizer as Extract<Randomizer, { type: "list" }>).slices,
     });
     stage.append(wheel.el);
   } else if (randomizer.type === "dice") {

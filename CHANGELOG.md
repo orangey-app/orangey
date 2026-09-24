@@ -17,9 +17,10 @@ What 0.5.0 is:
   into an outcome's text ("{2d4} wolves"). Wireframe dice tumble and land on
   the real faces; explosions and rerolls land in throws of their own.
 - **Wheels built from your own tables**, with weights that need not add up to
-  anything, bag mode for drawing without putting back, pictures on outcomes,
-  and an import wizard for spreadsheets and pasted tables (d100 ranges
-  included). Slices are red, yellow and blue in turn.
+  anything, bag mode for drawing without putting back, pictures on outcomes
+  (on the slice, instead of or beside its name), and an import wizard for
+  spreadsheets and pasted tables (d100 ranges included). Slices are red,
+  yellow and blue in turn.
 - **Chains and boards.** An outcome can send you to another randomizer, which
   opens and waits for its own roll — on the play screen and on a board. A
   board puts several randomizers on one screen, each with its own Roll, and
@@ -34,7 +35,7 @@ What 0.5.0 is:
 - **Feel and Orangey**: animation you can tune per randomizer, reduced motion
   respected, a hidden roll for the game master, and a mascot who cheers and
   winces when you tell him to. Names and answers are set in Arapey, dice in
-  Flamenco; both are built in.
+  Young Serif; both are built in.
 
 ## Before the first release
 
@@ -42,6 +43,13 @@ Development notes, newest first. None of these was released.
 
 ### Last round before release
 
+- **A picture or a name, not one over the other.** A slice whose outcome has
+  a picture now shows the picture alone; slices without one show their name.
+  The editor's **Slices show** (offered once a wheel has a picture) switches
+  a wheel to **Names**, or to **Both**, which moves the picture out to the rim
+  and fits the name between it and the centre — dropping the picture where a
+  slice is too narrow for the two. Saved as `slices` in the file, and only
+  when it is not the default.
 - **A board follows an outcome's link.** Roll a wheel on a board and, if the
   outcome that came up points at another randomizer, that one opens as a
   dashed cell right after it and waits for its own roll — the same rule as the
@@ -74,7 +82,7 @@ Development notes, newest first. None of these was released.
   in a browser tab on an iPhone or iPad a one-time notice says the same.
   Settings no longer suggests Chrome or Edge there, where they cannot help.
 - **New type.** Names, headings and answers are set in Arapey, and the numbers
-  on dice in Flamenco, centred on the face; both are built in and work
+  on dice in Young Serif, centred on the face; both are built in and work
   offline. Buttons, tables and wheel labels stay in the system font.
 - **Wheels are red, yellow and blue.** Slices take the primary colours in
   turn, with green for the one slice that would otherwise meet its own colour.

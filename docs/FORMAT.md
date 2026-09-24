@@ -56,6 +56,7 @@ two ways.
 | `items` | at least one outcome |
 | `view` | `"wheel"` or `"list"` |
 | `withoutReplacement` | bag mode: an outcome that has come up cannot come up again until the bag is refilled |
+| `slices` | what a wheel's slice shows when its outcome has a picture: `"pictures"`, `"names"` or `"both"`. Left out means `"pictures"`; slices without a picture always show their name |
 
 **Where the bag's state is kept.** The flag above says the randomizer is a
 bag; it does not say what has been drawn out of it. That list lives in the

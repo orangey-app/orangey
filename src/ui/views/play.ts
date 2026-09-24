@@ -104,6 +104,7 @@ export function createPlayView(
         wheel = createWheel({
           items: () => inPlay(),
           id: () => randomizer.id,
+          slices: () => (randomizer.type === "list" ? randomizer.slices : undefined),
           onActivate: () => void doRoll(),
         });
         stage.append(wheel.el);

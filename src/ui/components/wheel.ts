@@ -24,9 +24,11 @@ import {
   planSpin,
   pointOnCircle,
   POINTER_ANGLE,
-  radialLabelRoom,
+  sliceLayout,
   tickerWindow,
   type Segment,
+  type SliceContent,
+  type SliceLayout,
 } from "../../core/wheel-geometry.ts";
 import { CryptoSource } from "../../core/rng.ts";
 import type { ListItem } from "../../model/randomizer.ts";
@@ -79,6 +81,8 @@ export interface WheelOptions {
   /** Called when the user clicks the wheel itself. */
   onActivate?: () => void;
   size?: number;
+  /** What a slice with a picture shows; left out, the picture. */
+  slices?: () => SliceContent | undefined;
 }
 
 export function createWheel(opts: WheelOptions): WheelView {
@@ -144,25 +148,36 @@ export function createWheel(opts: WheelOptions): WheelView {
       });
     });
 
+    // What each slice holds, decided once for the pictures and the names
+    // together: a picture only where it is already in the cache (one still
+    // loading shows the name until the redraw brings it), and never a name
+    // laid over a picture.
+    const content = opts.slices?.() ?? "pictures";
+    const plan = new Map<number, SliceLayout>();
+    for (const seg of segments) {
+      const item = items[seg.index];
+      let picture = false;
+      if (item?.image && content !== "names") {
+        picture = imageUrlSync(item.image) !== null;
+        if (!picture) wanted.add(item.image);
+      }
+      plan.set(seg.index, sliceLayout(seg.endAngle - seg.startAngle, {
+        radius, rim: labelEnd, hub: HUB_RADIUS + 6, picture, content, labels: showLabels,
+      }));
+    }
+
     // A picture on an outcome is drawn inside its slice, clipped to the wedge,
-    // so a wheel of portraits can be recognised at a glance. The label stays:
-    // a thumbnail this small says "an owlbear", not which owlbear.
+    // so a wheel of portraits can be recognised at a glance.
     const pictures = segments.flatMap((seg) => {
       const item = items[seg.index];
-      if (!item?.image) return [];
-      const url = imageUrlSync(item.image);
-      if (!url) {
-        wanted.add(item.image);
-        return [];
-      }
-      const span = seg.endAngle - seg.startAngle;
-      if (span < 12) return [];
+      const medallion = plan.get(seg.index)?.medallion;
+      if (!item?.image || !medallion) return [];
+      const url = imageUrlSync(item.image) as string;
       const key = `${opts.id()}-${seg.index}`.replace(/[^a-zA-Z0-9_-]/g, "");
-      const [cxImg, cyImg] = pointOnCircle(cx, cy, radius * 0.62, seg.midAngle);
-      const side = Math.min(radius * 0.40, 2 * radius * 0.62 * Math.sin((span * Math.PI) / 360) * 0.85);
+      const [cxImg, cyImg] = pointOnCircle(cx, cy, medallion.centre, seg.midAngle);
+      const side = medallion.side;
       // A round medallion, and the slice clipped around it: a square would
-      // read as a sticker laid on the wheel, and a picture that reached the
-      // edges would take the label's contrast with it.
+      // read as a sticker laid on the wheel.
       return [
         s("clipPath", { id: `slice-${key}` }, s("path", { d: arcPath(seg, cx, cy, radius) })),
         s("clipPath", { id: `disc-${key}` }, s("circle", { cx: String(cxImg), cy: String(cyImg), r: String(side / 2) })),
@@ -184,34 +199,32 @@ export function createWheel(opts: WheelOptions): WheelView {
       ];
     });
 
-    const labels = showLabels
-      ? segments.flatMap((seg) => {
-          const item = items[seg.index];
-          // A sliver cannot carry a readable label; the list beside the wheel
-          // and the result panel say what it is instead.
-          const room = radialLabelRoom(seg.endAngle - seg.startAngle, { outer: labelEnd, hub: HUB_RADIUS + 6 });
-          if (!room) return [];
-          const { ink } = labelFor(colorByIndex[seg.index] ?? "#888888");
-          const text = fitLabelToWidth(item.label, room.length, (t) => measureWheelLabel(t, room.fontSize));
-          // Anchored at the rim and running inwards along the radius, reading
-          // outwards — horizontal once the slice is under the pointer.
-          const [x, y] = pointOnCircle(cx, cy, room.outer, seg.midAngle);
-          return [
-            s("text", {
-              class: "wheel-label",
-              "data-index": String(seg.index),
-              x: String(x),
-              y: String(y),
-              fill: ink,
-              "font-size": String(room.fontSize),
-              "text-anchor": "end",
-              "dominant-baseline": "middle",
-              transform: `rotate(${seg.midAngle - POINTER_ANGLE} ${x} ${y})`,
-              text,
-            }),
-          ];
-        })
-      : [];
+    const labels = segments.flatMap((seg) => {
+      const item = items[seg.index];
+      // No room means a sliver, or a slice its picture fills; the list beside
+      // the wheel and the result panel say what it is instead.
+      const room = plan.get(seg.index)?.label;
+      if (!room) return [];
+      const { ink } = labelFor(colorByIndex[seg.index] ?? "#888888");
+      const text = fitLabelToWidth(item.label, room.length, (t) => measureWheelLabel(t, room.fontSize));
+      // Anchored at its outer end and running inwards along the radius,
+      // reading outwards — horizontal once the slice is under the pointer.
+      const [x, y] = pointOnCircle(cx, cy, room.outer, seg.midAngle);
+      return [
+        s("text", {
+          class: "wheel-label",
+          "data-index": String(seg.index),
+          x: String(x),
+          y: String(y),
+          fill: ink,
+          "font-size": String(room.fontSize),
+          "text-anchor": "end",
+          "dominant-baseline": "middle",
+          transform: `rotate(${seg.midAngle - POINTER_ANGLE} ${x} ${y})`,
+          text,
+        }),
+      ];
+    });
 
     rotor = s("g", { class: "wheel-rotor" }, ...paths, ...pictures, ...labels);
     applyRotation();

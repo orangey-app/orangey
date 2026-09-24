@@ -9,6 +9,8 @@ import {
   POINTER_ANGLE,
   radialLabelRoom,
   segmentAtPointer,
+  sliceLayout,
+  type SliceContent,
   tickerWindow,
 } from "../../src/core/wheel-geometry.ts";
 import { SeededSource } from "../../src/core/rng.ts";
@@ -215,5 +217,43 @@ describe("radial labels", () => {
     for (let w = 10; w < 200; w += 7) {
       assert.ok(mono(fitLabelToWidth("The lost travellers of the old road", w, mono)) <= w, `width ${w}`);
     }
+  });
+
+  test("a slice shows its picture or its name, and with both the two never meet", () => {
+    // The wheel component's numbers, as above: radius 154, the pointer's
+    // margin at 135, the hub at 22.
+    const at = (span: number, content: SliceContent, picture = true, labels = true) =>
+      sliceLayout(span, { radius: 154, rim: 135, hub: 22, picture, content, labels });
+    for (let span = 1; span <= 360; span += 0.5) {
+      const half = (Math.min(span, 180) * Math.PI) / 360;
+      // Without a picture, or asked for names, a slice is labelled exactly as before.
+      for (const layout of [at(span, "pictures", false), at(span, "names"), at(span, "both", false)]) {
+        assert.equal(layout.medallion, null, `span ${span}: a medallion with nothing to show`);
+        assert.deepEqual(layout.label, room(span), `span ${span}: the name moved`);
+      }
+      // Pictures: one or the other, never both.
+      const alone = at(span, "pictures");
+      assert.ok(!(alone.medallion && alone.label), `span ${span}: a name over a picture`);
+      // Both: the name ends before the medallion begins, the medallion stays
+      // inside the rim and the slice, and a slice with no room for both keeps
+      // its name rather than its picture.
+      const both = at(span, "both");
+      if (both.medallion) {
+        const { centre, side } = both.medallion;
+        assert.ok(both.label, `span ${span}: the picture pushed the name out`);
+        assert.ok(both.label.outer <= centre - side / 2, `span ${span}: the name runs into the picture`);
+        assert.ok(centre + side / 2 <= 135 + 1e-9, `span ${span}: the picture reaches under the pointer`);
+        // A disc at distance c clears the slice's edges when c sin(span / 2) >= side / 2.
+        assert.ok(side <= 2 * centre * Math.sin(half) + 1e-9, `span ${span}: the picture spills out of its slice`);
+      } else {
+        assert.deepEqual(both.label, room(span), `span ${span}: a slice without its picture lost room for its name`);
+      }
+    }
+    // Where the point is: a quarter of the wheel holds both.
+    const quarter = at(90, "both");
+    assert.ok(quarter.medallion && quarter.label, "a quarter of the wheel should show both");
+    // An unlabelled wheel still shows pictures, whichever is asked for.
+    assert.ok(at(30, "both", true, false).medallion);
+    assert.ok(at(30, "pictures", true, false).medallion);
   });
 });

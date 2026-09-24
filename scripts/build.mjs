@@ -36,7 +36,7 @@ const fontFace = (family, file, licence, extra = "") => {
 const fonts = [
   fontFace("Orangey Text", "arapey-regular.woff", "OFL-Arapey.txt"),
   // Digits only: whatever else a dice total says ("3 successes") falls back.
-  fontFace("Orangey Dice", "flamenco-digits.woff", "OFL-Flamenco.txt", " unicode-range: U+0030-0039, U+002B, U+0021;"),
+  fontFace("Orangey Dice", "youngserif-digits.woff", "OFL-YoungSerif.txt", " unicode-range: U+0030-0039, U+002B, U+2212, U+0021;"),
 ].join("\n");
 
 const css = [fonts, ...["src/ui/styles/tokens.css", "src/ui/styles/app.css"].map((f) => readFileSync(join(root, f), "utf8"))]

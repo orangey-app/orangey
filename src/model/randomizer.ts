@@ -8,6 +8,7 @@
 import { isRollable, type Weighted } from "../core/weighted.ts";
 import { Check } from "./validate.ts";
 import { isHex } from "../core/color.ts";
+import { SLICE_CONTENTS, type SliceContent } from "../core/wheel-geometry.ts";
 import type { FeelOverride } from "./feel.ts";
 
 /** The types that can be rolled. A board is not one of them; it holds them. */
@@ -80,6 +81,11 @@ export interface ListRandomizer extends RandomizerBase {
   view: "wheel" | "list";
   /** 0.2 bag mode; carried in the format from 0.1 so old files stay valid. */
   withoutReplacement?: boolean;
+  /**
+   * What a wheel's slice shows when its outcome has a picture. Left out
+   * means the picture; files only carry it when someone chose otherwise.
+   */
+  slices?: SliceContent;
 }
 
 export interface DiceRandomizer extends RandomizerBase {
@@ -190,6 +196,7 @@ export function validateRandomizer(v: unknown, check = new Check(), path = "rand
     case "list": {
       if (o.view !== undefined) check.oneOf(`${path}.view`, o.view, ["wheel", "list"] as const);
       if (o.withoutReplacement !== undefined) check.boolean(`${path}.withoutReplacement`, o.withoutReplacement);
+      if (o.slices !== undefined) check.oneOf(`${path}.slices`, o.slices, SLICE_CONTENTS);
       if (check.array(`${path}.items`, o.items, 1)) {
         (o.items as unknown[]).forEach((it, i) => validateItem(it, check, `${path}.items[${i}]`));
       }

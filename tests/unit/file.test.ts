@@ -12,6 +12,7 @@ function sample(): ListRandomizer {
     name: "Forest Encounters",
     description: "Daytime, levels 1–4",
     view: "wheel",
+    slices: "both",
     feel: { wheel: { turns: 3, settleDegrees: 20 } },
     created: "2026-09-08T18:00:00.000Z",
     modified: "2026-09-08T18:20:00.000Z",
@@ -25,7 +26,7 @@ function sample(): ListRandomizer {
 }
 
 /** A saved file taken apart, so a test can break one field of it. */
-type Doc = { version: number; randomizer: { items: Record<string, unknown>[]; feel?: unknown }; [key: string]: unknown };
+type Doc = { version: number; randomizer: { items: Record<string, unknown>[]; feel?: unknown; slices?: unknown }; [key: string]: unknown };
 
 const doctored = (change: (doc: Doc) => void): string => {
   const doc = JSON.parse(serialize(wrap(sample()))) as Doc;
@@ -47,6 +48,7 @@ describe("the file format", () => {
     assert.equal(wolf.reaction, "wince");
     assert.equal(parsed.items[3].color, "#a33a30");
     assert.equal(parsed.items[0].reaction, undefined);
+    assert.equal(parsed.slices, "both");
     assert.deepEqual((parsed as { feel?: unknown }).feel, { wheel: { turns: 3, settleDegrees: 20 } });
 
     for (const type of ["list", "dice", "coin", "number"] as const) {
@@ -81,6 +83,7 @@ describe("the file format", () => {
       ["an outcome with no label", doctored((d) => (d.randomizer.items[1].label = "")), /randomizer\.items\[1\]\.label/],
       ["a tag that is neither cheer nor wince", doctored((d) => (d.randomizer.items[0].reaction = "dance")), /items\[0\]\.reaction/],
       ["a list with nothing in it", doctored((d) => (d.randomizer.items = [])), /items/],
+      ["slices that show something unheard of", doctored((d) => (d.randomizer.slices = "sideways")), /randomizer\.slices/],
       ["feel that is not an object", doctored((d) => (d.randomizer.feel = "fast")), /feel/],
       ["one face reaction for a two-faced coin", serialize(wrap({ ...emptyRandomizer("coin", "Fate"), faceReactions: ["cheer"] } as never)), /faceReactions/],
     ];

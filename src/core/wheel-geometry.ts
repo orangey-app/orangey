@@ -183,6 +183,66 @@ export function radialLabelRoom(
 }
 
 /**
+ * What a slice shows when its outcome has a picture: the picture alone (the
+ * default), the name alone, or both side by side. Slices without a picture
+ * always show their name.
+ */
+export const SLICE_CONTENTS = ["pictures", "names", "both"] as const;
+export type SliceContent = (typeof SLICE_CONTENTS)[number];
+
+/** A picture's round medallion: its centre's distance from the wheel's centre, and its diameter. */
+export interface SliceMedallion {
+  centre: number;
+  side: number;
+}
+
+export interface SliceLayout {
+  medallion: SliceMedallion | null;
+  label: RadialLabelRoom | null;
+}
+
+/** Room left between the medallion and the name, so the two never touch. */
+const MEDALLION_GAP = 4;
+/** Below this a medallion is a coloured dot, not a picture anyone can read. */
+const MEDALLION_MIN = 18;
+
+/**
+ * What goes in one slice, and where.
+ *
+ * `rim` is how far out anything may reach (the pointer covers the last few
+ * pixels) and `hub` how far in. A slice shows a picture or a name, never one
+ * laid over the other: with "both", the picture moves out to the rim and the
+ * name gets what is left between it and the hub; when that is too little for
+ * even a few letters, the picture gives way, because someone who asked for
+ * both has said the names matter.
+ */
+export function sliceLayout(
+  span: number,
+  opts: { radius: number; rim: number; hub: number; picture: boolean; content: SliceContent; labels: boolean },
+): SliceLayout {
+  const labelRoom = (outer: number) => (opts.labels ? radialLabelRoom(span, { outer, hub: opts.hub }) : null);
+  const plain = { medallion: null, label: labelRoom(opts.rim) };
+  if (!opts.picture || opts.content === "names" || span < 12) return plain;
+
+  // Chord of the slice at radius r is 2 r sin(span / 2); 0.85 of it keeps the
+  // medallion off the slice's edges.
+  const fit = 0.85 * 2 * Math.sin((Math.min(span, 180) * Math.PI) / 360);
+  if (opts.content === "pictures") {
+    const centre = opts.radius * 0.62;
+    const side = Math.min(opts.radius * 0.4, centre * fit);
+    return { medallion: { centre, side }, label: null };
+  }
+
+  // Both: the medallion's outer edge at the rim, so centre = rim - side / 2,
+  // and the chord there has to hold it: side <= (rim - side / 2) * fit.
+  const side = Math.min(opts.radius * 0.3, (opts.rim * fit) / (1 + fit / 2));
+  if (side < MEDALLION_MIN) return plain;
+  const medallion = { centre: opts.rim - side / 2, side };
+  const label = labelRoom(medallion.centre - side / 2 - MEDALLION_GAP);
+  return label || !opts.labels ? { medallion, label } : plain;
+}
+
+/**
  * The longest start of `label` that fits in `width`, with an ellipsis when
  * anything had to go. `measure` returns a string's advance at the font in use.
  */

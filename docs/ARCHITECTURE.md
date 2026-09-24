@@ -75,7 +75,7 @@ takes the spare green instead.
 **Fonts are built in.** `scripts/build.mjs` embeds `assets/fonts/` as data:
 URLs in the CSS, each face with its licence in a comment, so the single file
 stays one file and nothing is fetched. `--font-text` (Arapey) is for names,
-headings and answers; `--font-dice` (Flamenco, digits only) for dice.
+headings and answers; `--font-dice` (Young Serif, digits and signs only) for dice.
 
 **`disabled` is a flag, not a weight of zero.** Turning an outcome off keeps
 its weight in the file so that turning it back on restores it exactly.

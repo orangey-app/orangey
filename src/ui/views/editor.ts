@@ -167,6 +167,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   const wheel = createWheel({
     items: () => model.items,
     id: () => model.id,
+    slices: () => model.slices,
     onActivate: () => void rollNow(),
   });
   const result = createResultPanel("Try it");
@@ -212,11 +213,34 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
           model = { ...model, view: v };
           saveNow();
           renderViewToggle();
+          renderSlicesToggle();
         }, { "aria-pressed": model.view === v ? "true" : "false" }),
       ),
     );
   };
   renderViewToggle();
+
+  // What a slice with a picture shows. Offered only where it changes
+  // something — a wheel with at least one picture — and written to the file
+  // only when it is not the default, so most files never carry it.
+  const slicesGroup = h("div", { class: "segmented", role: "group", "aria-label": "Slices show" });
+  const slicesField = h("div", { class: "row tight slices-field" }, h("span", { class: "faint", text: "Slices show" }), slicesGroup);
+  const SLICE_NAMES = { pictures: "Pictures", names: "Names", both: "Both" } as const;
+  const renderSlicesToggle = () => {
+    slicesField.hidden = model.view !== "wheel" || !model.items.some((i) => i.image);
+    const current = model.slices ?? "pictures";
+    setChildren(slicesGroup,
+      ...(["pictures", "names", "both"] as const).map((v) =>
+        button(SLICE_NAMES[v], () => {
+          model = { ...model, slices: v };
+          if (v === "pictures") delete (model as { slices?: string }).slices;
+          saveNow();
+          renderSlicesToggle();
+          wheel.refresh();
+        }, { "aria-pressed": current === v ? "true" : "false" }),
+      ),
+    );
+  };
 
   // ---- table ---------------------------------------------------------------
 
@@ -361,6 +385,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     // them, so asking first showed each row the colour its outcome had one
     // edit ago.
     wheel.refresh();
+    // A picture added or removed decides whether the choice is offered at all.
+    renderSlicesToggle();
     const colors = wheel.colors();
     const rows = rowsToShow();
     // If the one to focus is past the end of what is drawn, draw far enough
@@ -726,7 +752,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, slicesField, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),

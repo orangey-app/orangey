@@ -26,7 +26,7 @@ export interface OrangeyFile {
 }
 
 const RANDOMIZER_KEY_ORDER = [
-  "id", "type", "name", "description", "tags", "view", "withoutReplacement",
+  "id", "type", "name", "description", "tags", "view", "withoutReplacement", "slices",
   "expression", "faces", "faceReactions", "min", "max", "integer", "inclusiveMax", "count", "unique",
   "feel", "created", "modified", "items", "entries",
 ];

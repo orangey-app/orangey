@@ -153,8 +153,12 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .home-shortcuts[hidden] { display: none; }
 .home-shortcuts h2 { font-size: 15px; margin: 0 0 6px; }
 .shortcut-group + .shortcut-group { margin-top: 12px; }
-.roll-count { width: 56px; }
+/* input.roll-count, not .roll-count: the general rule for number inputs sets
+   width: 100% and outranks a bare class, which pushed the field onto a line
+   of its own below its "×". */
+input.roll-count { width: 56px; }
 .roll-count-field[hidden] { display: none; }
+.slices-field[hidden] { display: none; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); font-size: 13px; }
@@ -193,7 +197,9 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
    never change the card's height. */
 .result-slot {
   font-size: clamp(38px, 11vw, 76px);
-  height: calc(var(--result-lines, 1) * 1.05em);
+  /* The last line's descenders sit in the padding below .result-value, so
+     the slot makes room for it too. */
+  height: calc(var(--result-lines, 1) * 1.05em + 0.16em);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -211,6 +217,13 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
   -webkit-line-clamp: var(--result-lines, 1);
   line-clamp: var(--result-lines, 1);
   overflow: hidden;
+  /* The line is set tight, and the clip that limits an answer to its lines
+     also cut off what hangs below them: the dice font's old-style 3, 4, 5, 7
+     and 9 and Arapey's g, p and y reach about 0.2 em under the baseline,
+     past the line box. The padding is inside the clip, so they keep it.
+     Where the baseline falls differs by platform: 0.1 em was enough on
+     Linux and 1.6 px short on Windows, hence the extra. */
+  padding-bottom: 0.16em;
   max-width: 100%;
 }
 /* The detail line arrives with the first roll, so its room is kept from the
@@ -262,7 +275,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
   background: var(--bg-raised); border: 2px solid var(--border-strong);
   font-variant-numeric: tabular-nums;
 }
-/* Faded and dashed, not struck through: a line through Flamenco's 2 reads as a Z. */
+/* Faded and dashed, not struck through: a line through a small old-style 2 reads as a Z. */
 .die.dropped { opacity: 0.45; border-style: dashed; }
 .die.max { border-color: var(--ok); color: var(--ok); }
 .die.min { border-color: var(--error); color: var(--error); }
@@ -809,6 +822,9 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .chain-note { margin: 0 0 var(--gap); }
 
 .chain-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
+/* With nothing in it the strip's margin still showed, as a band across the
+   top of the full-screen view. */
+.chain-strip:empty { display: none; }
 .chain-icon { display: flex; align-items: baseline; gap: 8px; max-width: 240px; }
 .chain-icon-name { font-weight: 600; }
 .chain-icon-answer { color: var(--ink-faint); font-size: 13px; }
@@ -820,8 +836,8 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .home-screen-notice p { margin: 0 0 8px; }
 
 /* ---- type ------------------------------------------------------------------
-   Arapey for what is read as a name or an answer, Flamenco for the numbers on
-   dice. Buttons, tables, settings and wheel labels stay in the system font:
+   Arapey for what is read as a name or an answer, Young Serif for the numbers
+   on dice. Buttons, tables, settings and wheel labels stay in the system font:
    small, dense or on strong colour, they read better there. Neither font has
    a bold, and a browser-thickened one looked heavy, so none is faked. */
 h1, h2, h3, .brand, .board-name, .cell-name,
@@ -829,7 +845,10 @@ h1, h2, h3, .brand, .board-name, .cell-name,
   font-family: var(--font-text);
   font-synthesis: none;
 }
-.die, .die-value, .die-caption, .result-panel.is-dice .result-value {
+.die, .die-value, .result-panel.is-dice .result-value {
   font-family: var(--font-dice);
   font-synthesis: none;
 }
+/* The caption under each die stays in the system font: the dice font's
+   digits are old-style, and at 12px a 1 or a 2 is too small to read. */
+.die-caption { font-family: var(--font); }

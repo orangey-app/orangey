@@ -112,6 +112,29 @@ const createList = (page, name, items, view = "wheel") =>
     return path;
   `);
 
+/**
+ * Whether the answer's lowest-hanging glyphs clear the clip around it: how far
+ * past the answer's box they would reach, in pixels (0 or less is fine).
+ * Measured for the glyphs that hang lowest in the answer's font rather than
+ * for whatever came up, so the check does not depend on the roll.
+ */
+const answerOverhang = (page) =>
+  page.evaluate(`
+    const v = document.querySelector(".result-value");
+    const text = [...v.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    const style = getComputedStyle(v);
+    const g = document.createElement("canvas").getContext("2d");
+    g.font = style.fontStyle + " " + style.fontWeight + " " + style.fontSize + " " + style.fontFamily;
+    // Old-style digits for the dice font, descenders for the text one.
+    const deepest = v.closest(".result-panel").classList.contains("is-dice") ? "3457" : "gpyj";
+    const m = g.measureText(deepest);
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const rects = [...range.getClientRects()];
+    const baseline = rects[rects.length - 1].top + m.fontBoundingBoxAscent;
+    return Math.round((baseline + m.actualBoundingBoxDescent - v.getBoundingClientRect().bottom) * 10) / 10;
+  `);
+
 async function main() {
   server = await serve(dist);
   browser = await launch();
@@ -138,6 +161,11 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
     const value = Number(await page.evaluate(`return document.querySelector(".result-value").textContent`));
     assert.ok(value >= 1 && value <= 20, `got ${value}`);
+    // The dice font's old-style 3, 4, 5, 7 and 9 hang below the line, and the
+    // clip that keeps an answer to its lines used to cut their feet off.
+    await page.evaluate("await document.fonts.ready");
+    const overhang = await answerOverhang(page);
+    assert.ok(overhang <= 0, `a dice answer's digits reach ${overhang}px past the answer's box`);
   });
 
   await test("the result reaches the live region as text", async (page) => {
@@ -326,11 +354,18 @@ async function main() {
       return ["topbar", "side", "tabbar", "quickbar"].map((c) => getComputedStyle(document.querySelector("." + c)).display);
     `);
     assert.deepEqual(chrome, ["none", "none", "none", "none"], "the chrome should be hidden while presenting");
+    // And nothing sits above the card: an empty chain strip once left a band.
+    const cardTop = await page.evaluate(`return document.querySelector(".play-card").getBoundingClientRect().top`);
+    assert.ok(cardTop < 2, `the full-screen card starts ${cardTop}px down`);
     // And it rolled on arrival.
     await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`, 15000);
     const result = await page.evaluate(`return document.querySelector(".result-value").textContent`);
     assert.ok(["Goblin patrol", "Merchant", "Wolf pack"].includes(result), result);
     assert.equal(await page.evaluate(`return window.orangey.state.history.length`), 1);
+    // At full-screen size too, a g or a p keeps its tail.
+    await page.evaluate("await document.fonts.ready");
+    const overhang = await answerOverhang(page);
+    assert.ok(overhang <= 0, `the answer's descenders reach ${overhang}px past its box`);
   });
 
   await test("a link to something this library does not have explains itself", async (page) => {
@@ -788,7 +823,7 @@ async function main() {
     assert.ok(offset < 8, `the number sits ${offset.toFixed(1)} px from the middle of the die`);
 
     // The two embedded fonts load, and each goes where it belongs: the dice
-    // numbers and the dice total in Flamenco, the wordmark in Arapey.
+    // numbers and the dice total in Young Serif, the wordmark in Arapey.
     const type = await page.evaluate(`
       await document.fonts.ready;
       const family = (sel) => getComputedStyle(document.querySelector(sel)).fontFamily;
@@ -801,7 +836,7 @@ async function main() {
       };
     `);
     assert.equal(type.textLoaded, true, "Arapey did not load");
-    assert.equal(type.diceLoaded, true, "Flamenco did not load");
+    assert.equal(type.diceLoaded, true, "Young Serif did not load");
     assert.match(type.dieValue, /^"?Orangey Dice/);
     assert.match(type.total, /^"?Orangey Dice/);
     assert.match(type.brand, /^"?Orangey Text/);
@@ -1811,6 +1846,47 @@ async function main() {
     `);
     assert.equal(drawn.count, 1, "only the outcome with a picture should have one");
     assert.equal(drawn.clipped, true);
+    // By default a slice shows its picture or its name, never one over the other.
+    const labelled = () => page.evaluate(`return [...document.querySelectorAll(".wheel-rotor .wheel-label")].map((l) => l.dataset.index)`);
+    assert.deepEqual(await labelled(), ["1"], "the pictured slice should carry no name, the other its name");
+
+    // The editor offers the override only because a picture is on the wheel.
+    await open(page, `#/edit/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".slices-field") && !document.querySelector(".slices-field").hidden`);
+    await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
+    const choose = (name) => page.evaluate(`
+      [...document.querySelectorAll(".slices-field button")].find((b) => b.textContent === ${JSON.stringify(name)}).click();
+    `);
+    const stored = () => page.evaluate(`
+      await window.orangey.state.library.flush();
+      return JSON.parse(await window.orangey.state.library.backend.read(${JSON.stringify(path)})).randomizer.slices ?? null;
+    `);
+    // Both: the picture moves out to the rim and the name ends before it.
+    await choose("Both");
+    await page.waitForFunction(`document.querySelectorAll(".wheel-rotor .wheel-label").length === 2`);
+    const apart = await page.evaluate(`
+      const svg = document.querySelector(".wheel-svg");
+      const c = svg.viewBox.baseVal.width / 2;
+      const img = document.querySelector(".wheel-rotor image");
+      const side = Number(img.getAttribute("width"));
+      const ix = Number(img.getAttribute("x")) + side / 2, iy = Number(img.getAttribute("y")) + side / 2;
+      const label = document.querySelector('.wheel-rotor .wheel-label[data-index="0"]');
+      const lx = Number(label.getAttribute("x")), ly = Number(label.getAttribute("y"));
+      return { nameEnds: Math.hypot(lx - c, ly - c), pictureStarts: Math.hypot(ix - c, iy - c) - side / 2 };
+    `);
+    assert.ok(apart.nameEnds <= apart.pictureStarts, `the name reaches ${apart.nameEnds}, the picture starts at ${apart.pictureStarts}`);
+    assert.equal(await stored(), "both");
+    // Names: no pictures on the wheel at all.
+    await choose("Names");
+    await page.waitForFunction(`!document.querySelector(".wheel-rotor image")`);
+    assert.deepEqual(await labelled(), ["0", "1"]);
+    assert.equal(await stored(), "names");
+    // Back to the default takes the key out of the file again.
+    await choose("Pictures");
+    await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
+    assert.equal(await stored(), null, "the default should not be written to the file");
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
 
     // The answer shows it when that outcome comes up, and not before.
     assert.equal(await page.evaluate(`return document.querySelector(".result-picture").hidden`), true);
@@ -2050,6 +2126,10 @@ async function main() {
     // dice themselves to settle — a cell's result panel says "Rolling…"
     // while the tray is still in the air, which is not "Ready" either.
     await page.waitForFunction(`document.querySelectorAll(".die-slot.rolling").length === 0`, 20000);
+    // Captions are in the system font: the dice font's old-style 1 and 2
+    // are too small to read at caption size.
+    const captionFont = await page.evaluate(`return getComputedStyle(document.querySelector(".die-caption")).fontFamily`);
+    assert.ok(!captionFont.includes("Orangey Dice"), `die captions are set in ${captionFont}`);
     const faces = await page.evaluate(`
       const cell = [...document.querySelectorAll(".cell")].find((c) => c.textContent.includes("Fate"));
       return [...cell.querySelectorAll(".die-value")].map((v) => v.textContent);
@@ -2112,6 +2192,14 @@ async function main() {
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".hidden-box")`);
+    // The ×N field beside it sits on one line with its ×; the general rule
+    // for number inputs once stretched it to full width, onto a line below.
+    const count = await page.evaluate(`
+      const field = document.querySelector(".roll-count-field"), input = field.querySelector("input");
+      return { width: input.getBoundingClientRect().width, field: field.getBoundingClientRect().height, input: input.getBoundingClientRect().height };
+    `);
+    assert.ok(count.width < 80, `the count field is ${count.width}px wide`);
+    assert.ok(count.field < count.input * 1.5, `the × and its field take ${count.field}px for a ${count.input}px field`);
 
     const rows = () => page.evaluate(`return window.orangey.state.history.length`);
     // Diagnostic for a leak seen only on Windows: name what is there and when
