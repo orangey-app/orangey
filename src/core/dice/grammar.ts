@@ -285,6 +285,19 @@ export function parse(input: string): Expression {
   return { terms, normalized };
 }
 
+/**
+ * Is this text a dice roll someone typed, and if so, in its canonical form?
+ *
+ * For a search box that also takes notation: it has to hold at least one die,
+ * because a bare "3" parses as a constant and would otherwise offer to make a
+ * randomizer that always says 3 every time someone searched for a number.
+ */
+export function diceNotation(text: string): string | null {
+  const parsed = tryParse(text);
+  if (!parsed.ok || !parsed.expression.terms.some((t) => t.node.kind === "dice")) return null;
+  return parsed.expression.normalized;
+}
+
 /** Validate without throwing; for live feedback in the expression field. */
 export function tryParse(input: string): { ok: true; expression: Expression } | { ok: false; error: ParseError } {
   try {

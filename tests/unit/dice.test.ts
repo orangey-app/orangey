@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { ParseError, parse, tryParse } from "../../src/core/dice/grammar.ts";
+import { ParseError, diceNotation, parse, tryParse } from "../../src/core/dice/grammar.ts";
 import { evaluate, expressionBounds, rollDice } from "../../src/core/dice/evaluate.ts";
 import { formatResult, speakResult } from "../../src/core/dice/format.ts";
 import { longestOutcome, rollRandomizer } from "../../src/ui/roll.ts";
@@ -41,6 +41,14 @@ describe("dice notation", () => {
     for (const [input, expected] of cases) {
       assert.equal(parse(input).normalized, expected, `for ${input}`);
     }
+    // A picker's search box also takes notation, so a word or a bare number
+    // being searched for must not read as a roll.
+    assert.equal(diceNotation("  2D6+3 "), "2d6 + 3");
+    assert.equal(diceNotation("adv"), "2d20kh1");
+    assert.equal(diceNotation("3"), null);
+    assert.equal(diceNotation("10 + 2"), null);
+    assert.equal(diceNotation("wolves"), null);
+    assert.equal(diceNotation(""), null);
   });
 
   test("dice written into an outcome are rolled with it", () => {

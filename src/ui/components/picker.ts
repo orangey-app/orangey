@@ -10,7 +10,8 @@
  * because the thing you want to put on a board often does not exist yet.
  */
 
-import { emptyRandomizer, type Randomizer, type RollableType } from "../../model/randomizer.ts";
+import { emptyRandomizer, type DiceRandomizer, type Randomizer, type RollableType } from "../../model/randomizer.ts";
+import { diceNotation } from "../../core/dice/grammar.ts";
 import { decodeRandomizer } from "../../model/link.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { askText, button, h, openDialog, setChildren } from "../dom.ts";
@@ -31,7 +32,19 @@ export interface PickerOptions {
   allowNew?: boolean;
   /** Take a link that someone pasted. */
   allowLink?: boolean;
+  /** Take dice notation typed into the search box, such as "2d6 + 3". */
+  allowNotation?: boolean;
 }
+
+/**
+ * Where dice made from typed notation live. A board entry is a reference to a
+ * library randomizer (see ARCHITECTURE.md), so "2d6 + 3" typed on a board has
+ * to become a file somewhere; one folder keeps them out of the way, and is the
+ * only place they are reused from — a named "Attack roll" that happens to be
+ * d20 + 5 is its own thing, and editing it should never change a board that
+ * only asked for d20 + 5.
+ */
+const QUICK_DICE_FOLDER = "Dice";
 
 const NEW_TYPES: [RollableType, string][] = [
   ["list", "New wheel"],
@@ -95,9 +108,19 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
       }
     }
 
+    /** The typed text as dice notation, when this picker takes notation. */
+    function typedNotation(): string | null {
+      const query = (search as HTMLInputElement).value.trim();
+      return opts.allowNotation && query ? diceNotation(query) : null;
+    }
+
     function render(): void {
       const query = (search as HTMLInputElement).value.trim();
       const rows: HTMLElement[] = [];
+      const notation = typedNotation();
+      if (notation) {
+        rows.push(button(`🎲 Add ${notation}`, () => void useNotation(notation), { class: "ghost picker-row picker-notation" }));
+      }
       if (query) {
         // Typing flattens the tree: matches from every folder, each saying
         // which folder it came from.
@@ -118,6 +141,48 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
     }
 
     search.addEventListener("input", render);
+    search.addEventListener("keydown", (e) => {
+      if ((e as KeyboardEvent).key !== "Enter") return;
+      const notation = typedNotation();
+      if (!notation) return;
+      e.preventDefault();
+      void useNotation(notation);
+    });
+
+    /**
+     * Dice from typed notation: reuse one already made for the same
+     * expression, or make it. One that is already taken here is not reused,
+     * because a board holds each randomizer once and two "2d6" cells — one per
+     * player — is a thing people want.
+     */
+    let making = false;
+    async function useNotation(expression: string): Promise<void> {
+      if (making) return;
+      making = true;
+      try {
+        const folder = await quickDiceFolder();
+        for (const child of state.library.find(folder)?.children ?? []) {
+          const r = child.randomizer;
+          if (r?.type === "dice" && !taken.has(r.id) && diceNotation(r.expression) === expression) {
+            finish({ randomizer: r, path: child.path, fresh: false });
+            return;
+          }
+        }
+        const randomizer = { ...emptyRandomizer("dice", expression), expression } as DiceRandomizer;
+        const path = await state.library.create(folder, randomizer);
+        finish({ randomizer, path, fresh: false });
+      } finally {
+        making = false;
+      }
+    }
+
+    /** The quick-dice folder, made the first time; any capitalisation counts. */
+    async function quickDiceFolder(): Promise<string> {
+      const existing = state.library.tree.children?.find(
+        (c) => c.kind === "folder" && c.name.toLowerCase() === QUICK_DICE_FOLDER.toLowerCase(),
+      );
+      return existing ? existing.path : state.library.createFolder("", QUICK_DICE_FOLDER);
+    }
 
     async function makeNew(type: RollableType, title: string): Promise<void> {
       const name = await askText(title, { label: "Name", value: title, confirm: "Create" });

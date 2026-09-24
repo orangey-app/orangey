@@ -487,6 +487,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       taken: () => new Set([model.id]),
       allowNew: true,
       allowLink: true,
+      allowNotation: true,
     });
     if (!picked) return;
     update(item.id, (i) => ({ ...i, goesTo: picked.randomizer.id }));

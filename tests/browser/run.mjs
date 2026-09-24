@@ -1799,6 +1799,36 @@ async function main() {
     await page.click(".topbar .back");
     await page.waitForFunction(`location.hash === ${JSON.stringify(`#/r/${encodeURIComponent(path)}`)}`);
     await page.waitForFunction(`window.orangey.state.prefs.lastPath === ${JSON.stringify(path)}`);
+
+    // Dice typed into the picker's search box go straight onto the board,
+    // with no editor on the way, and are kept in one folder.
+    const typeNotation = async (text) => {
+      await page.waitForFunction(`document.querySelector(".add-to-board")`);
+      await page.click(".add-to-board");
+      await page.waitForFunction(`document.querySelector(".picker-dialog[open] input[type=search]")`);
+      await page.evaluate(`
+        const search = document.querySelector(".picker-dialog[open] input[type=search]");
+        search.value = ${JSON.stringify(text)};
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      `);
+      await page.waitForFunction(`!document.querySelector(".picker-dialog[open]")`);
+    };
+    const quickDice = () => page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      return (state.library.find("Dice")?.children ?? []).map((c) => c.randomizer.name);
+    `);
+    await typeNotation("2D6+3");
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 2`);
+    assert.equal(await page.evaluate(`return location.hash`), `#/r/${encodeURIComponent(path)}`);
+    assert.deepEqual(await quickDice(), ["2d6 + 3"]);
+    // On another board the same roll is the same file, not a second one.
+    const other = await createBoard(page, "Tomorrow", []);
+    await open(page, `#/r/${encodeURIComponent(other)}`);
+    await typeNotation("2d6 + 3");
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 1`);
+    assert.deepEqual(await quickDice(), ["2d6 + 3"]);
     assert.deepEqual(page.consoleErrors, []);
   });
 

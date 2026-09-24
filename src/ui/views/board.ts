@@ -128,6 +128,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
       taken: () => new Set(board.entries.map((e) => e.id)),
       allowNew: true,
       allowLink: true,
+      allowNotation: true,
     });
     if (!picked) return;
     await addEntry(picked.randomizer);
