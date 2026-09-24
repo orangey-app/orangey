@@ -156,15 +156,33 @@ export async function launch({ profileDir } = {}) {
     child.on("exit", (code) => reject(new Error(`chrome exited (${code}):\n${buffer}`)));
   });
 
-  const httpBase = endpoint.replace(/^ws:\/\//, "http://").replace(/\/devtools\/browser\/.*$/, "");
+  const wsBase = endpoint.replace(/\/devtools\/browser\/.*$/, "");
+  const browserSocket = await connectBrowser(endpoint);
 
   return {
+    /**
+     * A page in a browser context of its own, closed with it.
+     *
+     * Tests used to share one context and only drop their DevTools connection
+     * at the end, which left every test's tab open and running for the rest of
+     * the suite. On Windows, where background tabs' timers are slowed right
+     * down, a roll finishing in a tab two tests back wrote its history row
+     * into a later test's freshly wiped storage. A context per test gives each
+     * its own storage, and disposing it closes the tab and everything in it.
+     */
     async newPage() {
-      const res = await fetch(`${httpBase}/json/new?about:blank`, { method: "PUT" });
-      const target = await res.json();
-      return connectPage(target.webSocketDebuggerUrl);
+      const { browserContextId } = await browserSocket.send("Target.createBrowserContext", { disposeOnDetach: true });
+      const { targetId } = await browserSocket.send("Target.createTarget", { url: "about:blank", browserContextId });
+      const page = await connectPage(`${wsBase}/devtools/page/${targetId}`);
+      const detach = page.close;
+      page.close = async () => {
+        await detach();
+        await browserSocket.send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+      };
+      return page;
     },
     async close() {
+      browserSocket.close();
       child.kill();
       await new Promise((r) => setTimeout(r, 300));
       if (!profileDir) {
@@ -175,6 +193,41 @@ export async function launch({ profileDir } = {}) {
         }
       }
     },
+  };
+}
+
+/** The browser-level DevTools connection: contexts and targets, not pages. */
+async function connectBrowser(wsUrl) {
+  const socket = new WebSocket(wsUrl);
+  const pending = new Map();
+  let nextId = 1;
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
+  });
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    const waiting = message.id ? pending.get(message.id) : null;
+    if (!waiting) return;
+    pending.delete(message.id);
+    if (message.error) waiting.reject(new Error(message.error.message));
+    else waiting.resolve(message.result);
+  });
+  return {
+    send: (method, params = {}) =>
+      new Promise((resolve, reject) => {
+        const id = nextId++;
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`${method} did not come back within 30s`));
+        }, 30000);
+        pending.set(id, {
+          resolve: (v) => { clearTimeout(timer); resolve(v); },
+          reject: (e) => { clearTimeout(timer); reject(e); },
+        });
+        socket.send(JSON.stringify({ id, method, params }));
+      }),
+    close: () => socket.close(),
   };
 }
 
