@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { bundleProgram } from "./bundle.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -81,14 +81,7 @@ for (const file of sources) {
   });
 }
 
-// 4. The palette passes its own curation rules.
-// Through a file:// URL, not a path: Node's ESM loader rejects a Windows
-// absolute path, reading "C:" as an unknown protocol.
-const { curate } = await import(pathToFileURL(join(root, "src/ui/styles/palette.ts")).href);
-const { problems: paletteProblems } = curate();
-for (const problem of paletteProblems) problems.push(`palette: ${problem}`);
-
-// 5. No stray focus on production debug hooks.
+// 4. No stray focus on production debug hooks.
 const main = readFileSync(join(root, "src/main.ts"), "utf8");
 if (!main.includes('URLSearchParams(location.search).has("debug")')) {
   problems.push("src/main.ts: the debug hook must stay behind ?debug");

@@ -97,4 +97,4 @@ const body = colours.map((c) => `  { name: ${JSON.stringify(c.name)}, hex: "${c.
 const replacement = `export const PALETTE: PaletteColor[] = [\n${body}\n];\n`;
 writeFileSync(target, file.slice(0, beginLineEnd) + replacement + file.slice(end));
 console.log(`wrote ${colours.length} colours to src/ui/styles/palette.ts`);
-console.log("next: node scripts/curate-palette.mjs  (rebuilds the segment pool), then npm test");
+console.log("next: npm test");

@@ -4,12 +4,9 @@
  * `scripts/import-palette.mjs` from the owner's data file. Names are the
  * dictionary's own.
  *
- * SEGMENT_POOL — the colours the wheel draws from — is derived from PALETTE
- * by `scripts/curate-palette.mjs`; the tests re-verify contrast and neighbour
- * distinctness, so replacing the palette cannot silently degrade the wheel.
+ * These are the colours offered for an outcome in the editor. The wheel's own
+ * colours — red, yellow and blue in turn — are in core/palette-assign.ts.
  */
-
-import { chroma, deltaE, hexToOklab, labelFor, type Oklab } from "../../core/color.ts";
 
 export interface PaletteColor {
   name: string;
@@ -177,86 +174,3 @@ export const PALETTE: PaletteColor[] = [
   { name: "Black", hex: "#000000" },
 ];
 // --- palette:end
-
-/** The app accent: one warm colour for buttons, focus rings, the wheel pointer. */
-export const ACCENT: PaletteColor = { name: "Orangey orange", hex: "#f3a257" };
-
-/**
- * Look a pool entry up by name. A name that is no longer in the palette — the
- * palette has just been replaced and the pool not yet rebuilt — is skipped
- * rather than fatal, so `scripts/curate-palette.mjs` can load the module and
- * rebuild the pool.
- */
-const byName = (n: string): PaletteColor | null => PALETTE.find((p) => p.name === n) ?? null;
-const isColor = (c: PaletteColor | null): c is PaletteColor => c !== null;
-
-/**
- * The ordered pool the wheel draws from.
- *
- * Derived from PALETTE by `scripts/curate-palette.mjs`, which drops anything
- * too pale, too dark, too grey or too close to a colour already kept, then
- * orders what remains so that consecutive entries are far apart — the assigner
- * usually gets a good colour on its first try that way.
- *
- * Curation rules (re-verified by tests/unit/palette.test.ts, so replacing
- * PALETTE cannot silently degrade the wheel):
- *   - every entry carries a 4.5:1 label with at most 6 lightness nudges
- *   - lightness within 0.28..0.78, chroma at least 0.025
- *   - no two entries closer than 0.05 in OKLab
- */
-export const SEGMENT_POOL: PaletteColor[] = [
-  "Blue Violet", "Benzol Green", "Violet Red", "Golden Yellow",
-  "Deep Lyons Blue", "Green", "Pansy Purple", "Vinaceous Cinnamon",
-  "Dark Tyrian Blue", "Olive Yellow", "Red Violet", "Orange",
-  "Blue", "Mars Brown / Tobacco", "Ecru", "Violet Blue",
-  "Apricot Orange", "Slate Color", "Eosine Pink", "Diamine Green",
-  "Eupatorium Purple", "Light Porcelain Green", "Vandyke Red", "Grayish Lavender - B",
-  "Dark Slate Purple", "Oil Green", "Rosolanc Purple", "Dusky Green",
-  "Coral Red", "Helvetia Blue", "Sulphine Yellow", "Vistoris Lake",
-  "Cerulian Blue", "Jasper Red", "Dark Soft Violet", "Isabella Color",
-  "Brown", "Lilac", "Pistachio Green", "Pomegranite Purple",
-  "Warm Gray", "Pale Raw Umber", "Light Mauve", "Khaki",
-  "Veronia Purple", "Ochraceous Salmon", "Deep Grayish Olive", "Indian Lake",
-  "Artemesia Green", "Hydrangea Red", "Olympic Blue", "Grenadine Pink",
-  "Olive Green", "Dull Blue Violet", "Eugenia Red | A", "Antwarp Blue",
-  "Burnt Sienna", "Laelia Pink", "Buffy Citrine", "Purple Drab",
-  "Old Rose", "Andover Green", "Etruscan Red", "Dark Medici Blue",
-  "Vinaceous Tawny", "Light Brown Drab", "Ochre Red", "Light Grayish Olive",
-  "Raw Sienna", "Sudan Brown", "Orange Citrine",
-].map(byName).filter(isColor);
-
-export interface PoolColor extends PaletteColor {
-  oklab: Oklab;
-  chroma: number;
-}
-
-let cachedPool: PoolColor[] | null = null;
-
-export function pool(): PoolColor[] {
-  if (!cachedPool) {
-    cachedPool = SEGMENT_POOL.map((c) => {
-      const oklab = hexToOklab(c.hex);
-      return { ...c, oklab, chroma: chroma(oklab) };
-    });
-  }
-  return cachedPool;
-}
-
-/** Curation report, used by the test and by `npm run check`. */
-export function curate(minDistance = 0.05): { problems: string[]; closestPair: number } {
-  const problems: string[] = [];
-  const p = pool();
-  let closest = Infinity;
-  for (let i = 0; i < p.length; i++) {
-    const label = labelFor(p[i].hex);
-    if (p[i].oklab.L < 0.28 || p[i].oklab.L > 0.78) problems.push(`${p[i].name} is outside the segment lightness band`);
-    if (label.nudges > 6) problems.push(`${p[i].name} cannot carry a 4.5:1 label`);
-    if (p[i].chroma < 0.025) problems.push(`${p[i].name} is too close to grey for a segment`);
-    for (let j = i + 1; j < p.length; j++) {
-      const d = deltaE(p[i].oklab, p[j].oklab);
-      if (d < closest) closest = d;
-      if (d < minDistance) problems.push(`${p[i].name} and ${p[j].name} are only ${d.toFixed(3)} apart`);
-    }
-  }
-  return { problems, closestPair: closest };
-}

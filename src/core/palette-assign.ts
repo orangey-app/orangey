@@ -42,8 +42,6 @@ export const DEFAULT_THRESHOLDS = {
   neutralChroma: 0.04,
   /** Distance required after simulating deuteranopia, as a fraction of T. */
   cvdFactor: 0.6,
-  /** Soft rule: do not reuse a colour within this many segments. */
-  recentWindow: 6,
 } as const;
 
 export type Thresholds = typeof DEFAULT_THRESHOLDS;

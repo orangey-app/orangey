@@ -1,18 +1,21 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { PALETTE, pool } from "../../src/ui/styles/palette.ts";
+import { PALETTE } from "../../src/ui/styles/palette.ts";
+import { labelFor } from "../../src/core/color.ts";
 import { WHEEL_COLOURS, WHEEL_SPARE, assignWheelColours, distinct, findClashes, toCandidate } from "../../src/core/palette-assign.ts";
 
 describe("the palette", () => {
-  // The curation rules themselves — lightness band, chroma, contrast, the
-  // distance between any two colours — are run by `npm run check`, which calls
-  // curate() directly. All that is left to check here is that the pool exists
-  // and that nothing is in it twice.
-  test("the segment pool is not empty, and no colour or name appears twice", () => {
-    assert.ok(pool().length >= 8, `only ${pool().length} colours to draw a wheel from`);
+  test("the editor's palette has no colour or name twice, and every wheel colour carries a readable label", () => {
+    assert.ok(PALETTE.length >= 8, `only ${PALETTE.length} colours to choose from`);
     assert.equal(new Set(PALETTE.map((c) => c.name)).size, PALETTE.length, "two colours share a name");
     assert.equal(new Set(PALETTE.map((c) => c.hex)).size, PALETTE.length, "two colours are the same hex");
     for (const c of PALETTE) assert.match(c.hex, /^#[0-9a-f]{6}$/);
+    // The wheel's own colours stand in for the curation the old pool had: each
+    // takes black or white text at 4.5:1 without being nudged lighter or darker.
+    for (const hex of [...WHEEL_COLOURS, WHEEL_SPARE]) {
+      const label = labelFor(hex);
+      assert.ok(label.ratio >= 4.5 && label.nudges === 0, `${hex} carries a ${label.ratio.toFixed(1)}:1 label after ${label.nudges} nudges`);
+    }
   });
 });
 
