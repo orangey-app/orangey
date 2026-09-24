@@ -297,6 +297,11 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 
 .row { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; }
 .row.tight { gap: 6px; }
+/* Space above a block, so a view does not have to carry a style object for
+   it. Three sizes is all the app actually used across seventeen copies. */
+.gap-s { margin-top: 8px; }
+.gap-m { margin-top: 12px; }
+.gap-l { margin-top: 14px; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); font-size: 13px; }
@@ -1115,6 +1120,47 @@ function formatWhen(at        )         {
  * them, which the browser's built-ins do not.
  */
 
+/**
+ * Is the keystroke going into a field?
+ *
+ * A shortcut must not fire while somebody is typing a label: Space rolls,
+ * but Space in a text field is a space.
+ */
+/**
+ * Hand the browser a file to save.
+ *
+ * In `dom.ts` rather than in the library view, which is where it grew: the
+ * settings, the history and the archive exports all wanted it, and the
+ * library view importing the archive code that imported it back was the one
+ * circular import in the program.
+ */
+function download(name        , text        , type        )       {
+  downloadBytes(name, new TextEncoder().encode(text), type);
+}
+
+function downloadBytes(name        , bytes            , type = "application/zip")       {
+  const url = URL.createObjectURL(new Blob([bytes            ], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function isTyping(e       )          {
+  const target = e.target                      ;
+  return !!target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+/**
+ * Show a modal, and give the keyboard back where it came from.
+ *
+ * Every dialog goes through this. A dialog that returns focus to nothing
+ * leaves a keyboard user at the top of the document, which is how a
+ * hand-built one differs from these without anyone noticing.
+ */
 function openDialog(dialog                   , opener                     )       {
   dialog.addEventListener("close", () => {
     dialog.remove();
@@ -1142,7 +1188,7 @@ function askText(
       h("form", { method: "dialog", onsubmit: (e       ) => { e.preventDefault(); done(input.value.trim() || null); } },
         h("h2", { text: title }),
         opts.label ? h("label", { class: "field" }, h("span", { class: "field-label", text: opts.label }), input) : input,
-        h("div", { class: "row", style: { marginTop: "14px" } },
+        h("div", { class: "row gap-l" },
           h("div", { class: "spacer" }),
           button("Cancel", () => done(null), { type: "button" }),
           h("button", { type: "submit", class: "primary" }, opts.confirm ?? "OK"),
@@ -1174,7 +1220,7 @@ function askConfirm(
     const dialog = h("dialog", { "aria-label": title },
       h("h2", { text: title }),
       h("p", { text }),
-      h("div", { class: "row", style: { marginTop: "14px" } },
+      h("div", { class: "row gap-l" },
         h("div", { class: "spacer" }),
         button("Cancel", () => done(false)),
         ok,
@@ -1282,7 +1328,7 @@ function askFolder(
     const dialog = h("dialog", { "aria-label": title },
       h("h2", { text: title }),
       list,
-      h("div", { class: "row", style: { marginTop: "14px" } },
+      h("div", { class: "row gap-l" },
         h("div", { class: "spacer" }),
         button("Cancel", () => done(null)),
         button("Move here", () => done(chosen), { class: "primary" }),
@@ -1301,8 +1347,11 @@ function askFolder(
  *   - CryptoSource  wraps crypto.getRandomValues; not reproducible, the default.
  *   - SeededSource  xoshiro128** driven by a string seed; reproducible, opt-in.
  *
- * Both produce unbiased integers by rejection sampling. Nothing else in the
- * codebase may call Math.random or crypto directly.
+ * Both produce unbiased integers by rejection sampling. Every result that
+ * reaches an outcome comes from one of these and from nothing else.
+ * `Math.random` is allowed for cosmetics only — the scatter of a wheel's
+ * labels, the axes a die tumbles about — and never for anything a person
+ * reads as the answer.
  */
 
                                
@@ -1384,8 +1433,15 @@ class CryptoSource                         {
   }
 }
 
-/** FNV-1a over the UTF-8 bytes of a string, as two 32-bit halves. */
-function fnv1a64(s        )                   {
+/**
+ * A string seed as two 32-bit words, to start the generator from.
+ *
+ * FNV-1a in the first half only; the second is a different mixing constant
+ * over the same bytes, so the pair is not one hash cut in two. It is a seed
+ * expander, not a hash function — do not use it for anything that needs
+ * collision resistance.
+ */
+function seedHash64(s        )                   {
   const bytes = new TextEncoder().encode(s);
   let h1 = 0x811c9dc5 | 0;
   let h2 = 0x01000193 | 0;
@@ -1398,7 +1454,7 @@ function fnv1a64(s        )                   {
 
 /** A small stable hash for non-cryptographic use (wheel colour rotation, C8.3). */
 function hash32(s        )         {
-  return fnv1a64(s)[0];
+  return seedHash64(s)[0];
 }
 
 function splitmix32(seed        )               {
@@ -1424,7 +1480,7 @@ class SeededSource                         {
 
   constructor(seed        ) {
     this.seed = seed;
-    const [h1, h2] = fnv1a64(seed);
+    const [h1, h2] = seedHash64(seed);
     const mix = splitmix32(h1 ^ Math.imul(h2, 0x2545f491));
     this.#s = new Uint32Array([mix(), mix(), mix(), mix()]);
     if ((this.#s[0] | this.#s[1] | this.#s[2] | this.#s[3]) === 0) this.#s[0] = 1;
@@ -1489,7 +1545,6 @@ function sourceFor(seed                           )               {
  
 
                         
-                                     
                      
                       
                           
@@ -1957,10 +2012,6 @@ function pickFromTable(table                 , rng              )         {
   const x = rng.float() * table.total;
   const at = upperBound(table.cumulative, x);
   return table.indices[at];
-}
-
-function pickWeighted                    (items              , rng              )    {
-  return items[pickWeightedIndex(items, rng)];
 }
 
 /** Uniform pick over any array; used where weights do not apply. */
@@ -2627,13 +2678,6 @@ function sanitizeName(name        )         {
     .replace(/\s+/g, " ")
     .replace(/^[. ]+|[. ]+$/g, "")
     .slice(0, 80);
-}
-
-function nameError(name        )                {
-  const clean = sanitizeName(name);
-  if (clean === "") return "Give it a name";
-  if (clean !== name.trim()) return null; // silently cleaned, not an error
-  return null;
 }
 
 /** Natural sort: "Chapter 2" before "Chapter 10" (decision D11). */
@@ -3668,6 +3712,228 @@ class IndexedDbBackend                           {
   }
 }
 
+// ---- src\storage\zip.ts ------------------------------------------
+/**
+ * A minimal ZIP writer and reader for library export/import (plan C5).
+ *
+ * Hand-written because the sandbox had no package registry; it produces
+ * ordinary ZIP files that any operating system can open, which is the whole
+ * point of the feature. Entries are deflated where the platform offers
+ * compression streams and stored otherwise.
+ */
+
+const encoder = new TextEncoder();
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes            )         {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Bytes to base64 and back.
+ *
+ * Here rather than anywhere else because both users — a link and a picture —
+ * already import this module for `deflate`. The chunking matters: spreading a
+ * whole picture into `fromCharCode` overflows the call stack.
+ */
+function base64FromBytes(bytes            )         {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function bytesFromBase64(text        )             {
+  const binary = atob(text);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+/** Shared with the link encoder: method 8 is deflated, 0 is stored as-is. */
+async function deflate(bytes            )                                                {
+  const CS = (globalThis                                                    ).CompressionStream;
+  if (!CS) return { data: bytes, method: 0 };
+  try {
+    const stream = new Blob([bytes            ]).stream().pipeThrough(new CS("deflate-raw"));
+    const out = new Uint8Array(await new Response(stream).arrayBuffer());
+    return out.length < bytes.length ? { data: out, method: 8 } : { data: bytes, method: 0 };
+  } catch {
+    return { data: bytes, method: 0 };
+  }
+}
+
+async function inflate(bytes            , method        )                      {
+  if (method === 0) return bytes;
+  const DS = (globalThis                                                        ).DecompressionStream;
+  if (!DS) throw new Error("this browser cannot read compressed ZIP entries");
+  const stream = new Blob([bytes            ]).stream().pipeThrough(new DS("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+                           
+               
+                                                                        
+                
+                                                                     
+                     
+ 
+
+/**
+ * Which entries are pictures.
+ *
+ * They are kept as bytes on both sides: putting a PNG through a TextDecoder
+ * on the way out of an archive and an encoder on the way back in does not
+ * return the PNG.
+ */
+const PICTURE_ENTRY = /\.(png|jpe?g|webp|gif)$/i;
+
+class Writer {
+  parts               = [];
+  length = 0;
+  push(part            )       {
+    this.parts.push(part);
+    this.length += part.length;
+  }
+  u32(n        )       {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setUint32(0, n >>> 0, true);
+    this.push(b);
+  }
+  u16(n        )       {
+    const b = new Uint8Array(2);
+    new DataView(b.buffer).setUint16(0, n & 0xffff, true);
+    this.push(b);
+  }
+  bytes()             {
+    const out = new Uint8Array(this.length);
+    let at = 0;
+    for (const p of this.parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  }
+}
+
+/** Build a ZIP archive. Folders are implied by the entry paths. */
+async function createZip(entries            )                      {
+  const w = new Writer();
+  const central                                                                                                    = [];
+
+  for (const entry of entries) {
+    const name = encoder.encode(entry.path);
+    const raw = entry.bytes ?? encoder.encode(entry.text ?? "");
+    const { data, method } = await deflate(raw);
+    const crc = crc32(raw);
+    const offset = w.length;
+
+    w.u32(0x04034b50);
+    w.u16(20);
+    w.u16(0x0800); // UTF-8 names
+    w.u16(method);
+    w.u16(0); // time
+    w.u16(0); // date
+    w.u32(crc);
+    w.u32(data.length);
+    w.u32(raw.length);
+    w.u16(name.length);
+    w.u16(0);
+    w.push(name);
+    w.push(data);
+
+    central.push({ name, crc, size: raw.length, packed: data.length, method, offset });
+  }
+
+  const centralStart = w.length;
+  for (const e of central) {
+    w.u32(0x02014b50);
+    w.u16(20);
+    w.u16(20);
+    w.u16(0x0800);
+    w.u16(e.method);
+    w.u16(0);
+    w.u16(0);
+    w.u32(e.crc);
+    w.u32(e.packed);
+    w.u32(e.size);
+    w.u16(e.name.length);
+    w.u16(0);
+    w.u16(0);
+    w.u16(0);
+    w.u16(0);
+    w.u32(0);
+    w.u32(e.offset);
+    w.push(e.name);
+  }
+  const centralSize = w.length - centralStart;
+
+  w.u32(0x06054b50);
+  w.u16(0);
+  w.u16(0);
+  w.u16(central.length);
+  w.u16(central.length);
+  w.u32(centralSize);
+  w.u32(centralStart);
+  w.u16(0);
+  return w.bytes();
+}
+
+/** Read a ZIP archive produced by anything reasonable. */
+async function readZip(bytes            )                      {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder();
+
+  // Find the end-of-central-directory record, scanning back over any comment.
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= 0 && i > bytes.length - 22 - 65536; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("this does not look like a ZIP file");
+
+  const count = view.getUint16(eocd + 10, true);
+  let at = view.getUint32(eocd + 16, true);
+  const entries             = [];
+
+  for (let i = 0; i < count; i++) {
+    if (view.getUint32(at, true) !== 0x02014b50) throw new Error("the ZIP directory is damaged");
+    const method = view.getUint16(at + 10, true);
+    const packed = view.getUint32(at + 20, true);
+    const nameLen = view.getUint16(at + 28, true);
+    const extraLen = view.getUint16(at + 30, true);
+    const commentLen = view.getUint16(at + 32, true);
+    const offset = view.getUint32(at + 42, true);
+    const path = decoder.decode(bytes.subarray(at + 46, at + 46 + nameLen));
+
+    const localNameLen = view.getUint16(offset + 26, true);
+    const localExtraLen = view.getUint16(offset + 28, true);
+    const dataStart = offset + 30 + localNameLen + localExtraLen;
+    const data = bytes.subarray(dataStart, dataStart + packed);
+
+    if (!path.endsWith("/")) {
+      const content = await inflate(data, method);
+      entries.push(PICTURE_ENTRY.test(path) ? { path, bytes: content } : { path, text: decoder.decode(content) });
+    }
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
 // ---- src\storage\images.ts ---------------------------------------
 /**
  * The image store: the pictures an outcome can carry.
@@ -3686,6 +3952,7 @@ class IndexedDbBackend                           {
  * Nothing here resizes or re-encodes anything. Downscaling is the UI's job,
  * where there is a canvas to do it with; the store takes the bytes it is given.
  */
+
 
 
 
@@ -3794,22 +4061,6 @@ function imageMediaType(bytes            )         {
   if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
   if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return "image/webp";
   return "image/png";
-}
-
-function base64FromBytes(bytes            )         {
-  let binary = "";
-  // In chunks: spreading a whole picture into fromCharCode overflows the stack.
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
-function bytesFromBase64(text        )             {
-  const binary = atob(text);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
 }
 
 /** Keep a picture. The id it returns is what an outcome carries. */
@@ -4723,7 +4974,6 @@ function rollsInScope(rows              , ids          )               {
  
 
 const DEFAULT_PREFS        = {
-  theme: "system",
   feel: DEFAULT_FEEL,
   seed: null,
   lastPath: null,
@@ -4848,7 +5098,6 @@ class AppState {
 
   applyTheme()       {
     const root = document.documentElement;
-    root.removeAttribute("data-theme");
     if (!this.prefs.scheme || this.prefs.scheme === "system") root.removeAttribute("data-scheme");
     else root.setAttribute("data-scheme", this.prefs.scheme);
   }
@@ -6067,6 +6316,7 @@ function curate(minDistance = 0.05)                                             
 
 
 
+
                                                           
 
 
@@ -6139,7 +6389,7 @@ function createWheel(opts              )            {
   let cancelSpin                      = null;
 
   const mode = ()                                    => {
-    const n = opts.items().filter((i) => !i.disabled && i.weight > 0).length;
+    const n = opts.items().filter(isRollable).length;
     return n > TICKER_LIMIT ? "ticker" : n > LABEL_LIMIT ? "unlabelled" : "wheel";
   };
 
@@ -6300,7 +6550,7 @@ function createWheel(opts              )            {
   }
 
   function renderTicker()              {
-    const items = opts.items().filter((i) => !i.disabled && i.weight > 0);
+    const items = opts.items().filter(isRollable);
     tickerStrip = h(
       "div",
       { class: "ticker-strip" },
@@ -6318,6 +6568,36 @@ function createWheel(opts              )            {
 
   function applyRotation()       {
     if (rotor) rotor.setAttribute("transform", `rotate(${rotation % 360} ${cx} ${cy})`);
+  }
+
+  /**
+   * Run an animation, and hand back the way to cut it short.
+   *
+   * The wheel and the ticker travel differently but wait the same way: a
+   * frame loop, a `skip` that jumps to the end, and exactly one settle
+   * whichever of the two gets there first. `onDone` runs once.
+   */
+  function animate(durationMs        , onFrame                     , onDone            )                {
+    const started = performance.now();
+    return new Promise      ((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        onDone();
+        cancelSpin = null;
+        resolve();
+      };
+      cancelSpin = finish;
+      const step = (now        ) => {
+        if (done) return;
+        const t = Math.min(1, (now - started) / durationMs);
+        onFrame(t);
+        if (t >= 1) finish();
+        else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   function spinTo(index        , feel              )                {
@@ -6343,34 +6623,23 @@ function createWheel(opts              )            {
     // The roll-back is a random share of the maximum, in degrees, expressed as
     // a fraction of this particular spin rather than of a nominal one.
     const overshoot = overshootFraction(settleForSpin(feel), delta);
-    const started = performance.now();
 
-    return new Promise      ((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        rotation = plan.rotation;
-        applyRotation();
-        cancelSpin = null;
-        resolve();
-      };
-      cancelSpin = finish;
-      const step = (now        ) => {
-        if (done) return;
-        const t = Math.min(1, (now - started) / duration);
+    return animate(
+      duration,
+      (t) => {
         rotation = from + delta * easeSpin(t, feel, overshoot);
         applyRotation();
-        if (t >= 1) finish();
-        else requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    });
+      },
+      () => {
+        rotation = plan.rotation;
+        applyRotation();
+      },
+    );
   }
 
   function spinTicker(index        , feel              )                {
     const items = opts.items();
-    const live = items.map((it, i) => ({ it, i })).filter(({ it }) => !it.disabled && it.weight > 0);
+    const live = items.map((it, i) => ({ it, i })).filter(({ it }) => isRollable(it));
     const position = Math.max(0, live.findIndex(({ i }) => i === index));
     // Must match `.ticker-row` in app.css.
     const rowHeight = 46;
@@ -6399,26 +6668,15 @@ function createWheel(opts              )            {
     }
     const from = -(rows.length * rowHeight);
     const overshoot = overshootFraction(settleForSpin(feel), Math.abs(target - from));
-    const started = performance.now();
-    return new Promise      ((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        strip.style.transform = `translateY(${target}px)`;
-        cancelSpin = null;
-        resolve();
-      };
-      cancelSpin = finish;
-      const step = (now        ) => {
-        if (done) return;
-        const t = Math.min(1, (now - started) / duration);
+    return animate(
+      duration,
+      (t) => {
         strip.style.transform = `translateY(${from + (target - from) * easeSpin(t, feel, overshoot)}px)`;
-        if (t >= 1) finish();
-        else requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    });
+      },
+      () => {
+        strip.style.transform = `translateY(${target}px)`;
+      },
+    );
   }
 
   refresh();
@@ -7328,74 +7586,6 @@ function createDiceTray()           {
   };
 }
 
-                           
-                  
-                                                        
-               
- 
-
-function createCoin()           {
-  const disc = h("div", { class: "coin" }, "?");
-  const flight = h("div", { class: "coin-flight" }, disc);
-  const el = h("div", { class: "coin-wrap" }, flight);
-  let finish                      = null;
-
-  return {
-    el,
-    show(face, feel) {
-      const duration = coinDuration(feel);
-      const bounce = bounceMs(feel);
-      if (duration <= 0 || motionScale(feel.motion) === 0) {
-        disc.className = "coin";
-        flight.className = "coin-flight";
-        disc.textContent = face;
-        return Promise.resolve();
-      }
-
-      // The toss: the coin rises along a parabola, shrinking as it goes away,
-      // spinning about its own axis the whole time, and comes back down to
-      // where it started. Only transforms are animated.
-      disc.textContent = "";
-      disc.className = "coin";
-      flight.className = "coin-flight";
-      void disc.offsetWidth; // restart the animations
-      const size = disc.getBoundingClientRect().height || 96;
-      disc.style.setProperty("--coin-duration", `${duration}ms`);
-      disc.style.setProperty("--coin-flips", String(feel.coin.flips));
-      flight.style.setProperty("--coin-duration", `${duration}ms`);
-      flight.style.setProperty("--arc-h", `${(feel.coin.arc * size).toFixed(0)}px`);
-      flight.style.setProperty("--travel", `${(feel.coin.arc > 0 ? size * 0.9 : 0).toFixed(0)}px`);
-      flight.style.setProperty("--shrink", String(feel.coin.arc > 0 ? 0.62 : 1));
-      disc.classList.add("flipping");
-      flight.classList.add("tossing");
-
-      return new Promise      ((resolve) => {
-        const land = () => {
-          clearTimeout(timer);
-          disc.classList.remove("flipping");
-          flight.classList.remove("tossing");
-          disc.textContent = face;
-          vibrate(feel, 12);
-          finish = null;
-          if (bounce > 0) {
-            flight.style.setProperty("--bounce", `${bounce}ms`);
-            void flight.offsetWidth;
-            flight.classList.add("landing");
-            setTimeout(resolve, bounce);
-          } else {
-            resolve();
-          }
-        };
-        finish = land;
-        const timer = setTimeout(land, duration);
-      });
-    },
-    skip() {
-      finish?.();
-    },
-  };
-}
-
 /* -------------------------------------------------------------------------- */
 /* wireframe dice                                                             */
 /* -------------------------------------------------------------------------- */
@@ -7642,6 +7832,89 @@ function readColours()                                  {
   };
 }
 
+// ---- src\ui\components\coin.ts -----------------------------------
+/**
+ * The coin.
+ *
+ * It lived in `dice.ts` because both are "things that land on a number", but
+ * it shares no code with the dice: the coin is a CSS animation on two
+ * elements, and the dice are a canvas and a solid. Its own file says so.
+ *
+ * The toss is only transforms, so it runs on the compositor and a phone can
+ * do it without dropping the rest of the page.
+ */
+
+
+
+
+                           
+                  
+                                                        
+               
+ 
+
+function createCoin()           {
+  const disc = h("div", { class: "coin" }, "?");
+  const flight = h("div", { class: "coin-flight" }, disc);
+  const el = h("div", { class: "coin-wrap" }, flight);
+  let finish                      = null;
+
+  return {
+    el,
+    show(face, feel) {
+      const duration = coinDuration(feel);
+      const bounce = bounceMs(feel);
+      if (duration <= 0 || motionScale(feel.motion) === 0) {
+        disc.className = "coin";
+        flight.className = "coin-flight";
+        disc.textContent = face;
+        return Promise.resolve();
+      }
+
+      // The toss: the coin rises along a parabola, shrinking as it goes away,
+      // spinning about its own axis the whole time, and comes back down to
+      // where it started. Only transforms are animated.
+      disc.textContent = "";
+      disc.className = "coin";
+      flight.className = "coin-flight";
+      void disc.offsetWidth; // restart the animations
+      const size = disc.getBoundingClientRect().height || 96;
+      disc.style.setProperty("--coin-duration", `${duration}ms`);
+      disc.style.setProperty("--coin-flips", String(feel.coin.flips));
+      flight.style.setProperty("--coin-duration", `${duration}ms`);
+      flight.style.setProperty("--arc-h", `${(feel.coin.arc * size).toFixed(0)}px`);
+      flight.style.setProperty("--travel", `${(feel.coin.arc > 0 ? size * 0.9 : 0).toFixed(0)}px`);
+      flight.style.setProperty("--shrink", String(feel.coin.arc > 0 ? 0.62 : 1));
+      disc.classList.add("flipping");
+      flight.classList.add("tossing");
+
+      return new Promise      ((resolve) => {
+        const land = () => {
+          clearTimeout(timer);
+          disc.classList.remove("flipping");
+          flight.classList.remove("tossing");
+          disc.textContent = face;
+          vibrate(feel, 12);
+          finish = null;
+          if (bounce > 0) {
+            flight.style.setProperty("--bounce", `${bounce}ms`);
+            void flight.offsetWidth;
+            flight.classList.add("landing");
+            setTimeout(resolve, bounce);
+          } else {
+            resolve();
+          }
+        };
+        finish = land;
+        const timer = setTimeout(land, duration);
+      });
+    },
+    skip() {
+      finish?.();
+    },
+  };
+}
+
 // ---- src\ui\components\result.ts ---------------------------------
 /**
  * The result panel: the largest thing on the screen, and the only place a
@@ -7818,15 +8091,20 @@ function createRecentRolls(opts                    )                  {
 
   const scoped = () => rollsInScope(state.history, opts.ids());
 
-  function clearScope()       {
+  async function clearScope()                {
     const ids = opts.ids();
     const rows = scoped();
     if (rows.length === 0) {
       state.toast("There is nothing here to clear.");
       return;
     }
-    if (!confirm(clearRollsPrompt(rows.length, ids.length === 0 ? "" : opts.scopeName()))) return;
-    void state.clearHistoryFor(ids);
+    // The app's own dialog rather than the browser's: it returns the keyboard
+    // where it came from, and it looks like the rest of Orangey.
+    const sure = await askConfirm("Clear these rolls", clearRollsPrompt(rows.length, ids.length === 0 ? "" : opts.scopeName()), {
+      confirm: "Clear",
+      danger: true,
+    });
+    if (sure) void state.clearHistoryFor(ids);
   }
 
   function refresh()       {
@@ -7849,7 +8127,7 @@ function createRecentRolls(opts                    )                  {
     h("div", { class: "row" },
       h("h2", { text: "Recent rolls", style: { margin: "0" } }),
       h("div", { class: "spacer" }),
-      button("Clear", clearScope, { class: "ghost danger" }),
+      button("Clear", () => void clearScope(), { class: "ghost danger" }),
       button("All history", () => navigate("#/history"), { class: "ghost" }),
     ),
     list,
@@ -7865,12 +8143,6 @@ const DEFAULT_FACES                   = ["Heads", "Tails"];
 function flip(faces                  , rng              )             {
   const side = rng.int(0, 1)         ;
   return { side, face: faces[side], faces, seed: rng.seed };
-}
-
-function flipMany(faces                  , count        , rng              )               {
-  const out               = [];
-  for (let i = 0; i < count; i++) out.push(flip(faces, rng));
-  return out;
 }
 
 // ---- src\core\dice\evaluate.ts -----------------------------------
@@ -7913,7 +8185,7 @@ function flipMany(faces                  , count        , rng              )    
                                                                                
               
               
-                                                                          
+                                                                            
                      
                      
                 
@@ -7951,6 +8223,30 @@ function boundsOf(node      )                               {
   let n = node.count;
   if (node.keep) n = node.keep.mode[0] === "k" ? node.keep.n : node.count - node.keep.n;
   return { min: n, max: n * node.sides };
+}
+
+/**
+ * The lowest and highest an expression can come to, without rolling it.
+ *
+ * Reserving the result panel's height needs the widest number that can turn
+ * up, which used to be found by rolling the expression once on a throwaway
+ * seeded source and reading the bounds off the result. That worked, but it
+ * meant a roll happened to answer a layout question.
+ */
+function expressionBounds(input        )                               {
+  let min = 0;
+  let max = 0;
+  for (const t of parse(input).terms) {
+    const b = boundsOf(t.node);
+    if (t.sign > 0) {
+      min += b.min;
+      max += b.max;
+    } else {
+      min -= b.max;
+      max -= b.min;
+    }
+  }
+  return { min, max };
 }
 
 function evaluate(expr            , rng              , input = expr.normalized)             {
@@ -8223,7 +8519,7 @@ function whyCannotRoll(r            )                {
   if (r.type === "board") return r.entries.length ? null : "This board has nothing on it yet.";
   if (r.type !== "list") return null;
   if (r.items.length === 0) return "This randomizer has no outcomes yet.";
-  if (!r.items.some((i) => !i.disabled && i.weight > 0)) {
+  if (!r.items.some(isRollable)) {
     return "No outcomes can come up: they are all disabled or weigh nothing.";
   }
   return null;
@@ -8257,16 +8553,143 @@ function longestOutcome(r            )         {
       // Each cell on a board sizes its own panel from its own randomizer.
       return "";
     case "dice": {
-      // The bounds come from the expression, so one throwaway roll on its own
-      // source tells us them without touching the app's sequence or history.
       try {
-        const result = rollDice(r.expression, new SeededSource("fit"));
-        return longest([String(result.min), String(result.max)]);
+        const bounds = expressionBounds(r.expression);
+        return longest([String(bounds.min), String(bounds.max)]);
       } catch {
         return r.expression;
       }
     }
   }
+}
+
+// ---- src\ui\rolling.ts -------------------------------------------
+/**
+ * One roll, from the press to the landing.
+ *
+ * The play screen, a cell on a board and the editor's preview all roll the
+ * same way, and used to say so in three places that had already begun to
+ * drift apart. The order here is the contract (plan C10): the outcome is
+ * decided first, nothing shows it until the animation has arrived, and the
+ * answer, the announcement and the mascot's reaction all happen together at
+ * the landing — never at the start.
+ *
+ * A caller supplies only what it has. The editor's preview has a wheel and
+ * no dice tray, and rolls with `live: false`, so it neither writes history
+ * nor tells the mascot: a person trying out a wheel they are building has
+ * not rolled it.
+ */
+
+                                              
+
+                                                       
+                                                          
+                                                       
+                                                     
+                                                     
+
+
+
+
+                                
+                             
+                      
+                                
+                  
+                  
+                                                                            
+                           
+                                                                                  
+                
+                                           
+                     
+ 
+
+                         
+                        
+               
+                            
+ 
+
+function createRoller(opts               )         {
+  let rolling = false;
+
+  function skip()       {
+    opts.wheel()?.skip();
+    opts.tray?.skip();
+    opts.coin?.skip();
+  }
+
+  /** Whether this roll has anything to watch, which decides when to reveal. */
+  function animates(randomizer          , outcome         , feel              )          {
+    if (motionScale(feel.motion) === 0) return false;
+    // A list shown as a list has nothing to animate, so it reveals at once.
+    if (randomizer.type === "list") return opts.wheel() !== null && outcome.itemIndex !== undefined;
+    if (randomizer.type === "dice") return opts.tray !== undefined && outcome.dice !== undefined;
+    if (randomizer.type === "coin") return opts.coin !== undefined;
+    return false;
+  }
+
+  async function roll()                {
+    // A second press during a roll means "get on with it", not "roll again".
+    if (rolling) {
+      skip();
+      return;
+    }
+    const randomizer = opts.randomizer();
+
+    const problem = whyCannotRoll(randomizer);
+    if (problem) {
+      opts.result.clear(problem);
+      if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
+      return;
+    }
+
+    let outcome         ;
+    try {
+      outcome = rollRandomizer(randomizer, state.source());
+    } catch (e) {
+      const reason = (e         ).message;
+      opts.result.clear(reason);
+      if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason });
+      return;
+    }
+
+    const feel = opts.feel();
+    const willAnimate = animates(randomizer, outcome, feel);
+    rolling = true;
+    opts.onStart?.(willAnimate);
+
+    if (willAnimate) {
+      opts.result.pending();
+      if (opts.live) state.tell({ type: "roll:start", source: randomizer.type });
+    } else {
+      opts.result.show(outcome);
+    }
+
+    const wheel = opts.wheel();
+    if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) {
+      await wheel.spinTo(outcome.itemIndex, feel);
+    } else if (randomizer.type === "dice" && opts.tray && outcome.dice) {
+      await opts.tray.show(outcome.dice, feel);
+    } else if (randomizer.type === "coin" && opts.coin) {
+      await opts.coin.show(outcome.text, feel);
+    }
+
+    if (willAnimate) opts.result.show(outcome);
+    if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
+    rolling = false;
+    opts.onEnd?.();
+    if (opts.live) void state.record(randomizer, outcome);
+  }
+
+  return {
+    roll,
+    skip,
+    get rolling() {
+      return rolling;
+    },
+  };
 }
 
 // ---- src\ui\components\cell.ts -----------------------------------
@@ -8279,7 +8702,8 @@ function longestOutcome(r            )         {
  * cells rather than once per cell.
  */
 
-                                                            
+                                                                      
+
 
 
 
@@ -8300,7 +8724,6 @@ function longestOutcome(r            )         {
  
 
 function createCell(randomizer            , opts                          = {})           {
-  let rolling = false;
   const result = createResultPanel("Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
@@ -8311,7 +8734,7 @@ function createCell(randomizer            , opts                          = {}) 
     wheel = createWheel({
       items: () => (randomizer                                         ).items,
       id: () => randomizer.id,
-      onActivate: () => void roll(),
+      onActivate: () => void roller.roll(),
       size: 260,
     });
     stage.append(wheel.el);
@@ -8324,53 +8747,16 @@ function createCell(randomizer            , opts                          = {}) 
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
-  async function roll()                {
-    if (rolling) {
-      skip();
-      return;
-    }
-    const problem = whyCannotRoll(randomizer);
-    if (problem) {
-      result.clear(problem);
-      state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
-      return;
-    }
-    let outcome         ;
-    try {
-      outcome = rollRandomizer(randomizer, state.source());
-    } catch (e) {
-      result.clear((e         ).message);
-      return;
-    }
-    const feel = feelNow();
-    const animated =
-      motionScale(feel.motion) !== 0 &&
-      ((randomizer.type === "list" && wheel !== null && outcome.itemIndex !== undefined) ||
-        (randomizer.type === "dice" && outcome.dice !== undefined) ||
-        randomizer.type === "coin");
-
-    rolling = true;
-    opts.onRoll?.();
-    if (animated) result.pending();
-    else result.show(outcome);
-
-    if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) await wheel.spinTo(outcome.itemIndex, feel);
-    else if (randomizer.type === "dice" && outcome.dice) await tray.show(outcome.dice, feel);
-    else if (randomizer.type === "coin") await coin.show(outcome.text, feel);
-
-    if (animated) result.show(outcome);
-    // The landing, as on the play screen: the answer, the announcement and
-    // Orangey's reaction all happen together, never at the start.
-    state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
-    rolling = false;
-    void state.record(randomizer, outcome);
-  }
-
-  function skip()       {
-    wheel?.skip();
-    tray.skip();
-    coin.skip();
-  }
+  const roller = createRoller({
+    randomizer: () => randomizer            ,
+    result,
+    wheel: () => wheel,
+    tray,
+    coin,
+    feel: feelNow,
+    live: true,
+    onStart: () => opts.onRoll?.(),
+  });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
     h("h3", { class: "cell-name", text: randomizer.name }),
@@ -8380,9 +8766,9 @@ function createCell(randomizer            , opts                          = {}) 
 
   return {
     el,
-    roll,
-    skip,
-    get rolling() { return rolling; },
+    roll: () => roller.roll(),
+    skip: () => roller.skip(),
+    get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },
   };
 }
@@ -8656,206 +9042,6 @@ function createChainRow(root           )            {
   };
 }
 
-// ---- src\storage\zip.ts ------------------------------------------
-/**
- * A minimal ZIP writer and reader for library export/import (plan C5).
- *
- * Hand-written because the sandbox had no package registry; it produces
- * ordinary ZIP files that any operating system can open, which is the whole
- * point of the feature. Entries are deflated where the platform offers
- * compression streams and stored otherwise.
- */
-
-const encoder = new TextEncoder();
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[i] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(bytes            )         {
-  let c = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-/** Shared with the link encoder: method 8 is deflated, 0 is stored as-is. */
-async function deflate(bytes            )                                                {
-  const CS = (globalThis                                                    ).CompressionStream;
-  if (!CS) return { data: bytes, method: 0 };
-  try {
-    const stream = new Blob([bytes            ]).stream().pipeThrough(new CS("deflate-raw"));
-    const out = new Uint8Array(await new Response(stream).arrayBuffer());
-    return out.length < bytes.length ? { data: out, method: 8 } : { data: bytes, method: 0 };
-  } catch {
-    return { data: bytes, method: 0 };
-  }
-}
-
-async function inflate(bytes            , method        )                      {
-  if (method === 0) return bytes;
-  const DS = (globalThis                                                        ).DecompressionStream;
-  if (!DS) throw new Error("this browser cannot read compressed ZIP entries");
-  const stream = new Blob([bytes            ]).stream().pipeThrough(new DS("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-                           
-               
-                                                                        
-                
-                                                                     
-                     
- 
-
-/**
- * Which entries are pictures.
- *
- * They are kept as bytes on both sides: putting a PNG through a TextDecoder
- * on the way out of an archive and an encoder on the way back in does not
- * return the PNG.
- */
-const PICTURE_ENTRY = /\.(png|jpe?g|webp|gif)$/i;
-
-class Writer {
-  parts               = [];
-  length = 0;
-  push(part            )       {
-    this.parts.push(part);
-    this.length += part.length;
-  }
-  u32(n        )       {
-    const b = new Uint8Array(4);
-    new DataView(b.buffer).setUint32(0, n >>> 0, true);
-    this.push(b);
-  }
-  u16(n        )       {
-    const b = new Uint8Array(2);
-    new DataView(b.buffer).setUint16(0, n & 0xffff, true);
-    this.push(b);
-  }
-  bytes()             {
-    const out = new Uint8Array(this.length);
-    let at = 0;
-    for (const p of this.parts) {
-      out.set(p, at);
-      at += p.length;
-    }
-    return out;
-  }
-}
-
-/** Build a ZIP archive. Folders are implied by the entry paths. */
-async function createZip(entries            )                      {
-  const w = new Writer();
-  const central                                                                                                    = [];
-
-  for (const entry of entries) {
-    const name = encoder.encode(entry.path);
-    const raw = entry.bytes ?? encoder.encode(entry.text ?? "");
-    const { data, method } = await deflate(raw);
-    const crc = crc32(raw);
-    const offset = w.length;
-
-    w.u32(0x04034b50);
-    w.u16(20);
-    w.u16(0x0800); // UTF-8 names
-    w.u16(method);
-    w.u16(0); // time
-    w.u16(0); // date
-    w.u32(crc);
-    w.u32(data.length);
-    w.u32(raw.length);
-    w.u16(name.length);
-    w.u16(0);
-    w.push(name);
-    w.push(data);
-
-    central.push({ name, crc, size: raw.length, packed: data.length, method, offset });
-  }
-
-  const centralStart = w.length;
-  for (const e of central) {
-    w.u32(0x02014b50);
-    w.u16(20);
-    w.u16(20);
-    w.u16(0x0800);
-    w.u16(e.method);
-    w.u16(0);
-    w.u16(0);
-    w.u32(e.crc);
-    w.u32(e.packed);
-    w.u32(e.size);
-    w.u16(e.name.length);
-    w.u16(0);
-    w.u16(0);
-    w.u16(0);
-    w.u16(0);
-    w.u32(0);
-    w.u32(e.offset);
-    w.push(e.name);
-  }
-  const centralSize = w.length - centralStart;
-
-  w.u32(0x06054b50);
-  w.u16(0);
-  w.u16(0);
-  w.u16(central.length);
-  w.u16(central.length);
-  w.u32(centralSize);
-  w.u32(centralStart);
-  w.u16(0);
-  return w.bytes();
-}
-
-/** Read a ZIP archive produced by anything reasonable. */
-async function readZip(bytes            )                      {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const decoder = new TextDecoder();
-
-  // Find the end-of-central-directory record, scanning back over any comment.
-  let eocd = -1;
-  for (let i = bytes.length - 22; i >= 0 && i > bytes.length - 22 - 65536; i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd < 0) throw new Error("this does not look like a ZIP file");
-
-  const count = view.getUint16(eocd + 10, true);
-  let at = view.getUint32(eocd + 16, true);
-  const entries             = [];
-
-  for (let i = 0; i < count; i++) {
-    if (view.getUint32(at, true) !== 0x02014b50) throw new Error("the ZIP directory is damaged");
-    const method = view.getUint16(at + 10, true);
-    const packed = view.getUint32(at + 20, true);
-    const nameLen = view.getUint16(at + 28, true);
-    const extraLen = view.getUint16(at + 30, true);
-    const commentLen = view.getUint16(at + 32, true);
-    const offset = view.getUint32(at + 42, true);
-    const path = decoder.decode(bytes.subarray(at + 46, at + 46 + nameLen));
-
-    const localNameLen = view.getUint16(offset + 26, true);
-    const localExtraLen = view.getUint16(offset + 28, true);
-    const dataStart = offset + 30 + localNameLen + localExtraLen;
-    const data = bytes.subarray(dataStart, dataStart + packed);
-
-    if (!path.endsWith("/")) {
-      const content = await inflate(data, method);
-      entries.push(PICTURE_ENTRY.test(path) ? { path, bytes: content } : { path, text: decoder.decode(content) });
-    }
-    at += 46 + nameLen + extraLen + commentLen;
-  }
-  return entries;
-}
-
 // ---- src\model\link.ts -------------------------------------------
 /**
  * A whole randomizer inside a link.
@@ -8901,21 +9087,14 @@ const LINK_HARD_LIMIT = 8000;
 const linkEncoder = new TextEncoder();
 const linkDecoder = new TextDecoder();
 
+/** Plain base64 with the three characters a URL would mangle swapped out. */
 function toBase64Url(bytes            )         {
-  let binary = "";
-  // In chunks: spreading a large array into fromCharCode overflows the stack.
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return base64FromBytes(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function fromBase64Url(text        )             {
   const padded = text.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
+  return bytesFromBase64(padded + "=".repeat((4 - (padded.length % 4)) % 4));
 }
 
 /** The randomizer as it travels: no timestamps, no outcome ids. */
@@ -8989,6 +9168,162 @@ async function decodeRandomizer(payload        )                      {
   return unpackRandomizer(parsed);
 }
 
+// ---- src\ui\components\linkdialog.ts -----------------------------
+/**
+ * The dialog that hands over a link for a slide.
+ *
+ * Out of `play.ts` because it is a self-contained piece of explaining: two
+ * kinds of link with different trade-offs, a size warning, and the awkward
+ * truth that a copy of Orangey opened from a file cannot be linked to at all.
+ * None of that is about playing.
+ */
+
+                                                            
+                                                            
+
+
+
+
+
+/**
+ * Two kinds of link, side by side.
+ *
+ * "With the wheel inside" carries the randomizer in the address, so it
+ * rolls on anyone's machine and keeps rolling whatever happens to the
+ * library — frozen at today's version, and longer. "To my library" is short
+ * and follows every edit, but only works where the library is. The first is
+ * offered first, because it is what most people pasting into a deck mean.
+ */
+async function openLinkDialog(randomizer            , node                    )                {
+  // Where the keyboard came from, so it goes back there on close.
+  const opener = document.activeElement                      ;
+  const base = appBase();
+  const rollOnOpen = h("input", { type: "checkbox", checked: true });
+  const fullScreen = h("input", { type: "checkbox", checked: true });
+  const field = h("input", { type: "text", readonly: true, "aria-label": "Link to paste onto a slide", spellcheck: "false" });
+  const note = h("p", { class: "faint link-note" });
+  const sizeNote = h("p", { class: "warning link-size" });
+
+  let payload                = null;
+  try {
+    payload = await encodeRandomizer(randomizer);
+  } catch {
+    payload = null;
+  }
+  const embeddedLength = payload === null ? Infinity : wheelLink(base, payload, { roll: true, present: true }).length;
+  const canEmbed = payload !== null && embeddedLength <= LINK_HARD_LIMIT;
+  const canLibrary = node?.randomizer != null;
+  if (!canEmbed && !canLibrary) {
+    state.toast("This randomizer is too big to put in a link, and it is not in your library.");
+    return;
+  }
+
+  let kind                         = canEmbed ? "embedded" : "library";
+  const kinds = h("div", { class: "segmented link-kinds", role: "group", "aria-label": "What the link carries" });
+
+  const refresh = () => {
+    const opts = { roll: rollOnOpen.checked, present: fullScreen.checked };
+    field.value = kind === "embedded" && payload
+      ? wheelLink(base, payload, opts)
+      : slideLink(base, node .randomizer .id, opts);
+    note.textContent = kind === "embedded"
+      ? "The wheel travels inside the link, so it works for anyone who opens the deck, on any machine, with nothing installed. It is a snapshot: editing the wheel afterwards does not change decks you have already made."
+      : "Short, and it follows every edit you make. It points at the randomizer's identity rather than its file name, so renaming it or moving it to another folder will not break the deck — but it only works on a device where this library is stored.";
+    const tooLong = kind === "embedded" && field.value.length > LINK_SOFT_LIMIT;
+    sizeNote.hidden = !tooLong;
+    if (tooLong) {
+      sizeNote.textContent = `This link is ${field.value.length} characters. Slides and PowerPoint will take it, but it is unwieldy to handle;${canLibrary ? " a link to your library would be a few dozen." : " trimming the table would shorten it."}`;
+    }
+    for (const b of kinds.querySelectorAll("button")) {
+      b.setAttribute("aria-pressed", b.dataset.kind === kind ? "true" : "false");
+    }
+  };
+
+  const kindButton = (value                        , label        ) => {
+    const b = button(label, () => { kind = value; refresh(); }, { class: `link-kind-${value}` });
+    b.dataset.kind = value;
+    return b;
+  };
+  setChildren(kinds,
+    canEmbed ? kindButton("embedded", "With the wheel inside") : null,
+    canLibrary ? kindButton("library", "To my library") : null,
+  );
+
+  rollOnOpen.addEventListener("change", refresh);
+  fullScreen.addEventListener("change", refresh);
+  refresh();
+
+  const copied = h("span", { class: "faint" });
+  const dialog = h("dialog", { class: "link-dialog", "aria-label": "Link for a slide" },
+    h("h2", { text: "Link for a slide" }),
+    h("p", { class: "faint", text:
+      `Put this on a shape or an image in Google Slides or PowerPoint. Clicking it during the presentation opens ${randomizer.name} and rolls it; closing the tab returns you to the deck.` }),
+    kinds.children.length > 1 ? kinds : null,
+    field,
+    h("div", { class: "row tight gap-m" },
+      h("label", { class: "row tight" }, rollOnOpen, "Roll as soon as it opens"),
+      h("label", { class: "row tight" }, fullScreen, "Fill the screen"),
+    ),
+    isLinkableBase(base)
+      ? null
+      : h("p", { class: "warning", text:
+          "This copy of Orangey is open from a file rather than a web address, so this link will not work from a slide — browsers refuse to follow a link from a web page to a local file. Open the published copy and make the link there." }),
+    sizeNote,
+    note,
+    h("div", { class: "row gap-l" },
+      button("Copy", async () => {
+        try {
+          await navigator.clipboard.writeText(field.value);
+          copied.textContent = "Copied";
+        } catch {
+          field.select();
+          copied.textContent = "Press Ctrl+C to copy";
+        }
+      }, { class: "primary copy-link" }),
+      copied,
+      h("div", { class: "spacer" }),
+      button("Close", () => dialog.close()),
+    ),
+  );
+  openDialog(dialog, opener);
+  field.select();
+}
+
+// ---- src\ui\presenting.ts ----------------------------------------
+/**
+ * Full screen: one randomizer, or one board, filling the display.
+ *
+ * The play screen and a board both offer it and both used to carry their own
+ * copy, which had already drifted — one of them swallowed the browser's
+ * refusal silently and the other explained it in a comment. The class on
+ * `body` is the single source of truth, so a view that is torn down while
+ * presenting leaves nothing behind for the next one to trip over.
+ */
+
+                                     
+                                     
+                          
+                                                    
+                             
+ 
+
+function isPresenting()          {
+  return document.body.classList.contains("presenting");
+}
+
+function setPresenting(on         , controls                    )       {
+  document.body.classList.toggle("presenting", on);
+  controls.exitButton.hidden = !on;
+  controls.presentButton.textContent = on ? "Leave full screen" : "Full screen";
+  if (on && document.documentElement.requestFullscreen) {
+    void document.documentElement.requestFullscreen().catch(() => {
+      /* the browser may refuse without a gesture; the layout still applies */
+    });
+  } else if (!on && document.fullscreenElement) {
+    void document.exitFullscreen().catch(() => {});
+  }
+}
+
 // ---- src\ui\views\play.ts ----------------------------------------
 /**
  * The play surface: the screen a GM keeps open during a game.
@@ -9014,7 +9349,9 @@ async function decodeRandomizer(payload        )                      {
 
 
 
-                                        
+
+
+                                       
 
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
@@ -9029,7 +9366,6 @@ function createPlayView(
   linked                    = null,
 )       {
   let randomizer             = node?.randomizer ?? linked ?? adHocDice("d20");
-  let rolling = false;
   /** Opened from the library or from a link: either way, one fixed randomizer. */
   const fixed = node !== null || linked !== null;
 
@@ -9084,67 +9420,27 @@ function createPlayView(
   /** The settings this roll uses: global, this randomizer's own, and the play-time switch. */
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
-  async function doRoll()                {
-    if (rolling) {
-      skip();
-      return;
-    }
-    const problem = whyCannotRoll(randomizer);
-    if (problem) {
-      result.clear(problem);
-      state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
-      return;
-    }
-    let outcome         ;
-    try {
-      outcome = rollRandomizer(randomizer, state.source());
-    } catch (e) {
-      result.clear((e         ).message);
-      state.tell({ type: "roll:fail", source: randomizer.type, reason: (e         ).message });
-      return;
-    }
+  const roller = createRoller({
+    randomizer: () => randomizer            ,
+    result,
+    wheel: () => wheel,
+    tray,
+    coin,
+    feel: feelNow,
+    live: true,
+    // While a roll runs the button offers to cut it short; pressing it again
+    // is what `roller.roll()` reads as "skip".
+    onStart: (willAnimate         ) => {
+      rollButton.textContent = willAnimate ? "Skip" : "Roll";
+    },
+    onEnd: () => {
+      rollButton.textContent = "Roll";
+    },
+  });
 
-    const feel = feelNow();
-    const instant = motionScale(feel.motion) === 0;
-    // A list shown as a list has nothing to animate, so it reveals at once.
-    const willAnimate =
-      !instant &&
-      ((randomizer.type === "list" && wheel !== null && outcome.itemIndex !== undefined) ||
-        (randomizer.type === "dice" && outcome.dice !== undefined) ||
-        randomizer.type === "coin");
-    rolling = true;
-    rollButton.textContent = willAnimate ? "Skip" : "Roll";
+  const doRoll = ()                => roller.roll();
 
-    // The outcome is already decided; nothing shows it until the animation has
-    // finished arriving at it, so the table finds out when the dice stop, not
-    // when they start. The screen reader is told at the same moment.
-    if (willAnimate) {
-      result.pending();
-      state.tell({ type: "roll:start", source: randomizer.type });
-    } else result.show(outcome);
-
-    if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) {
-      await wheel.spinTo(outcome.itemIndex, feel);
-    } else if (randomizer.type === "dice" && outcome.dice) {
-      await tray.show(outcome.dice, feel);
-    } else if (randomizer.type === "coin") {
-      await coin.show(outcome.text, feel);
-    }
-
-    if (willAnimate) result.show(outcome);
-    // The landing: the result, the announcement and the mascot's reaction
-    // all happen here, never at the start (plan C10).
-    state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
-    rolling = false;
-    rollButton.textContent = "Roll";
-    void state.record(randomizer, outcome);
-  }
-
-  function skip()       {
-    wheel?.skip();
-    tray.skip();
-    coin.skip();
-  }
+  const skip = ()       => roller.skip();
 
   // ---- quick bar -----------------------------------------------------------
 
@@ -9291,133 +9587,12 @@ function createPlayView(
 
   /* ---- presenting, and links for slides -------------------------------- */
 
-  function presenting()          {
-    return document.body.classList.contains("presenting");
-  }
-
-  function setPresenting(on         )       {
-    document.body.classList.toggle("presenting", on);
-    exitButton.hidden = !on;
-    presentButton.textContent = on ? "Leave full screen" : "Full screen";
-    if (on && document.documentElement.requestFullscreen) {
-      void document.documentElement.requestFullscreen().catch(() => {
-        /* the browser may refuse without a gesture; the layout still applies */
-      });
-    } else if (!on && document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
-  }
-
-  const exitButton = button("Leave full screen", () => setPresenting(false), { class: "leave-presenting" });
+  const exitButton = button("Leave full screen", () => present(false), { class: "leave-presenting" });
   exitButton.hidden = true;
-  const presentButton = button("Full screen", () => setPresenting(!presenting()), { class: "ghost present-button" });
+  const presentButton = button("Full screen", () => present(!isPresenting()), { class: "ghost present-button" });
+  const present = (on         )       => setPresenting(on, { exitButton, presentButton });
 
-  /**
-   * Two kinds of link, side by side.
-   *
-   * "With the wheel inside" carries the randomizer in the address, so it
-   * rolls on anyone's machine and keeps rolling whatever happens to the
-   * library — frozen at today's version, and longer. "To my library" is short
-   * and follows every edit, but only works where the library is. The first is
-   * offered first, because it is what most people pasting into a deck mean.
-   */
-  async function openLinkDialog()                {
-    if (!fixed) return;
-    const base = appBase();
-    const rollOnOpen = h("input", { type: "checkbox", checked: true });
-    const fullScreen = h("input", { type: "checkbox", checked: true });
-    const field = h("input", { type: "text", readonly: true, "aria-label": "Link to paste onto a slide", spellcheck: "false" });
-    const note = h("p", { class: "faint link-note" });
-    const sizeNote = h("p", { class: "warning link-size" });
-
-    let payload                = null;
-    try {
-      payload = await encodeRandomizer(randomizer);
-    } catch {
-      payload = null;
-    }
-    const embeddedLength = payload === null ? Infinity : wheelLink(base, payload, { roll: true, present: true }).length;
-    const canEmbed = payload !== null && embeddedLength <= LINK_HARD_LIMIT;
-    const canLibrary = node?.randomizer != null;
-    if (!canEmbed && !canLibrary) {
-      state.toast("This randomizer is too big to put in a link, and it is not in your library.");
-      return;
-    }
-
-    let kind                         = canEmbed ? "embedded" : "library";
-    const kinds = h("div", { class: "segmented link-kinds", role: "group", "aria-label": "What the link carries" });
-
-    const refresh = () => {
-      const opts = { roll: rollOnOpen.checked, present: fullScreen.checked };
-      field.value = kind === "embedded" && payload
-        ? wheelLink(base, payload, opts)
-        : slideLink(base, node .randomizer .id, opts);
-      note.textContent = kind === "embedded"
-        ? "The wheel travels inside the link, so it works for anyone who opens the deck, on any machine, with nothing installed. It is a snapshot: editing the wheel afterwards does not change decks you have already made."
-        : "Short, and it follows every edit you make. It points at the randomizer's identity rather than its file name, so renaming it or moving it to another folder will not break the deck — but it only works on a device where this library is stored.";
-      const tooLong = kind === "embedded" && field.value.length > LINK_SOFT_LIMIT;
-      sizeNote.hidden = !tooLong;
-      if (tooLong) {
-        sizeNote.textContent = `This link is ${field.value.length} characters. Slides and PowerPoint will take it, but it is unwieldy to handle;${canLibrary ? " a link to your library would be a few dozen." : " trimming the table would shorten it."}`;
-      }
-      for (const b of kinds.querySelectorAll("button")) {
-        b.setAttribute("aria-pressed", b.dataset.kind === kind ? "true" : "false");
-      }
-    };
-
-    const kindButton = (value                        , label        ) => {
-      const b = button(label, () => { kind = value; refresh(); }, { class: `link-kind-${value}` });
-      b.dataset.kind = value;
-      return b;
-    };
-    setChildren(kinds,
-      canEmbed ? kindButton("embedded", "With the wheel inside") : null,
-      canLibrary ? kindButton("library", "To my library") : null,
-    );
-
-    rollOnOpen.addEventListener("change", refresh);
-    fullScreen.addEventListener("change", refresh);
-    refresh();
-
-    const copied = h("span", { class: "faint" });
-    const dialog = h("dialog", { class: "link-dialog", "aria-label": "Link for a slide" },
-      h("h2", { text: "Link for a slide" }),
-      h("p", { class: "faint", text:
-        `Put this on a shape or an image in Google Slides or PowerPoint. Clicking it during the presentation opens ${randomizer.name} and rolls it; closing the tab returns you to the deck.` }),
-      kinds.children.length > 1 ? kinds : null,
-      field,
-      h("div", { class: "row tight", style: { marginTop: "10px" } },
-        h("label", { class: "row tight" }, rollOnOpen, "Roll as soon as it opens"),
-        h("label", { class: "row tight" }, fullScreen, "Fill the screen"),
-      ),
-      isLinkableBase(base)
-        ? null
-        : h("p", { class: "warning", text:
-            "This copy of Orangey is open from a file rather than a web address, so this link will not work from a slide — browsers refuse to follow a link from a web page to a local file. Open the published copy and make the link there." }),
-      sizeNote,
-      note,
-      h("div", { class: "row", style: { marginTop: "14px" } },
-        button("Copy", async () => {
-          try {
-            await navigator.clipboard.writeText(field.value);
-            copied.textContent = "Copied";
-          } catch {
-            field.select();
-            copied.textContent = "Press Ctrl+C to copy";
-          }
-        }, { class: "primary copy-link" }),
-        copied,
-        h("div", { class: "spacer" }),
-        button("Close", () => dialog.close()),
-      ),
-    );
-    dialog.addEventListener("close", () => dialog.remove());
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    field.select();
-  }
-
-  const linkButton = button("Link…", () => void openLinkDialog(), { class: "ghost link-button" });
+  const linkButton = button("Link…", () => void openLinkDialog(randomizer, node), { class: "ghost link-button" });
   linkButton.hidden = !fixed;
 
   // Switch animation off for now without touching the settings — after the
@@ -9428,20 +9603,19 @@ function createPlayView(
 
   header.append(animateToggle, presentButton, linkButton, exitButton);
 
-  if (params.present) setPresenting(true);
+  if (params.present) present(true);
   if (params.roll) {
     // Wait a frame so the stage is laid out before the animation starts.
     requestAnimationFrame(() => void doRoll());
   }
 
   const onKey = (e               ) => {
-    const target = e.target                      ;
-    const typing = target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    const typing = isTyping(e);
     if (e.key === "Escape") {
       // Mid-roll, Escape means "get to the answer"; otherwise it leaves the
       // full-screen view, which is the only way out on a projector.
-      if (rolling) skip();
-      else if (document.body.classList.contains("presenting")) setPresenting(false);
+      if (roller.rolling) skip();
+      else if (isPresenting()) present(false);
       return;
     }
     if (typing) return;
@@ -9470,7 +9644,7 @@ function createPlayView(
 function describeType(r            )         {
   switch (r.type) {
     case "list":
-      return `${r.items.filter((i) => !i.disabled && i.weight > 0).length} possible outcomes`;
+      return `${r.items.filter(isRollable).length} possible outcomes`;
     case "dice":
       return "Dice";
     case "coin":
@@ -9667,15 +9841,550 @@ function pickRandomizer(opts               )                                   {
       ),
     )                     ;
 
-    dialog.addEventListener("close", () => {
-      finish(null);
-      dialog.remove();
-    });
-    document.body.append(dialog);
+    // Where the keyboard came from, so it goes back there on close.
+    const opener = document.activeElement                      ;
+    dialog.addEventListener("close", () => finish(null));
     render();
-    dialog.showModal();
+    openDialog(dialog, opener);
     search.focus();
   });
+}
+
+// ---- src\ui\storage-actions.ts -----------------------------------
+/**
+ * The things you can do to where the library is kept.
+ *
+ * Both the library's storage badge and the Storage card in Settings offer
+ * these, so they live here rather than in either view. Nothing here draws
+ * anything: each returns whether something changed, and the caller re-renders.
+ */
+
+
+                                                                          
+
+
+
+
+
+
+
+
+
+/** Whether this browser lets the library be a real folder (Chrome and Edge do). */
+function canUseFolder()          {
+  return canPickFolder();
+}
+
+                                                            
+
+/** One sentence about where the library is, for a tooltip or a settings line. */
+function describeStorage(kind        )         {
+  switch (kind) {
+    case "fsa":
+      return "A folder on this computer. The files there are the library, so they are yours to back up, sync or keep in Git.";
+    case "memory":
+      return "Nothing is being saved. This browser gave Orangey no storage, so the library goes when the page closes.";
+    case "idb":
+      return "This browser's own storage (IndexedDB). It survives reloads and works offline, and goes if you clear this site's data.";
+    default:
+      return "This browser's own storage. It survives reloads and works offline, and goes if you clear this site's data.";
+  }
+}
+
+/**
+ * Whether the browser has promised to keep this site's data.
+ *
+ * Without it a browser may evict the library when the disk gets tight. Asking
+ * is a separate step (`askToPersist`) because Firefox prompts for it, and a
+ * permission prompt nobody asked for is worse than the risk.
+ */
+async function isPersisted()                          {
+  try {
+    if (!navigator.storage?.persisted) return null;
+    return await navigator.storage.persisted();
+  } catch {
+    return null;
+  }
+}
+
+async function askToPersist()                          {
+  try {
+    if (!navigator.storage?.persist) return null;
+    return await navigator.storage.persist();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Point the library at a folder on this computer, offering to copy what is
+ * already there into it when the folder is empty.
+ */
+async function useFolder()                   {
+  const backend = await pickFolder().catch(() => null);
+  if (!backend) return false;
+  const previous = state.library;
+  const next = new LibraryService(backend);
+  await next.refresh();
+  if (next.files().length === 0 && previous.files().length > 0) {
+    const copy = await askConfirm(
+      "Copy your library into this folder?",
+      `The folder is empty. Copy the ${previous.files().length} randomizers you have now into it?`,
+      { confirm: "Copy" },
+    );
+    if (copy) {
+      for (const file of previous.files()) {
+        if (!file.randomizer) continue;
+        const folder = parent(file.path);
+        if (folder) await backend.mkdir(folder);
+        await backend.write(file.path, serialize(wrap(file.randomizer)));
+      }
+      // The pictures go too, or every wheel that has one arrives in the new
+      // folder pointing at nothing. They are not in the tree, so they are
+      // copied straight from one backend to the other.
+      const pictures = await previous.backend.list(IMAGE_DIR).catch(() => []);
+      if (pictures.length) await backend.mkdir(IMAGE_DIR);
+      for (const picture of pictures) {
+        if (picture.kind !== "file") continue;
+        const at = `${IMAGE_DIR}/${picture.name}`;
+        await backend.writeBytes(at, await previous.backend.readBytes(at));
+      }
+      await next.refresh();
+    }
+  }
+  state.setLibrary(next);
+  state.folderNeedsPermission = false;
+  void state.savePrefs({ backend: "fsa" });
+  state.toast(`Library is now the folder “${backend.label}”`);
+  return true;
+}
+
+async function stopUsingFolder()                {
+  await forgetFolder();
+  state.toast("Reload to go back to browser storage.");
+}
+
+/**
+ * A copy of a randomizer that carries its pictures inside it.
+ *
+ * A bare .orangey.json has nowhere to put a picture except in itself, so the
+ * outcomes swap their `image` id for the picture inline. That is what makes a
+ * single exported file work on a machine that has never seen this library.
+ */
+async function portableRandomizer(r            )                      {
+  if (r.type !== "list" || !r.items.some((i) => i.image)) return r;
+  const items = await Promise.all(r.items.map(async (item) => {
+    if (!item.image) return item;
+    const { image: _image, ...rest } = item;
+    const inline = await imageDataUrl(item.image);
+    // A picture the store has lost takes the reference with it: an id that
+    // resolves to nothing here will resolve to nothing there either.
+    return inline ? { ...rest, imageData: inline } : rest;
+  }));
+  return { ...r, items };
+}
+
+/**
+ * And the way back in: the pictures a file brought with it go to the store,
+ * and the outcomes go back to naming ids.
+ */
+async function absorbImages(r            )                      {
+  if (r.type !== "list" || !r.items.some((i) => i.imageData)) return r;
+  const items = await Promise.all(r.items.map(async (item) => {
+    if (!item.imageData) return item;
+    const { imageData, ...rest } = item;
+    try {
+      return { ...rest, image: await putImageData(imageData) };
+    } catch {
+      // A picture that cannot be read loses the outcome nothing else: the
+      // wheel still rolls, with one segment short of a picture.
+      return rest;
+    }
+  }));
+  return { ...r, items };
+}
+
+/** Every picture these randomizers point at. */
+function usedImageIds(randomizers              )              {
+  const ids = new Set        ();
+  for (const r of randomizers) {
+    if (r.type !== "list") continue;
+    for (const item of r.items) if (item.image) ids.add(item.image);
+  }
+  return ids;
+}
+
+/**
+ * The pictures for an archive, one entry each.
+ *
+ * An archive has room for files of its own, so it keeps them as pictures
+ * rather than inlining them: the same picture on four wheels is packed once,
+ * and anyone who opens the ZIP finds PNGs they can look at.
+ */
+async function pictureEntries(randomizers              )                      {
+  const entries             = [];
+  for (const id of usedImageIds(randomizers)) {
+    const bytes = await imageBytes(id);
+    if (!bytes) continue;
+    // Its real name, so what comes out of the archive is a file the person's
+    // computer will open rather than a JPEG called .png.
+    const name = (await imageStoredName(id)) ?? `${id}.png`;
+    entries.push({ path: `${IMAGE_DIR}/${name}`, bytes });
+  }
+  return entries;
+}
+
+/**
+ * The files a board needs to work somewhere else: the board itself, and every
+ * randomizer it points at.
+ *
+ * A board refers to randomizers by id rather than carrying copies, so it
+ * travels as an archive: a link can hold one randomizer, not a table's worth.
+ * A reference whose randomizer is gone is reported rather than packed, because
+ * the person receiving it should know what is missing before they open it.
+ */
+function boardBundle(
+  library                ,
+  board                 ,
+)                                                                   {
+  const entries                                   = [];
+  const missing           = [];
+  const boardNode = library.findById(board.id);
+  if (boardNode) entries.push({ path: boardNode.path, text: serialize(wrap(board)) });
+  for (const entry of board.entries) {
+    const node = library.findById(entry.id);
+    if (!node?.randomizer) {
+      missing.push(entry.name);
+      continue;
+    }
+    entries.push({ path: node.path, text: serialize(wrap(node.randomizer)) });
+  }
+  return { entries, missing };
+}
+
+/**
+ * Boards in the library that point at something no longer there.
+ *
+ * Used after importing an archive: someone who is handed a board and opens it
+ * should be told a piece is missing then, not when the board draws a gap.
+ */
+function missingOnBoards(library                )                                        {
+  return library
+    .files()
+    .map((f) => f.randomizer)
+    .filter((r)                       => Boolean(r) && r .type === "board")
+    .map((board) => ({
+      name: board.name,
+      missing: board.entries.filter((e) => !library.findById(e.id)).map((e) => e.name),
+    }))
+    .filter((b) => b.missing.length > 0);
+}
+
+async function exportBoardZip(board                 )                {
+  const { entries, missing } = boardBundle(state.library, board);
+  const packed = board.entries
+    .map((e) => state.library.findById(e.id)?.randomizer)
+    .filter((r)                  => Boolean(r));
+  const zip = await createZip([...entries, ...(await pictureEntries(packed))]);
+  downloadBytes(`${slugify(board.name)}.zip`, zip);
+  const count = `${entries.length} file${entries.length === 1 ? "" : "s"}`;
+  state.toast(
+    missing.length
+      ? `Exported ${count}. Missing from your library: ${missing.join(", ")}.`
+      : `Exported ${count}: the board and everything on it.`,
+  );
+}
+
+/** The whole tree as a ZIP: the backup that works in every browser. */
+async function exportLibraryZip()                {
+  const randomizers = state.library.files().map((f) => f.randomizer).filter((r)                  => Boolean(r));
+  const entries = state.library
+    .files()
+    .filter((f) => f.randomizer)
+    .map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer )) }));
+  const pictures = await pictureEntries(randomizers);
+  const zip = await createZip([...entries, ...pictures]);
+  downloadBytes("orangey-library.zip", zip);
+  state.toast(
+    `Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}` +
+      `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}`,
+  );
+}
+
+// ---- src\ui\views\board.ts ---------------------------------------
+/**
+ * A board: several randomizers on one screen.
+ *
+ * The case is a game master who rolls the same handful of things all evening —
+ * an encounter table, the weather, a treasure wheel — and wants them in front
+ * of them at once rather than swapping between library entries.
+ *
+ * A board points at randomizers by id rather than holding copies, so editing a
+ * table updates every board it is on. The price is that a deleted randomizer
+ * leaves a gap, which the board says plainly instead of quietly shrinking.
+ */
+
+
+                                                            
+
+
+
+
+
+
+
+
+                                       
+
+function createBoardView(node             , params                                        = {})       {
+  const board = node.randomizer                   ;
+  const grid = h("div", { class: "board-grid" });
+  let cells             = [];
+
+  const heading = h("h1", { class: "board-name", text: board.name });
+  const count = h("p", { class: "faint" });
+  const addButton = button("Add…", () => void openPicker(), { class: "ghost add-to-board" });
+  const rollAll = button("Roll all", () => void rollEverything(), {
+    class: "primary roll-all", style: { width: "100%", minHeight: "52px", fontSize: "17px" },
+  });
+  const shareButton = button("Share…", () => openShare(), { class: "ghost share-button" });
+  const exitButton = button("Leave full screen", () => present(false), { class: "leave-presenting" });
+  exitButton.hidden = true;
+  const presentButton = button("Full screen", () => present(!isPresenting()), { class: "ghost present-button" });
+  const present = (on         )       => setPresenting(on, { exitButton, presentButton });
+
+  const recent = createRecentRolls({
+    ids: () => board.entries.map((e) => e.id),
+    scopeName: () => "this board",
+  });
+
+  /** The randomizers this board points at, in order, with the gaps named. */
+  function resolve()                                                                           {
+    return board.entries.map((entry) => ({ entry, randomizer: state.library.findById(entry.id)?.randomizer ?? null }));
+  }
+
+  function render()       {
+    const resolved = resolve();
+    // Cells are rebuilt whenever the board changes, so their handles are
+    // rebound with them rather than tracked.
+    cells = [];
+    setChildren(grid, ...resolved.map(({ entry, randomizer }) => {
+      if (!randomizer) return wrap(entry, createMissingCell(entry.name));
+      const cell = createCell(randomizer);
+      cells.push(cell);
+      return wrap(entry, cell.el);
+    }));
+    grid.classList.toggle("board-empty", resolved.length === 0);
+    count.textContent = resolved.length === 0
+      ? "Nothing on this board yet — press Add to put something on it."
+      : `${resolved.length} randomizer${resolved.length === 1 ? "" : "s"}`;
+    rollAll.disabled = cells.length === 0;
+    built = signature();
+    recent.refresh();
+  }
+
+  function wrap(entry                              , inner             )              {
+    const remove = button("✕", () => void removeEntry(entry.id), { class: "ghost cell-remove", "aria-label": `Take ${entry.name} off the board` });
+    const holder = h("div", { class: "cell-holder", draggable: "true", "data-entry": entry.id }, remove, inner);
+    holder.addEventListener("dragstart", (e) => {
+      (e             ).dataTransfer?.setData("text/orangey-entry", entry.id);
+      holder.classList.add("dragging");
+    });
+    holder.addEventListener("dragend", () => holder.classList.remove("dragging"));
+    holder.addEventListener("dragover", (e) => e.preventDefault());
+    holder.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const moved = (e             ).dataTransfer?.getData("text/orangey-entry");
+      if (moved && moved !== entry.id) void moveEntry(moved, entry.id);
+    });
+    return holder;
+  }
+
+  async function save(next                 )                {
+    Object.assign(board, touch(next));
+    state.library.save(node.path, board);
+    await state.library.flush();
+    render();
+  }
+
+  async function addEntry(r            )                {
+    if (board.entries.some((e) => e.id === r.id)) return;
+    if (board.entries.length >= BOARD_LIMIT) {
+      state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
+      return;
+    }
+    await save({ ...board, entries: [...board.entries, { id: r.id, name: r.name }] });
+  }
+
+  async function removeEntry(id        )                {
+    await save({ ...board, entries: board.entries.filter((e) => e.id !== id) });
+  }
+
+  /** Drop one entry onto another: the dragged one takes the target's place. */
+  async function moveEntry(movedId        , ontoId        )                {
+    const entries = [...board.entries];
+    const from = entries.findIndex((e) => e.id === movedId);
+    const to = entries.findIndex((e) => e.id === ontoId);
+    if (from < 0 || to < 0) return;
+    const [moved] = entries.splice(from, 1);
+    entries.splice(to, 0, moved);
+    await save({ ...board, entries });
+  }
+
+  /**
+   * What goes on the board: anything in the library, or something made here.
+   * A board is usually assembled while thinking about tonight, and half of
+   * what you want does not exist yet.
+   */
+  async function openPicker()                {
+    const picked = await pickRandomizer({
+      title: "Add to the board",
+      taken: () => new Set(board.entries.map((e) => e.id)),
+      allowNew: true,
+      allowLink: true,
+    });
+    if (!picked) return;
+    await addEntry(picked.randomizer);
+    if (picked.fresh) {
+      await state.library.flush();
+      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
+    }
+  }
+
+  /**
+   * Every cell at once, each at its own speed: a board is rolled to get all of
+   * tonight's answers in one go, not to watch a sequence.
+   */
+  async function rollEverything()                {
+    if (cells.some((c) => c.rolling)) {
+      for (const cell of cells) cell.skip();
+      return;
+    }
+    rollAll.textContent = "Skip";
+    await Promise.all(cells.map((cell) => cell.roll()));
+    rollAll.textContent = "Roll all";
+  }
+
+  /**
+   * A board is shared as a file, not inside a link.
+   *
+   * One randomizer fits in an address; a board is several of them, and the
+   * link would outgrow what decks and chat apps carry. The link here opens
+   * this board in the library it is already in — which is what a slide needs —
+   * and the archive is what goes to someone else.
+   */
+  function openShare()       {
+    // Where the keyboard came from, so it goes back there on close.
+    const opener = document.activeElement                      ;
+    const field = h("input", {
+      type: "text", readonly: true, spellcheck: "false",
+      "aria-label": "Link to this board in your library",
+      value: slideLink(appBase(), board.id, { roll: false, present: false }),
+    });
+    const dialog = h("dialog", { class: "share-dialog" },
+      h("h2", { text: "Share this board" }),
+      h("p", { class: "faint", text: "A board points at the randomizers in your library rather than carrying copies, so it travels as a file. The link below opens it on a machine that already has them — your own, for a slide or a bookmark." }),
+      field,
+      h("div", { class: "row" },
+        button("Copy", () => {
+          (field                    ).select();
+          void navigator.clipboard?.writeText((field                    ).value).catch(() => {});
+          state.toast("Link copied");
+        }, { class: "primary copy-link" }),
+        button("Download the board and everything on it", () => {
+          void exportBoardZip(board);
+          (dialog                     ).close();
+        }, { class: "export-board" }),
+        h("span", { class: "spacer" }),
+        button("Close", () => (dialog                     ).close()),
+      ),
+    );
+    openDialog(dialog                     , opener);
+    (field                    ).select();
+  }
+
+
+  const onKey = (e               ) => {
+    if (isTyping(e)) return;
+    if (e.key === "Escape" && isPresenting()) {
+      present(false);
+      return;
+    }
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      void rollEverything();
+    }
+  };
+  document.addEventListener("keydown", onKey);
+
+  // The library tree drags a path as text/plain, so dropping a randomizer from
+  // the sidebar onto the board is the same gesture as dropping it in a folder.
+  grid.addEventListener("dragover", (e) => {
+    if ((e             ).dataTransfer?.types.includes("text/plain")) e.preventDefault();
+  });
+  grid.addEventListener("drop", (e) => {
+    const path = (e             ).dataTransfer?.getData("text/plain");
+    if (!path) return;
+    e.preventDefault();
+    const dropped = state.library.find(path)?.randomizer;
+    if (!dropped) return;
+    if (dropped.type === "board") {
+      state.toast("A board cannot go on a board.");
+      return;
+    }
+    void addEntry(dropped);
+  });
+
+  const el = h("div", { class: "board" },
+    h("div", { class: "row home-bar" },
+      button("← Home", () => navigate("#/"), { class: "ghost home-button" }),
+      h("span", { class: "spacer" }),
+      addButton, shareButton, presentButton, exitButton,
+    ),
+    h("div", { class: "card board-card" },
+      heading,
+      board.description ? h("p", { class: "faint", text: board.description }) : count,
+      board.description ? count : null,
+      grid,
+      rollAll,
+    ),
+    recent.el,
+  );
+
+  /**
+   * What the cells are built from: the entries, and the state of each
+   * randomizer they point at. Rebuilding on every change of state would throw
+   * away the results the cells are showing — including, one frame later, the
+   * result of the roll that caused the change.
+   */
+  function signature()         {
+    return resolve()
+      .map(({ entry, randomizer }) => `${entry.id}:${randomizer ? randomizer.modified : "gone"}`)
+      .join("|");
+  }
+  let built = "";
+  function renderIfChanged()       {
+    if (signature() === built) {
+      recent.refresh();
+      return;
+    }
+    render();
+  }
+
+  // A randomizer edited elsewhere, or deleted, changes what a board shows.
+  const unsubscribe = state.subscribe(() => renderIfChanged(), ["library", "history"]);
+  render();
+  if (params.present) present(true);
+  if (params.roll) requestAnimationFrame(() => void rollEverything());
+
+  return {
+    el,
+    destroy() {
+      document.removeEventListener("keydown", onKey);
+      unsubscribe();
+      if (isPresenting()) present(false);
+    },
+  };
 }
 
 // ---- src\ui\views\library.ts -------------------------------------
@@ -9701,7 +10410,7 @@ function pickRandomizer(opts               )                                   {
 
 
 
-                                        
+                                       
 
 function createLibraryView()       {
   const tree = h("div", { class: "tree-holder" });
@@ -10051,571 +10760,6 @@ function glyphFor(node             )         {
   }
 }
 
-function download(name        , text        , type        )       {
-  downloadBytes(name, new TextEncoder().encode(text), type);
-}
-
-function downloadBytes(name        , bytes            , type = "application/zip")       {
-  const url = URL.createObjectURL(new Blob([bytes            ], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-// ---- src\ui\storage-actions.ts -----------------------------------
-/**
- * The things you can do to where the library is kept.
- *
- * Both the library's storage badge and the Storage card in Settings offer
- * these, so they live here rather than in either view. Nothing here draws
- * anything: each returns whether something changed, and the caller re-renders.
- */
-
-
-                                                                          
-
-
-
-
-
-
-
-
-
-/** Whether this browser lets the library be a real folder (Chrome and Edge do). */
-function canUseFolder()          {
-  return canPickFolder();
-}
-
-                                                            
-
-/** One sentence about where the library is, for a tooltip or a settings line. */
-function describeStorage(kind        )         {
-  switch (kind) {
-    case "fsa":
-      return "A folder on this computer. The files there are the library, so they are yours to back up, sync or keep in Git.";
-    case "memory":
-      return "Nothing is being saved. This browser gave Orangey no storage, so the library goes when the page closes.";
-    case "idb":
-      return "This browser's own storage (IndexedDB). It survives reloads and works offline, and goes if you clear this site's data.";
-    default:
-      return "This browser's own storage. It survives reloads and works offline, and goes if you clear this site's data.";
-  }
-}
-
-/**
- * Whether the browser has promised to keep this site's data.
- *
- * Without it a browser may evict the library when the disk gets tight. Asking
- * is a separate step (`askToPersist`) because Firefox prompts for it, and a
- * permission prompt nobody asked for is worse than the risk.
- */
-async function isPersisted()                          {
-  try {
-    if (!navigator.storage?.persisted) return null;
-    return await navigator.storage.persisted();
-  } catch {
-    return null;
-  }
-}
-
-async function askToPersist()                          {
-  try {
-    if (!navigator.storage?.persist) return null;
-    return await navigator.storage.persist();
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Point the library at a folder on this computer, offering to copy what is
- * already there into it when the folder is empty.
- */
-async function useFolder()                   {
-  const backend = await pickFolder().catch(() => null);
-  if (!backend) return false;
-  const previous = state.library;
-  const next = new LibraryService(backend);
-  await next.refresh();
-  if (next.files().length === 0 && previous.files().length > 0) {
-    const copy = await askConfirm(
-      "Copy your library into this folder?",
-      `The folder is empty. Copy the ${previous.files().length} randomizers you have now into it?`,
-      { confirm: "Copy" },
-    );
-    if (copy) {
-      for (const file of previous.files()) {
-        if (!file.randomizer) continue;
-        const folder = parent(file.path);
-        if (folder) await backend.mkdir(folder);
-        await backend.write(file.path, serialize(wrap(file.randomizer)));
-      }
-      // The pictures go too, or every wheel that has one arrives in the new
-      // folder pointing at nothing. They are not in the tree, so they are
-      // copied straight from one backend to the other.
-      const pictures = await previous.backend.list(IMAGE_DIR).catch(() => []);
-      if (pictures.length) await backend.mkdir(IMAGE_DIR);
-      for (const picture of pictures) {
-        if (picture.kind !== "file") continue;
-        const at = `${IMAGE_DIR}/${picture.name}`;
-        await backend.writeBytes(at, await previous.backend.readBytes(at));
-      }
-      await next.refresh();
-    }
-  }
-  state.setLibrary(next);
-  state.folderNeedsPermission = false;
-  void state.savePrefs({ backend: "fsa" });
-  state.toast(`Library is now the folder “${backend.label}”`);
-  return true;
-}
-
-async function stopUsingFolder()                {
-  await forgetFolder();
-  state.toast("Reload to go back to browser storage.");
-}
-
-/**
- * A copy of a randomizer that carries its pictures inside it.
- *
- * A bare .orangey.json has nowhere to put a picture except in itself, so the
- * outcomes swap their `image` id for the picture inline. That is what makes a
- * single exported file work on a machine that has never seen this library.
- */
-async function portableRandomizer(r            )                      {
-  if (r.type !== "list" || !r.items.some((i) => i.image)) return r;
-  const items = await Promise.all(r.items.map(async (item) => {
-    if (!item.image) return item;
-    const { image: _image, ...rest } = item;
-    const inline = await imageDataUrl(item.image);
-    // A picture the store has lost takes the reference with it: an id that
-    // resolves to nothing here will resolve to nothing there either.
-    return inline ? { ...rest, imageData: inline } : rest;
-  }));
-  return { ...r, items };
-}
-
-/**
- * And the way back in: the pictures a file brought with it go to the store,
- * and the outcomes go back to naming ids.
- */
-async function absorbImages(r            )                      {
-  if (r.type !== "list" || !r.items.some((i) => i.imageData)) return r;
-  const items = await Promise.all(r.items.map(async (item) => {
-    if (!item.imageData) return item;
-    const { imageData, ...rest } = item;
-    try {
-      return { ...rest, image: await putImageData(imageData) };
-    } catch {
-      // A picture that cannot be read loses the outcome nothing else: the
-      // wheel still rolls, with one segment short of a picture.
-      return rest;
-    }
-  }));
-  return { ...r, items };
-}
-
-/** Every picture these randomizers point at. */
-function usedImageIds(randomizers              )              {
-  const ids = new Set        ();
-  for (const r of randomizers) {
-    if (r.type !== "list") continue;
-    for (const item of r.items) if (item.image) ids.add(item.image);
-  }
-  return ids;
-}
-
-/**
- * The pictures for an archive, one entry each.
- *
- * An archive has room for files of its own, so it keeps them as pictures
- * rather than inlining them: the same picture on four wheels is packed once,
- * and anyone who opens the ZIP finds PNGs they can look at.
- */
-async function pictureEntries(randomizers              )                      {
-  const entries             = [];
-  for (const id of usedImageIds(randomizers)) {
-    const bytes = await imageBytes(id);
-    if (!bytes) continue;
-    // Its real name, so what comes out of the archive is a file the person's
-    // computer will open rather than a JPEG called .png.
-    const name = (await imageStoredName(id)) ?? `${id}.png`;
-    entries.push({ path: `${IMAGE_DIR}/${name}`, bytes });
-  }
-  return entries;
-}
-
-/**
- * The files a board needs to work somewhere else: the board itself, and every
- * randomizer it points at.
- *
- * A board refers to randomizers by id rather than carrying copies, so it
- * travels as an archive: a link can hold one randomizer, not a table's worth.
- * A reference whose randomizer is gone is reported rather than packed, because
- * the person receiving it should know what is missing before they open it.
- */
-function boardBundle(
-  library                ,
-  board                 ,
-)                                                                   {
-  const entries                                   = [];
-  const missing           = [];
-  const boardNode = library.findById(board.id);
-  if (boardNode) entries.push({ path: boardNode.path, text: serialize(wrap(board)) });
-  for (const entry of board.entries) {
-    const node = library.findById(entry.id);
-    if (!node?.randomizer) {
-      missing.push(entry.name);
-      continue;
-    }
-    entries.push({ path: node.path, text: serialize(wrap(node.randomizer)) });
-  }
-  return { entries, missing };
-}
-
-/**
- * Boards in the library that point at something no longer there.
- *
- * Used after importing an archive: someone who is handed a board and opens it
- * should be told a piece is missing then, not when the board draws a gap.
- */
-function missingOnBoards(library                )                                        {
-  return library
-    .files()
-    .map((f) => f.randomizer)
-    .filter((r)                       => Boolean(r) && r .type === "board")
-    .map((board) => ({
-      name: board.name,
-      missing: board.entries.filter((e) => !library.findById(e.id)).map((e) => e.name),
-    }))
-    .filter((b) => b.missing.length > 0);
-}
-
-async function exportBoardZip(board                 )                {
-  const { entries, missing } = boardBundle(state.library, board);
-  const packed = board.entries
-    .map((e) => state.library.findById(e.id)?.randomizer)
-    .filter((r)                  => Boolean(r));
-  const zip = await createZip([...entries, ...(await pictureEntries(packed))]);
-  downloadBytes(`${slugify(board.name)}.zip`, zip);
-  const count = `${entries.length} file${entries.length === 1 ? "" : "s"}`;
-  state.toast(
-    missing.length
-      ? `Exported ${count}. Missing from your library: ${missing.join(", ")}.`
-      : `Exported ${count}: the board and everything on it.`,
-  );
-}
-
-/** The whole tree as a ZIP: the backup that works in every browser. */
-async function exportLibraryZip()                {
-  const randomizers = state.library.files().map((f) => f.randomizer).filter((r)                  => Boolean(r));
-  const entries = state.library
-    .files()
-    .filter((f) => f.randomizer)
-    .map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer )) }));
-  const pictures = await pictureEntries(randomizers);
-  const zip = await createZip([...entries, ...pictures]);
-  downloadBytes("orangey-library.zip", zip);
-  state.toast(
-    `Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}` +
-      `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}`,
-  );
-}
-
-// ---- src\ui\views\board.ts ---------------------------------------
-/**
- * A board: several randomizers on one screen.
- *
- * The case is a game master who rolls the same handful of things all evening —
- * an encounter table, the weather, a treasure wheel — and wants them in front
- * of them at once rather than swapping between library entries.
- *
- * A board points at randomizers by id rather than holding copies, so editing a
- * table updates every board it is on. The price is that a deleted randomizer
- * leaves a gap, which the board says plainly instead of quietly shrinking.
- */
-
-
-                                                            
-
-
-
-
-
-
-
-                                        
-
-function createBoardView(node             , params                                        = {})       {
-  const board = node.randomizer                   ;
-  const grid = h("div", { class: "board-grid" });
-  let cells             = [];
-
-  const heading = h("h1", { class: "board-name", text: board.name });
-  const count = h("p", { class: "faint" });
-  const addButton = button("Add…", () => void openPicker(), { class: "ghost add-to-board" });
-  const rollAll = button("Roll all", () => void rollEverything(), {
-    class: "primary roll-all", style: { width: "100%", minHeight: "52px", fontSize: "17px" },
-  });
-  const shareButton = button("Share…", () => openShare(), { class: "ghost share-button" });
-  const exitButton = button("Leave full screen", () => setPresenting(false), { class: "leave-presenting" });
-  exitButton.hidden = true;
-  const presentButton = button("Full screen", () => setPresenting(!presenting()), { class: "ghost present-button" });
-
-  const recent = createRecentRolls({
-    ids: () => board.entries.map((e) => e.id),
-    scopeName: () => "this board",
-  });
-
-  /** The randomizers this board points at, in order, with the gaps named. */
-  function resolve()                                                                           {
-    return board.entries.map((entry) => ({ entry, randomizer: state.library.findById(entry.id)?.randomizer ?? null }));
-  }
-
-  function render()       {
-    const resolved = resolve();
-    // Cells are rebuilt whenever the board changes, so their handles are
-    // rebound with them rather than tracked.
-    cells = [];
-    setChildren(grid, ...resolved.map(({ entry, randomizer }) => {
-      if (!randomizer) return wrap(entry, createMissingCell(entry.name));
-      const cell = createCell(randomizer);
-      cells.push(cell);
-      return wrap(entry, cell.el);
-    }));
-    grid.classList.toggle("board-empty", resolved.length === 0);
-    count.textContent = resolved.length === 0
-      ? "Nothing on this board yet — press Add to put something on it."
-      : `${resolved.length} randomizer${resolved.length === 1 ? "" : "s"}`;
-    rollAll.disabled = cells.length === 0;
-    built = signature();
-    recent.refresh();
-  }
-
-  function wrap(entry                              , inner             )              {
-    const remove = button("✕", () => void removeEntry(entry.id), { class: "ghost cell-remove", "aria-label": `Take ${entry.name} off the board` });
-    const holder = h("div", { class: "cell-holder", draggable: "true", "data-entry": entry.id }, remove, inner);
-    holder.addEventListener("dragstart", (e) => {
-      (e             ).dataTransfer?.setData("text/orangey-entry", entry.id);
-      holder.classList.add("dragging");
-    });
-    holder.addEventListener("dragend", () => holder.classList.remove("dragging"));
-    holder.addEventListener("dragover", (e) => e.preventDefault());
-    holder.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const moved = (e             ).dataTransfer?.getData("text/orangey-entry");
-      if (moved && moved !== entry.id) void moveEntry(moved, entry.id);
-    });
-    return holder;
-  }
-
-  async function save(next                 )                {
-    Object.assign(board, touch(next));
-    state.library.save(node.path, board);
-    await state.library.flush();
-    render();
-  }
-
-  async function addEntry(r            )                {
-    if (board.entries.some((e) => e.id === r.id)) return;
-    if (board.entries.length >= BOARD_LIMIT) {
-      state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
-      return;
-    }
-    await save({ ...board, entries: [...board.entries, { id: r.id, name: r.name }] });
-  }
-
-  async function removeEntry(id        )                {
-    await save({ ...board, entries: board.entries.filter((e) => e.id !== id) });
-  }
-
-  /** Drop one entry onto another: the dragged one takes the target's place. */
-  async function moveEntry(movedId        , ontoId        )                {
-    const entries = [...board.entries];
-    const from = entries.findIndex((e) => e.id === movedId);
-    const to = entries.findIndex((e) => e.id === ontoId);
-    if (from < 0 || to < 0) return;
-    const [moved] = entries.splice(from, 1);
-    entries.splice(to, 0, moved);
-    await save({ ...board, entries });
-  }
-
-  /**
-   * What goes on the board: anything in the library, or something made here.
-   * A board is usually assembled while thinking about tonight, and half of
-   * what you want does not exist yet.
-   */
-  async function openPicker()                {
-    const picked = await pickRandomizer({
-      title: "Add to the board",
-      taken: () => new Set(board.entries.map((e) => e.id)),
-      allowNew: true,
-      allowLink: true,
-    });
-    if (!picked) return;
-    await addEntry(picked.randomizer);
-    if (picked.fresh) {
-      await state.library.flush();
-      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
-    }
-  }
-
-  /**
-   * Every cell at once, each at its own speed: a board is rolled to get all of
-   * tonight's answers in one go, not to watch a sequence.
-   */
-  async function rollEverything()                {
-    if (cells.some((c) => c.rolling)) {
-      for (const cell of cells) cell.skip();
-      return;
-    }
-    rollAll.textContent = "Skip";
-    await Promise.all(cells.map((cell) => cell.roll()));
-    rollAll.textContent = "Roll all";
-  }
-
-  /**
-   * A board is shared as a file, not inside a link.
-   *
-   * One randomizer fits in an address; a board is several of them, and the
-   * link would outgrow what decks and chat apps carry. The link here opens
-   * this board in the library it is already in — which is what a slide needs —
-   * and the archive is what goes to someone else.
-   */
-  function openShare()       {
-    const field = h("input", {
-      type: "text", readonly: true, spellcheck: "false",
-      "aria-label": "Link to this board in your library",
-      value: slideLink(appBase(), board.id, { roll: false, present: false }),
-    });
-    const dialog = h("dialog", { class: "share-dialog" },
-      h("h2", { text: "Share this board" }),
-      h("p", { class: "faint", text: "A board points at the randomizers in your library rather than carrying copies, so it travels as a file. The link below opens it on a machine that already has them — your own, for a slide or a bookmark." }),
-      field,
-      h("div", { class: "row" },
-        button("Copy", () => {
-          (field                    ).select();
-          void navigator.clipboard?.writeText((field                    ).value).catch(() => {});
-          state.toast("Link copied");
-        }, { class: "primary copy-link" }),
-        button("Download the board and everything on it", () => {
-          void exportBoardZip(board);
-          (dialog                     ).close();
-        }, { class: "export-board" }),
-        h("span", { class: "spacer" }),
-        button("Close", () => (dialog                     ).close()),
-      ),
-    );
-    document.body.append(dialog);
-    dialog.addEventListener("close", () => dialog.remove());
-    (dialog                     ).showModal();
-    (field                    ).select();
-  }
-
-  function presenting()          {
-    return document.body.classList.contains("presenting");
-  }
-
-  function setPresenting(on         )       {
-    document.body.classList.toggle("presenting", on);
-    exitButton.hidden = !on;
-    presentButton.textContent = on ? "Leave full screen" : "Full screen";
-    if (on && document.documentElement.requestFullscreen) {
-      void document.documentElement.requestFullscreen().catch(() => {});
-    } else if (!on && document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
-  }
-
-  const onKey = (e               ) => {
-    const target = e.target                      ;
-    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-    if (e.key === "Escape" && presenting()) {
-      setPresenting(false);
-      return;
-    }
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      void rollEverything();
-    }
-  };
-  document.addEventListener("keydown", onKey);
-
-  // The library tree drags a path as text/plain, so dropping a randomizer from
-  // the sidebar onto the board is the same gesture as dropping it in a folder.
-  grid.addEventListener("dragover", (e) => {
-    if ((e             ).dataTransfer?.types.includes("text/plain")) e.preventDefault();
-  });
-  grid.addEventListener("drop", (e) => {
-    const path = (e             ).dataTransfer?.getData("text/plain");
-    if (!path) return;
-    e.preventDefault();
-    const dropped = state.library.find(path)?.randomizer;
-    if (!dropped) return;
-    if (dropped.type === "board") {
-      state.toast("A board cannot go on a board.");
-      return;
-    }
-    void addEntry(dropped);
-  });
-
-  const el = h("div", { class: "board" },
-    h("div", { class: "row home-bar" },
-      button("← Home", () => navigate("#/"), { class: "ghost home-button" }),
-      h("span", { class: "spacer" }),
-      addButton, shareButton, presentButton, exitButton,
-    ),
-    h("div", { class: "card board-card" },
-      heading,
-      board.description ? h("p", { class: "faint", text: board.description }) : count,
-      board.description ? count : null,
-      grid,
-      rollAll,
-    ),
-    recent.el,
-  );
-
-  /**
-   * What the cells are built from: the entries, and the state of each
-   * randomizer they point at. Rebuilding on every change of state would throw
-   * away the results the cells are showing — including, one frame later, the
-   * result of the roll that caused the change.
-   */
-  function signature()         {
-    return resolve()
-      .map(({ entry, randomizer }) => `${entry.id}:${randomizer ? randomizer.modified : "gone"}`)
-      .join("|");
-  }
-  let built = "";
-  function renderIfChanged()       {
-    if (signature() === built) {
-      recent.refresh();
-      return;
-    }
-    render();
-  }
-
-  // A randomizer edited elsewhere, or deleted, changes what a board shows.
-  const unsubscribe = state.subscribe(() => renderIfChanged(), ["library", "history"]);
-  render();
-  if (params.present) setPresenting(true);
-  if (params.roll) requestAnimationFrame(() => void rollEverything());
-
-  return {
-    el,
-    destroy() {
-      document.removeEventListener("keydown", onKey);
-      unsubscribe();
-      if (presenting()) setPresenting(false);
-    },
-  };
-}
-
 // ---- src\model\draft.ts ------------------------------------------
 /**
  * Is this draft one the app could read back?
@@ -10801,7 +10945,7 @@ function openSwatchPicker(anchor             , opts                     )       
         save();
       }
     });
-    addRow = h("div", { class: "field swatch-add", style: { marginTop: "12px" } },
+    addRow = h("div", { class: "field swatch-add gap-m" },
       h("span", { class: "field-label", text: "Add to my colours" }),
       h("div", { class: "row tight" }, colourInput, nameInput, button("Save", save, { class: "swatch-add-save" })),
       full ? h("span", { class: "field-hint", text: `You have ${MAX_CUSTOM_COLOURS} already; remove one in Settings to add another.` }) : null,
@@ -10814,12 +10958,12 @@ function openSwatchPicker(anchor             , opts                     )       
     h("h2", { text: "Colour" }),
     nameOut,
     grid,
-    h("div", { class: "row hex-row", style: { marginTop: "12px" } },
+    h("div", { class: "row hex-row gap-m" },
       hexInput,
       button("Use", apply, { class: "primary" }),
     ),
     addRow,
-    h("div", { class: "row", style: { marginTop: "12px" } },
+    h("div", { class: "row gap-m" },
       button("Back to automatic", () => {
         opts.onPick(null);
         dialog.close();
@@ -10829,12 +10973,7 @@ function openSwatchPicker(anchor             , opts                     )       
     ),
   );
 
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    anchor.focus();
-  });
-  document.body.appendChild(dialog);
-  dialog.showModal();
+  openDialog(dialog, anchor);
   (grid.querySelector("button")                      )?.focus();
 }
 
@@ -11109,7 +11248,9 @@ function sectionFor(type        )                                               
                                                                                                                        
 
 
+                                       
                                                             
+
 
 
 
@@ -11168,11 +11309,6 @@ function feelCard(get                  , set                                    
   render();
   return card;
 }
-
-                       
-                  
-                   
- 
 
 function createEditorView(node             )       {
   const randomizer = node.randomizer ;
@@ -11292,7 +11428,7 @@ function createListEditor(node             , initial                )       {
 
   const tbody = h("tbody");
   const footer = h("div", { class: "faint" });
-  const bulkBar = h("div", { class: "row tight", style: { marginTop: "8px" } });
+  const bulkBar = h("div", { class: "row tight gap-s" });
 
   const filterInput = h("input", { type: "search", placeholder: "Filter outcomes", "aria-label": "Filter outcomes" });
   filterInput.addEventListener("input", () => {
@@ -11735,21 +11871,22 @@ function createListEditor(node             , initial                )       {
 
   // ---- try it --------------------------------------------------------------
 
+  // A preview, not a roll: `live: false` keeps it out of history and says
+  // nothing to Orangey, because trying out a wheel you are building is not
+  // the table rolling it.
+  const previewRoller = createRoller({
+    randomizer: () => model,
+    result,
+    wheel: () => (model.view === "wheel" ? wheel : null),
+    feel: () => effectiveFeel(state.prefs.feel, model.feel),
+    live: false,
+  });
+
   async function rollNow()                {
     // The labels change as they are typed, so the preview re-reserves its
     // height on every try rather than once at the start.
     result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null });
-    const problem = whyCannotRoll(model);
-    if (problem) {
-      result.clear(problem);
-      return;
-    }
-    const outcome = rollRandomizer(model, state.source());
-    if (model.view === "wheel" && outcome.itemIndex !== undefined) {
-      result.pending();
-      await wheel.spinTo(outcome.itemIndex, effectiveFeel(state.prefs.feel, model.feel));
-    }
-    result.show(outcome);
+    await previewRoller.roll();
   }
 
   const feel = feelCard(
@@ -11796,7 +11933,7 @@ function createListEditor(node             , initial                )       {
         h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
-        h("div", { style: { marginTop: "8px" } }, footer),
+        h("div", { class: "gap-s" }, footer),
       ),
       h("div", {},
         h("div", { class: "card" },
@@ -12473,7 +12610,7 @@ function itemsFromJson(text        )               {
 
 
 
-                                        
+                                       
 
 function createImportView(initialText = "")       {
   let text = initialText;
@@ -12631,7 +12768,7 @@ function createImportView(initialText = "")       {
           h("div", { class: line.level }, `${line.level === "ok" ? "✓" : line.level === "warn" ? "⚠" : "✗"} ${line.text}`)),
       ),
       rows.length
-        ? h("table", { class: "outcomes", style: { marginTop: "12px" } },
+        ? h("table", { class: "outcomes gap-m" },
             h("thead", {}, h("tr", {}, h("th", { text: "Outcome" }), h("th", { text: "Weight" }), h("th", { text: "Description" }))),
             h("tbody", {},
               ...rows.map((item) =>
@@ -12642,7 +12779,7 @@ function createImportView(initialText = "")       {
             ),
           )
         : null,
-      h("div", { class: "row", style: { marginTop: "14px" } },
+      h("div", { class: "row gap-l" },
         h("label", { class: "field", style: { flex: "1" } }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Folder" }), folderSelect),
       ),
@@ -12730,15 +12867,14 @@ function createImportView(initialText = "")       {
       const dialog = h("dialog", { "aria-label": "Already in the library" },
         h("h2", { text: "Already in the library" }),
         h("p", { text: `“${path}” exists. What should happen to it?` }),
-        h("div", { class: "row tight", style: { marginTop: "14px" } },
+        h("div", { class: "row tight gap-l" },
           button("Replace", () => done("replace"), { class: "danger" }),
           button("Keep both", () => done("keep-both"), { class: "primary" }),
           button("Skip", () => done("skip")),
         ),
       );
-      dialog.addEventListener("close", () => { done("skip"); dialog.remove(); });
-      document.body.appendChild(dialog);
-      dialog.showModal();
+      dialog.addEventListener("close", () => done("skip"));
+      openDialog(dialog);
     });
   }
 
@@ -12795,7 +12931,7 @@ function createImportView(initialText = "")       {
     h("h2", { text: "Import" }),
     h("p", { class: "faint", text: "Paste a table of outcomes, or drop a file anywhere on this page: a spreadsheet export (commas, semicolons, tabs, pipes and aligned columns all work), a .orangey.json randomizer, or a library ZIP." }),
     textarea,
-    h("div", { class: "row", style: { marginTop: "8px" } },
+    h("div", { class: "row gap-s" },
       button("Read it", analyse, { class: "primary" }),
       button("Clear", () => {
         textarea.value = "";
@@ -12885,7 +13021,7 @@ async function absorbArchive(entries            )                               
 
 
 
-                                        
+                                       
 
 /**
  * The history as a spreadsheet. A struck roll is exported like any other,
@@ -12982,6 +13118,12 @@ function createHistoryView()       {
     download("orangey-history.txt", `${text}\n`, "text/plain");
   }
 
+  async function clearAll()                {
+    if (await askConfirm("Clear the history", "Clear the whole history?", { confirm: "Clear", danger: true })) {
+      void state.clearHistory();
+    }
+  }
+
   const el = h("div", {},
     h("div", { class: "card" },
       h("div", { class: "row" },
@@ -12989,9 +13131,7 @@ function createHistoryView()       {
         h("div", { class: "spacer" }),
         button("Export CSV", () => void exportCsv(), { class: "ghost" }),
         button("Export text", () => void exportText(), { class: "ghost" }),
-        button("Clear", () => {
-          if (confirm("Clear the whole history?")) void state.clearHistory();
-        }, { class: "ghost danger" }),
+        button("Clear", () => void clearAll(), { class: "ghost danger" }),
       ),
       summary,
       list,
@@ -14111,7 +14251,8 @@ function releasesUrl()         {
 
 
 
-                                        
+
+                                       
 
 const PREVIEW_ITEMS = ["Goblin patrol", "Merchant", "Wolf pack", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
 
@@ -14242,7 +14383,7 @@ function createSettingsView()       {
           checkbox(f.haptics, (v) => setFeel({ haptics: v })),
           "Vibrate on a result (where the device supports it)",
         ),
-        h("label", { class: "field", style: { marginTop: "12px" } },
+        h("label", { class: "field gap-m" },
           h("span", { class: "field-label", text: "Seed" }),
           seedInput(),
           h("span", { class: "field-hint", text: "Set a seed and everyone using it sees the same sequence of rolls. Leave it empty for ordinary random rolls." }),
@@ -14320,7 +14461,7 @@ function createSettingsView()       {
               )),
           )
         : h("p", { class: "faint", text: "None yet." }),
-      h("div", { class: "row tight add-colour-row", style: { marginTop: "8px" } },
+      h("div", { class: "row tight add-colour-row gap-s" },
         colourInput,
         nameInput,
         button("Add", add, { class: "add-colour", disabled: full ? "" : null }),
@@ -14742,6 +14883,7 @@ class MascotHost {
 
 
 
+                                      
 
 
 
@@ -14901,49 +15043,61 @@ function mountApp(root             )             {
     back.hidden = route.name === "play" || route.name === "randomizer" || route.name === "byId" || route.name === "linked";
   }
 
-  function missingId(id        )       {
+  /**
+   * A card that explains why there is nothing to roll.
+   *
+   * Three near-identical copies of this had already drifted apart — only two
+   * of them gave Orangey somewhere to stand. `play-card` and `broken-link`
+   * are what the browser tests select on, so they stay.
+   */
+  function explainCard(opts                                                                                )       {
     return {
-      el: h("div", { class: "card play-card" },
-        h("h1", { text: "Not in this library" }),
-        h("p", { class: "faint", text:
-          "This link points at a randomizer that is not stored in this browser. Links to your own library only work on a device where you keep that library — ask whoever made the deck to send you the file, or import it here." }),
-        h("p", { class: "faint", text: `Its identifier is ${id}.` }),
-        h("div", { class: "row" },
-          button("Open the library", () => navigate("#/library"), { class: "primary" }),
-          h("div", { class: "spacer" }),
-          h("div", { class: "mascot-slot mascot-slot-inline" }),
-        ),
+      el: h("div", { class: `card${opts.extraClass ? ` ${opts.extraClass}` : ""}` },
+        h("h1", { text: opts.title }),
+        ...opts.paragraphs.map((text) => h("p", { class: "faint", text })),
+        opts.mascot
+          ? h("div", { class: "row" },
+              button("Open the library", () => navigate("#/library"), { class: "primary" }),
+              h("div", { class: "spacer" }),
+              h("div", { class: "mascot-slot mascot-slot-inline" }),
+            )
+          : button("Open the library", () => navigate("#/library"), { class: "primary" }),
       ),
     };
+  }
+
+  function missingId(id        )       {
+    return explainCard({
+      title: "Not in this library",
+      paragraphs: [
+        "This link points at a randomizer that is not stored in this browser. Links to your own library only work on a device where you keep that library — ask whoever made the deck to send you the file, or import it here.",
+        `Its identifier is ${id}.`,
+      ],
+      extraClass: "play-card",
+      mascot: true,
+    });
   }
 
   function brokenLink(error         )       {
     const why = error instanceof ValidationError
       ? error.issues.map((i) => i.message).join("; ")
       : (error         ).message;
-    return {
-      el: h("div", { class: "card play-card broken-link" },
-        h("h1", { text: "This link did not survive the trip" }),
-        h("p", { class: "faint", text:
-          "The wheel is meant to travel inside the link itself, and this one arrived damaged — usually a line break or a truncation somewhere between the deck and here." }),
-        h("p", { class: "faint", text: why }),
-        h("div", { class: "row" },
-          button("Open the library", () => navigate("#/library"), { class: "primary" }),
-          h("div", { class: "spacer" }),
-          h("div", { class: "mascot-slot mascot-slot-inline" }),
-        ),
-      ),
-    };
+    return explainCard({
+      title: "This link did not survive the trip",
+      paragraphs: [
+        "The wheel is meant to travel inside the link itself, and this one arrived damaged — usually a line break or a truncation somewhere between the deck and here.",
+        why,
+      ],
+      extraClass: "play-card broken-link",
+      mascot: true,
+    });
   }
 
   function missing(path        )       {
-    return {
-      el: h("div", { class: "card" },
-        h("h1", { text: "Not here any more" }),
-        h("p", { class: "faint", text: `Nothing was found at ${path}.` }),
-        button("Open the library", () => navigate("#/library"), { class: "primary" }),
-      ),
-    };
+    return explainCard({
+      title: "Not here any more",
+      paragraphs: [`Nothing was found at ${path}.`],
+    });
   }
 
   function renderTabs(route       )       {
@@ -15007,6 +15161,8 @@ function mountApp(root             )             {
   }
 
   function showShortcuts()       {
+    // Where the keyboard came from, so it goes back there on close.
+    const opener = document.activeElement                      ;
     const dialog = h("dialog", { "aria-label": "Keyboard shortcuts" },
       h("h2", { text: "Keyboard shortcuts" }),
       h("table", {},
@@ -15015,17 +15171,13 @@ function mountApp(root             )             {
             h("tr", {}, h("td", { style: { paddingRight: "16px" } }, h("kbd", { text: keys })), h("td", { text: what }))),
         ),
       ),
-      button("Close", () => dialog.close(), { class: "primary", style: { marginTop: "12px" } }),
+      button("Close", () => dialog.close(), { class: "primary gap-m" }),
     );
-    dialog.addEventListener("close", () => dialog.remove());
-    document.body.appendChild(dialog);
-    dialog.showModal();
+    openDialog(dialog, opener);
   }
 
   document.addEventListener("keydown", (e) => {
-    const target = e.target                      ;
-    const typing = target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-    if (typing) return;
+    if (isTyping(e)) return;
     if (e.key === "?") {
       e.preventDefault();
       showShortcuts();

@@ -25,7 +25,6 @@ export interface HistoryEntry {
 }
 
 export interface Prefs {
-  theme: "system" | "light" | "dark";
   feel: FeelSettings;
   seed: string | null;
   lastPath: string | null;

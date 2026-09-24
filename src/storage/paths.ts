@@ -34,13 +34,6 @@ export function sanitizeName(name: string): string {
     .slice(0, 80);
 }
 
-export function nameError(name: string): string | null {
-  const clean = sanitizeName(name);
-  if (clean === "") return "Give it a name";
-  if (clean !== name.trim()) return null; // silently cleaned, not an error
-  return null;
-}
-
 /** Natural sort: "Chapter 2" before "Chapter 10" (decision D11). */
 export function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });

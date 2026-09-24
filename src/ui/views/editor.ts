@@ -11,6 +11,7 @@ import { displayPercents, isRollable } from "../../core/weighted.ts";
 import type { CoinRandomizer, ListItem, ListRandomizer, OutcomeReaction, Randomizer } from "../../model/randomizer.ts";
 import { makeItem, newId } from "../../model/randomizer.ts";
 import { draftProblem } from "../../model/draft.ts";
+import type { View } from "../view.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { button, h, iconButton, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
@@ -21,7 +22,8 @@ import { pictureCell } from "../components/picture.ts";
 import { pickRandomizer } from "../components/picker.ts";
 import { pruneImages } from "../../storage/images.ts";
 import { usedImageIds } from "../storage-actions.ts";
-import { longestOutcome, rollRandomizer, whyCannotRoll } from "../roll.ts";
+import { longestOutcome } from "../roll.ts";
+import { createRoller } from "../rolling.ts";
 import { createResultPanel } from "../components/result.ts";
 import { navigate } from "../router.ts";
 import { effectiveFeel, normalizeOverride, type FeelOverride } from "../feel.ts";
@@ -69,11 +71,6 @@ function feelCard(get: () => Randomizer, set: (feel: FeelOverride | undefined) =
   };
   render();
   return card;
-}
-
-export interface View {
-  el: HTMLElement;
-  destroy?(): void;
 }
 
 export function createEditorView(node: LibraryNode): View {
@@ -194,7 +191,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   const tbody = h("tbody");
   const footer = h("div", { class: "faint" });
-  const bulkBar = h("div", { class: "row tight", style: { marginTop: "8px" } });
+  const bulkBar = h("div", { class: "row tight gap-s" });
 
   const filterInput = h("input", { type: "search", placeholder: "Filter outcomes", "aria-label": "Filter outcomes" });
   filterInput.addEventListener("input", () => {
@@ -637,21 +634,22 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   // ---- try it --------------------------------------------------------------
 
+  // A preview, not a roll: `live: false` keeps it out of history and says
+  // nothing to Orangey, because trying out a wheel you are building is not
+  // the table rolling it.
+  const previewRoller = createRoller({
+    randomizer: () => model,
+    result,
+    wheel: () => (model.view === "wheel" ? wheel : null),
+    feel: () => effectiveFeel(state.prefs.feel, model.feel),
+    live: false,
+  });
+
   async function rollNow(): Promise<void> {
     // The labels change as they are typed, so the preview re-reserves its
     // height on every try rather than once at the start.
     result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null });
-    const problem = whyCannotRoll(model);
-    if (problem) {
-      result.clear(problem);
-      return;
-    }
-    const outcome = rollRandomizer(model, state.source());
-    if (model.view === "wheel" && outcome.itemIndex !== undefined) {
-      result.pending();
-      await wheel.spinTo(outcome.itemIndex, effectiveFeel(state.prefs.feel, model.feel));
-    }
-    result.show(outcome);
+    await previewRoller.roll();
   }
 
   const feel = feelCard(
@@ -698,7 +696,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
         h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
-        h("div", { style: { marginTop: "8px" } }, footer),
+        h("div", { class: "gap-s" }, footer),
       ),
       h("div", {},
         h("div", { class: "card" },

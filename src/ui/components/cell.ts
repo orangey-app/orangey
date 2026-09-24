@@ -7,15 +7,16 @@
  * cells rather than once per cell.
  */
 
-import type { Randomizer } from "../../model/randomizer.ts";
+import type { Randomizer, Rollable } from "../../model/randomizer.ts";
 import { h } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "./wheel.ts";
-import { createCoin, createDiceTray } from "./dice.ts";
+import { createDiceTray } from "./dice.ts";
+import { createCoin } from "./coin.ts";
 import { createResultPanel } from "./result.ts";
-import { longestOutcome, rollRandomizer, whyCannotRoll, type Outcome } from "../roll.ts";
-import { summarize } from "../mascot/events.ts";
-import { effectiveFeel, motionScale } from "../feel.ts";
+import { longestOutcome } from "../roll.ts";
+import { createRoller } from "../rolling.ts";
+import { effectiveFeel } from "../feel.ts";
 
 export interface CellView {
   el: HTMLElement;
@@ -28,7 +29,6 @@ export interface CellView {
 }
 
 export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void } = {}): CellView {
-  let rolling = false;
   const result = createResultPanel("Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
@@ -39,7 +39,7 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
     wheel = createWheel({
       items: () => (randomizer as Extract<Randomizer, { type: "list" }>).items,
       id: () => randomizer.id,
-      onActivate: () => void roll(),
+      onActivate: () => void roller.roll(),
       size: 260,
     });
     stage.append(wheel.el);
@@ -52,53 +52,16 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
-  async function roll(): Promise<void> {
-    if (rolling) {
-      skip();
-      return;
-    }
-    const problem = whyCannotRoll(randomizer);
-    if (problem) {
-      result.clear(problem);
-      state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
-      return;
-    }
-    let outcome: Outcome;
-    try {
-      outcome = rollRandomizer(randomizer, state.source());
-    } catch (e) {
-      result.clear((e as Error).message);
-      return;
-    }
-    const feel = feelNow();
-    const animated =
-      motionScale(feel.motion) !== 0 &&
-      ((randomizer.type === "list" && wheel !== null && outcome.itemIndex !== undefined) ||
-        (randomizer.type === "dice" && outcome.dice !== undefined) ||
-        randomizer.type === "coin");
-
-    rolling = true;
-    opts.onRoll?.();
-    if (animated) result.pending();
-    else result.show(outcome);
-
-    if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) await wheel.spinTo(outcome.itemIndex, feel);
-    else if (randomizer.type === "dice" && outcome.dice) await tray.show(outcome.dice, feel);
-    else if (randomizer.type === "coin") await coin.show(outcome.text, feel);
-
-    if (animated) result.show(outcome);
-    // The landing, as on the play screen: the answer, the announcement and
-    // Orangey's reaction all happen together, never at the start.
-    state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
-    rolling = false;
-    void state.record(randomizer, outcome);
-  }
-
-  function skip(): void {
-    wheel?.skip();
-    tray.skip();
-    coin.skip();
-  }
+  const roller = createRoller({
+    randomizer: () => randomizer as Rollable,
+    result,
+    wheel: () => wheel,
+    tray,
+    coin,
+    feel: feelNow,
+    live: true,
+    onStart: () => opts.onRoll?.(),
+  });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
     h("h3", { class: "cell-name", text: randomizer.name }),
@@ -108,9 +71,9 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
 
   return {
     el,
-    roll,
-    skip,
-    get rolling() { return rolling; },
+    roll: () => roller.roll(),
+    skip: () => roller.skip(),
+    get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },
   };
 }

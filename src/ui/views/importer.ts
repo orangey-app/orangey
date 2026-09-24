@@ -18,10 +18,10 @@ import { IMAGE_DIR } from "../../storage/library.ts";
 import { imageIdFromName, restoreImage } from "../../storage/images.ts";
 import { basename } from "../../storage/paths.ts";
 import { absorbImages, missingOnBoards } from "../storage-actions.ts";
-import { appendChildren, button, h, setChildren } from "../dom.ts";
+import { appendChildren, button, h, openDialog, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { navigate } from "../router.ts";
-import type { View } from "./editor.ts";
+import type { View } from "../view.ts";
 
 export function createImportView(initialText = ""): View {
   let text = initialText;
@@ -179,7 +179,7 @@ export function createImportView(initialText = ""): View {
           h("div", { class: line.level }, `${line.level === "ok" ? "✓" : line.level === "warn" ? "⚠" : "✗"} ${line.text}`)),
       ),
       rows.length
-        ? h("table", { class: "outcomes", style: { marginTop: "12px" } },
+        ? h("table", { class: "outcomes gap-m" },
             h("thead", {}, h("tr", {}, h("th", { text: "Outcome" }), h("th", { text: "Weight" }), h("th", { text: "Description" }))),
             h("tbody", {},
               ...rows.map((item) =>
@@ -190,7 +190,7 @@ export function createImportView(initialText = ""): View {
             ),
           )
         : null,
-      h("div", { class: "row", style: { marginTop: "14px" } },
+      h("div", { class: "row gap-l" },
         h("label", { class: "field", style: { flex: "1" } }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Folder" }), folderSelect),
       ),
@@ -278,15 +278,14 @@ export function createImportView(initialText = ""): View {
       const dialog = h("dialog", { "aria-label": "Already in the library" },
         h("h2", { text: "Already in the library" }),
         h("p", { text: `“${path}” exists. What should happen to it?` }),
-        h("div", { class: "row tight", style: { marginTop: "14px" } },
+        h("div", { class: "row tight gap-l" },
           button("Replace", () => done("replace"), { class: "danger" }),
           button("Keep both", () => done("keep-both"), { class: "primary" }),
           button("Skip", () => done("skip")),
         ),
       );
-      dialog.addEventListener("close", () => { done("skip"); dialog.remove(); });
-      document.body.appendChild(dialog);
-      dialog.showModal();
+      dialog.addEventListener("close", () => done("skip"));
+      openDialog(dialog);
     });
   }
 
@@ -343,7 +342,7 @@ export function createImportView(initialText = ""): View {
     h("h2", { text: "Import" }),
     h("p", { class: "faint", text: "Paste a table of outcomes, or drop a file anywhere on this page: a spreadsheet export (commas, semicolons, tabs, pipes and aligned columns all work), a .orangey.json randomizer, or a library ZIP." }),
     textarea,
-    h("div", { class: "row", style: { marginTop: "8px" } },
+    h("div", { class: "row gap-s" },
       button("Read it", analyse, { class: "primary" }),
       button("Clear", () => {
         textarea.value = "";

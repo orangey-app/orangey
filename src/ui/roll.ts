@@ -8,11 +8,11 @@
  */
 
 import { flip } from "../core/coin.ts";
-import { rollDice } from "../core/dice/evaluate.ts";
+import { expressionBounds, rollDice } from "../core/dice/evaluate.ts";
 import { formatResult, speakResult } from "../core/dice/format.ts";
 import { drawNumbers, formatNumbers } from "../core/number.ts";
-import { SeededSource, type RandomSource } from "../core/rng.ts";
-import { pickWeightedIndex } from "../core/weighted.ts";
+import { type RandomSource } from "../core/rng.ts";
+import { isRollable, pickWeightedIndex } from "../core/weighted.ts";
 import type { ListRandomizer, OutcomeReaction, Randomizer } from "../model/randomizer.ts";
 import type { RollResult } from "../core/dice/evaluate.ts";
 
@@ -109,7 +109,7 @@ export function whyCannotRoll(r: Randomizer): string | null {
   if (r.type === "board") return r.entries.length ? null : "This board has nothing on it yet.";
   if (r.type !== "list") return null;
   if (r.items.length === 0) return "This randomizer has no outcomes yet.";
-  if (!r.items.some((i) => !i.disabled && i.weight > 0)) {
+  if (!r.items.some(isRollable)) {
     return "No outcomes can come up: they are all disabled or weigh nothing.";
   }
   return null;
@@ -143,11 +143,9 @@ export function longestOutcome(r: Randomizer): string {
       // Each cell on a board sizes its own panel from its own randomizer.
       return "";
     case "dice": {
-      // The bounds come from the expression, so one throwaway roll on its own
-      // source tells us them without touching the app's sequence or history.
       try {
-        const result = rollDice(r.expression, new SeededSource("fit"));
-        return longest([String(result.min), String(result.max)]);
+        const bounds = expressionBounds(r.expression);
+        return longest([String(bounds.min), String(bounds.max)]);
       } catch {
         return r.expression;
       }

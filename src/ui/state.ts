@@ -66,7 +66,6 @@ export interface Toast {
 }
 
 export const DEFAULT_PREFS: Prefs = {
-  theme: "system",
   feel: DEFAULT_FEEL,
   seed: null,
   lastPath: null,
@@ -191,7 +190,6 @@ class AppState {
 
   applyTheme(): void {
     const root = document.documentElement;
-    root.removeAttribute("data-theme");
     if (!this.prefs.scheme || this.prefs.scheme === "system") root.removeAttribute("data-scheme");
     else root.setAttribute("data-scheme", this.prefs.scheme);
   }

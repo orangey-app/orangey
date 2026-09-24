@@ -12,14 +12,15 @@
 
 import { BOARD_LIMIT, touch, type BoardRandomizer, type Randomizer } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
-import { button, h, setChildren } from "../dom.ts";
+import { button, h, isTyping, openDialog, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
+import { isPresenting, setPresenting } from "../presenting.ts";
 import { createCell, createMissingCell, type CellView } from "../components/cell.ts";
 import { createRecentRolls } from "../components/recent.ts";
 import { pickRandomizer } from "../components/picker.ts";
 import { exportBoardZip } from "../storage-actions.ts";
 import { appBase, navigate, slideLink } from "../router.ts";
-import type { View } from "./editor.ts";
+import type { View } from "../view.ts";
 
 export function createBoardView(node: LibraryNode, params: { roll?: boolean; present?: boolean } = {}): View {
   const board = node.randomizer as BoardRandomizer;
@@ -33,9 +34,10 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     class: "primary roll-all", style: { width: "100%", minHeight: "52px", fontSize: "17px" },
   });
   const shareButton = button("Share…", () => openShare(), { class: "ghost share-button" });
-  const exitButton = button("Leave full screen", () => setPresenting(false), { class: "leave-presenting" });
+  const exitButton = button("Leave full screen", () => present(false), { class: "leave-presenting" });
   exitButton.hidden = true;
-  const presentButton = button("Full screen", () => setPresenting(!presenting()), { class: "ghost present-button" });
+  const presentButton = button("Full screen", () => present(!isPresenting()), { class: "ghost present-button" });
+  const present = (on: boolean): void => setPresenting(on, { exitButton, presentButton });
 
   const recent = createRecentRolls({
     ids: () => board.entries.map((e) => e.id),
@@ -158,6 +160,8 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
    * and the archive is what goes to someone else.
    */
   function openShare(): void {
+    // Where the keyboard came from, so it goes back there on close.
+    const opener = document.activeElement as HTMLElement | null;
     const field = h("input", {
       type: "text", readonly: true, spellcheck: "false",
       "aria-label": "Link to this board in your library",
@@ -181,32 +185,15 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
         button("Close", () => (dialog as HTMLDialogElement).close()),
       ),
     );
-    document.body.append(dialog);
-    dialog.addEventListener("close", () => dialog.remove());
-    (dialog as HTMLDialogElement).showModal();
+    openDialog(dialog as HTMLDialogElement, opener);
     (field as HTMLInputElement).select();
   }
 
-  function presenting(): boolean {
-    return document.body.classList.contains("presenting");
-  }
-
-  function setPresenting(on: boolean): void {
-    document.body.classList.toggle("presenting", on);
-    exitButton.hidden = !on;
-    presentButton.textContent = on ? "Leave full screen" : "Full screen";
-    if (on && document.documentElement.requestFullscreen) {
-      void document.documentElement.requestFullscreen().catch(() => {});
-    } else if (!on && document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
-  }
 
   const onKey = (e: KeyboardEvent) => {
-    const target = e.target as HTMLElement | null;
-    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-    if (e.key === "Escape" && presenting()) {
-      setPresenting(false);
+    if (isTyping(e)) return;
+    if (e.key === "Escape" && isPresenting()) {
+      present(false);
       return;
     }
     if (e.key === " " || e.key === "Enter") {
@@ -273,7 +260,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   // A randomizer edited elsewhere, or deleted, changes what a board shows.
   const unsubscribe = state.subscribe(() => renderIfChanged(), ["library", "history"]);
   render();
-  if (params.present) setPresenting(true);
+  if (params.present) present(true);
   if (params.roll) requestAnimationFrame(() => void rollEverything());
 
   return {
@@ -281,7 +268,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     destroy() {
       document.removeEventListener("keydown", onKey);
       unsubscribe();
-      if (presenting()) setPresenting(false);
+      if (isPresenting()) present(false);
     },
   };
 }

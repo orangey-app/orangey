@@ -25,6 +25,28 @@ export function crc32(bytes: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
+/**
+ * Bytes to base64 and back.
+ *
+ * Here rather than anywhere else because both users — a link and a picture —
+ * already import this module for `deflate`. The chunking matters: spreading a
+ * whole picture into `fromCharCode` overflows the call stack.
+ */
+export function base64FromBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+export function bytesFromBase64(text: string): Uint8Array {
+  const binary = atob(text);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
 /** Shared with the link encoder: method 8 is deflated, 0 is stored as-is. */
 export async function deflate(bytes: Uint8Array): Promise<{ data: Uint8Array; method: number }> {
   const CS = (globalThis as { CompressionStream?: typeof CompressionStream }).CompressionStream;

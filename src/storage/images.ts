@@ -17,6 +17,7 @@
  */
 
 import { IMAGE_DIR, type LibraryBackend } from "./library.ts";
+import { base64FromBytes, bytesFromBase64 } from "./zip.ts";
 import { newId } from "../model/randomizer.ts";
 
 /**
@@ -123,22 +124,6 @@ function imageMediaType(bytes: Uint8Array): string {
   if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
   if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return "image/webp";
   return "image/png";
-}
-
-function base64FromBytes(bytes: Uint8Array): string {
-  let binary = "";
-  // In chunks: spreading a whole picture into fromCharCode overflows the stack.
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
-function bytesFromBase64(text: string): Uint8Array {
-  const binary = atob(text);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
 }
 
 /** Keep a picture. The id it returns is what an outcome carries. */

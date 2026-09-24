@@ -143,6 +143,11 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 
 .row { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; }
 .row.tight { gap: 6px; }
+/* Space above a block, so a view does not have to carry a style object for
+   it. Three sizes is all the app actually used across seventeen copies. */
+.gap-s { margin-top: 8px; }
+.gap-m { margin-top: 12px; }
+.gap-l { margin-top: 14px; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); font-size: 13px; }

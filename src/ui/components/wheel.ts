@@ -15,6 +15,7 @@
  */
 
 import { assignColors, toCandidate, type ColorCandidate } from "../../core/palette-assign.ts";
+import { isRollable } from "../../core/weighted.ts";
 import { labelFor } from "../../core/color.ts";
 import {
   arcPath,
@@ -100,7 +101,7 @@ export function createWheel(opts: WheelOptions): WheelView {
   let cancelSpin: (() => void) | null = null;
 
   const mode = (): "wheel" | "unlabelled" | "ticker" => {
-    const n = opts.items().filter((i) => !i.disabled && i.weight > 0).length;
+    const n = opts.items().filter(isRollable).length;
     return n > TICKER_LIMIT ? "ticker" : n > LABEL_LIMIT ? "unlabelled" : "wheel";
   };
 
@@ -261,7 +262,7 @@ export function createWheel(opts: WheelOptions): WheelView {
   }
 
   function renderTicker(): HTMLElement {
-    const items = opts.items().filter((i) => !i.disabled && i.weight > 0);
+    const items = opts.items().filter(isRollable);
     tickerStrip = h(
       "div",
       { class: "ticker-strip" },
@@ -279,6 +280,36 @@ export function createWheel(opts: WheelOptions): WheelView {
 
   function applyRotation(): void {
     if (rotor) rotor.setAttribute("transform", `rotate(${rotation % 360} ${cx} ${cy})`);
+  }
+
+  /**
+   * Run an animation, and hand back the way to cut it short.
+   *
+   * The wheel and the ticker travel differently but wait the same way: a
+   * frame loop, a `skip` that jumps to the end, and exactly one settle
+   * whichever of the two gets there first. `onDone` runs once.
+   */
+  function animate(durationMs: number, onFrame: (t: number) => void, onDone: () => void): Promise<void> {
+    const started = performance.now();
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        onDone();
+        cancelSpin = null;
+        resolve();
+      };
+      cancelSpin = finish;
+      const step = (now: number) => {
+        if (done) return;
+        const t = Math.min(1, (now - started) / durationMs);
+        onFrame(t);
+        if (t >= 1) finish();
+        else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   function spinTo(index: number, feel: FeelSettings): Promise<void> {
@@ -304,34 +335,23 @@ export function createWheel(opts: WheelOptions): WheelView {
     // The roll-back is a random share of the maximum, in degrees, expressed as
     // a fraction of this particular spin rather than of a nominal one.
     const overshoot = overshootFraction(settleForSpin(feel), delta);
-    const started = performance.now();
 
-    return new Promise<void>((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        rotation = plan.rotation;
-        applyRotation();
-        cancelSpin = null;
-        resolve();
-      };
-      cancelSpin = finish;
-      const step = (now: number) => {
-        if (done) return;
-        const t = Math.min(1, (now - started) / duration);
+    return animate(
+      duration,
+      (t) => {
         rotation = from + delta * easeSpin(t, feel, overshoot);
         applyRotation();
-        if (t >= 1) finish();
-        else requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    });
+      },
+      () => {
+        rotation = plan.rotation;
+        applyRotation();
+      },
+    );
   }
 
   function spinTicker(index: number, feel: FeelSettings): Promise<void> {
     const items = opts.items();
-    const live = items.map((it, i) => ({ it, i })).filter(({ it }) => !it.disabled && it.weight > 0);
+    const live = items.map((it, i) => ({ it, i })).filter(({ it }) => isRollable(it));
     const position = Math.max(0, live.findIndex(({ i }) => i === index));
     // Must match `.ticker-row` in app.css.
     const rowHeight = 46;
@@ -360,26 +380,15 @@ export function createWheel(opts: WheelOptions): WheelView {
     }
     const from = -(rows.length * rowHeight);
     const overshoot = overshootFraction(settleForSpin(feel), Math.abs(target - from));
-    const started = performance.now();
-    return new Promise<void>((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        strip.style.transform = `translateY(${target}px)`;
-        cancelSpin = null;
-        resolve();
-      };
-      cancelSpin = finish;
-      const step = (now: number) => {
-        if (done) return;
-        const t = Math.min(1, (now - started) / duration);
+    return animate(
+      duration,
+      (t) => {
         strip.style.transform = `translateY(${from + (target - from) * easeSpin(t, feel, overshoot)}px)`;
-        if (t >= 1) finish();
-        else requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    });
+      },
+      () => {
+        strip.style.transform = `translateY(${target}px)`;
+      },
+    );
   }
 
   refresh();

@@ -13,7 +13,7 @@
 import { emptyRandomizer, type Randomizer, type RollableType } from "../../model/randomizer.ts";
 import { decodeRandomizer } from "../../model/link.ts";
 import type { LibraryNode } from "../../storage/library.ts";
-import { askText, button, h, setChildren } from "../dom.ts";
+import { askText, button, h, openDialog, setChildren } from "../dom.ts";
 import { state } from "./../state.ts";
 
 export interface PickedRandomizer {
@@ -182,13 +182,11 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
       ),
     ) as HTMLDialogElement;
 
-    dialog.addEventListener("close", () => {
-      finish(null);
-      dialog.remove();
-    });
-    document.body.append(dialog);
+    // Where the keyboard came from, so it goes back there on close.
+    const opener = document.activeElement as HTMLElement | null;
+    dialog.addEventListener("close", () => finish(null));
     render();
-    dialog.showModal();
+    openDialog(dialog, opener);
     search.focus();
   });
 }

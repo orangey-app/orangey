@@ -17,10 +17,10 @@ import { basename, parent } from "../../storage/paths.ts";
 import { regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
 import { LibraryService } from "../../storage/library.ts";
 import { canUseFolder, describeStorage, exportBoardZip, exportLibraryZip, portableRandomizer, stopUsingFolder, useFolder } from "../storage-actions.ts";
-import { askConfirm, askFolder, askText, button, h, iconButton, openMenu, setChildren, type MenuItem } from "../dom.ts";
+import { askConfirm, askFolder, askText, button, download, h, iconButton, openMenu, setChildren, type MenuItem } from "../dom.ts";
 import { state } from "../state.ts";
 import { appBase, navigate, slideLink } from "../router.ts";
-import type { View } from "./editor.ts";
+import type { View } from "../view.ts";
 
 export function createLibraryView(): View {
   const tree = h("div", { class: "tree-holder" });
@@ -370,17 +370,3 @@ function glyphFor(node: LibraryNode): string {
   }
 }
 
-export function download(name: string, text: string, type: string): void {
-  downloadBytes(name, new TextEncoder().encode(text), type);
-}
-
-export function downloadBytes(name: string, bytes: Uint8Array, type = "application/zip"): void {
-  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}

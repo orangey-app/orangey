@@ -37,7 +37,7 @@ export interface RollResult {
   /** Theoretical bounds, for tests and for "natural 20" style highlighting. */
   min: number;
   max: number;
-  /** True when every kept die on a single-die term showed its maximum. */
+  /** True when every kept die in the whole roll showed its highest face. */
   isMaximum: boolean;
   isMinimum: boolean;
   seed?: string;
@@ -75,6 +75,30 @@ function boundsOf(node: Node): { min: number; max: number } {
   let n = node.count;
   if (node.keep) n = node.keep.mode[0] === "k" ? node.keep.n : node.count - node.keep.n;
   return { min: n, max: n * node.sides };
+}
+
+/**
+ * The lowest and highest an expression can come to, without rolling it.
+ *
+ * Reserving the result panel's height needs the widest number that can turn
+ * up, which used to be found by rolling the expression once on a throwaway
+ * seeded source and reading the bounds off the result. That worked, but it
+ * meant a roll happened to answer a layout question.
+ */
+export function expressionBounds(input: string): { min: number; max: number } {
+  let min = 0;
+  let max = 0;
+  for (const t of parse(input).terms) {
+    const b = boundsOf(t.node);
+    if (t.sign > 0) {
+      min += b.min;
+      max += b.max;
+    } else {
+      min -= b.max;
+      max -= b.min;
+    }
+  }
+  return { min, max };
 }
 
 export function evaluate(expr: Expression, rng: RandomSource, input = expr.normalized): RollResult {

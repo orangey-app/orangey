@@ -19,7 +19,7 @@
  * in.
  */
 
-import { deflate, inflate } from "../storage/zip.ts";
+import { base64FromBytes, bytesFromBase64, deflate, inflate } from "../storage/zip.ts";
 import { newId, nowIso, validateRandomizer, type ListItem, type Randomizer } from "./randomizer.ts";
 import { Check, ValidationError } from "./validate.ts";
 
@@ -42,21 +42,14 @@ export const LINK_HARD_LIMIT = 8000;
 const linkEncoder = new TextEncoder();
 const linkDecoder = new TextDecoder();
 
+/** Plain base64 with the three characters a URL would mangle swapped out. */
 function toBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  // In chunks: spreading a large array into fromCharCode overflows the stack.
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return base64FromBytes(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function fromBase64Url(text: string): Uint8Array {
   const padded = text.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
+  return bytesFromBase64(padded + "=".repeat((4 - (padded.length % 4)) % 4));
 }
 
 /** The randomizer as it travels: no timestamps, no outcome ids. */

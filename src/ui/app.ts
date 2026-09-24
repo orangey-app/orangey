@@ -2,14 +2,15 @@
  * The shell: layout, routing, the tab bar, toasts and global shortcuts.
  */
 
-import { button, h, setChildren } from "./dom.ts";
+import { button, h, isTyping, openDialog, setChildren } from "./dom.ts";
 import { state } from "./state.ts";
 import { backTarget, currentRoute, navigate, type Route } from "./router.ts";
 import { isBoard } from "../model/randomizer.ts";
 import { createPlayView } from "./views/play.ts";
 import { createBoardView } from "./views/board.ts";
 import { createLibraryView } from "./views/library.ts";
-import { createEditorView, type View } from "./views/editor.ts";
+import { createEditorView } from "./views/editor.ts";
+import type { View } from "./view.ts";
 import { createImportView } from "./views/importer.ts";
 import { createHistoryView } from "./views/history.ts";
 import { createSettingsView } from "./views/settings.ts";
@@ -169,49 +170,61 @@ export function mountApp(root: HTMLElement): MascotHost {
     back.hidden = route.name === "play" || route.name === "randomizer" || route.name === "byId" || route.name === "linked";
   }
 
-  function missingId(id: string): View {
+  /**
+   * A card that explains why there is nothing to roll.
+   *
+   * Three near-identical copies of this had already drifted apart — only two
+   * of them gave Orangey somewhere to stand. `play-card` and `broken-link`
+   * are what the browser tests select on, so they stay.
+   */
+  function explainCard(opts: { title: string; paragraphs: string[]; extraClass?: string; mascot?: boolean }): View {
     return {
-      el: h("div", { class: "card play-card" },
-        h("h1", { text: "Not in this library" }),
-        h("p", { class: "faint", text:
-          "This link points at a randomizer that is not stored in this browser. Links to your own library only work on a device where you keep that library — ask whoever made the deck to send you the file, or import it here." }),
-        h("p", { class: "faint", text: `Its identifier is ${id}.` }),
-        h("div", { class: "row" },
-          button("Open the library", () => navigate("#/library"), { class: "primary" }),
-          h("div", { class: "spacer" }),
-          h("div", { class: "mascot-slot mascot-slot-inline" }),
-        ),
+      el: h("div", { class: `card${opts.extraClass ? ` ${opts.extraClass}` : ""}` },
+        h("h1", { text: opts.title }),
+        ...opts.paragraphs.map((text) => h("p", { class: "faint", text })),
+        opts.mascot
+          ? h("div", { class: "row" },
+              button("Open the library", () => navigate("#/library"), { class: "primary" }),
+              h("div", { class: "spacer" }),
+              h("div", { class: "mascot-slot mascot-slot-inline" }),
+            )
+          : button("Open the library", () => navigate("#/library"), { class: "primary" }),
       ),
     };
+  }
+
+  function missingId(id: string): View {
+    return explainCard({
+      title: "Not in this library",
+      paragraphs: [
+        "This link points at a randomizer that is not stored in this browser. Links to your own library only work on a device where you keep that library — ask whoever made the deck to send you the file, or import it here.",
+        `Its identifier is ${id}.`,
+      ],
+      extraClass: "play-card",
+      mascot: true,
+    });
   }
 
   function brokenLink(error: unknown): View {
     const why = error instanceof ValidationError
       ? error.issues.map((i) => i.message).join("; ")
       : (error as Error).message;
-    return {
-      el: h("div", { class: "card play-card broken-link" },
-        h("h1", { text: "This link did not survive the trip" }),
-        h("p", { class: "faint", text:
-          "The wheel is meant to travel inside the link itself, and this one arrived damaged — usually a line break or a truncation somewhere between the deck and here." }),
-        h("p", { class: "faint", text: why }),
-        h("div", { class: "row" },
-          button("Open the library", () => navigate("#/library"), { class: "primary" }),
-          h("div", { class: "spacer" }),
-          h("div", { class: "mascot-slot mascot-slot-inline" }),
-        ),
-      ),
-    };
+    return explainCard({
+      title: "This link did not survive the trip",
+      paragraphs: [
+        "The wheel is meant to travel inside the link itself, and this one arrived damaged — usually a line break or a truncation somewhere between the deck and here.",
+        why,
+      ],
+      extraClass: "play-card broken-link",
+      mascot: true,
+    });
   }
 
   function missing(path: string): View {
-    return {
-      el: h("div", { class: "card" },
-        h("h1", { text: "Not here any more" }),
-        h("p", { class: "faint", text: `Nothing was found at ${path}.` }),
-        button("Open the library", () => navigate("#/library"), { class: "primary" }),
-      ),
-    };
+    return explainCard({
+      title: "Not here any more",
+      paragraphs: [`Nothing was found at ${path}.`],
+    });
   }
 
   function renderTabs(route: Route): void {
@@ -275,6 +288,8 @@ export function mountApp(root: HTMLElement): MascotHost {
   }
 
   function showShortcuts(): void {
+    // Where the keyboard came from, so it goes back there on close.
+    const opener = document.activeElement as HTMLElement | null;
     const dialog = h("dialog", { "aria-label": "Keyboard shortcuts" },
       h("h2", { text: "Keyboard shortcuts" }),
       h("table", {},
@@ -283,17 +298,13 @@ export function mountApp(root: HTMLElement): MascotHost {
             h("tr", {}, h("td", { style: { paddingRight: "16px" } }, h("kbd", { text: keys })), h("td", { text: what }))),
         ),
       ),
-      button("Close", () => dialog.close(), { class: "primary", style: { marginTop: "12px" } }),
+      button("Close", () => dialog.close(), { class: "primary gap-m" }),
     );
-    dialog.addEventListener("close", () => dialog.remove());
-    document.body.appendChild(dialog);
-    dialog.showModal();
+    openDialog(dialog, opener);
   }
 
   document.addEventListener("keydown", (e) => {
-    const target = e.target as HTMLElement | null;
-    const typing = target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-    if (typing) return;
+    if (isTyping(e)) return;
     if (e.key === "?") {
       e.preventDefault();
       showShortcuts();

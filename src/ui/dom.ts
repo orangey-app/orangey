@@ -163,7 +163,48 @@ export function formatWhen(at: number): string {
  * them, which the browser's built-ins do not.
  */
 
-function openDialog(dialog: HTMLDialogElement, opener?: HTMLElement | null): void {
+/**
+ * Is the keystroke going into a field?
+ *
+ * A shortcut must not fire while somebody is typing a label: Space rolls,
+ * but Space in a text field is a space.
+ */
+/**
+ * Hand the browser a file to save.
+ *
+ * In `dom.ts` rather than in the library view, which is where it grew: the
+ * settings, the history and the archive exports all wanted it, and the
+ * library view importing the archive code that imported it back was the one
+ * circular import in the program.
+ */
+export function download(name: string, text: string, type: string): void {
+  downloadBytes(name, new TextEncoder().encode(text), type);
+}
+
+export function downloadBytes(name: string, bytes: Uint8Array, type = "application/zip"): void {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function isTyping(e: Event): boolean {
+  const target = e.target as HTMLElement | null;
+  return !!target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+/**
+ * Show a modal, and give the keyboard back where it came from.
+ *
+ * Every dialog goes through this. A dialog that returns focus to nothing
+ * leaves a keyboard user at the top of the document, which is how a
+ * hand-built one differs from these without anyone noticing.
+ */
+export function openDialog(dialog: HTMLDialogElement, opener?: HTMLElement | null): void {
   dialog.addEventListener("close", () => {
     dialog.remove();
     opener?.focus();
@@ -190,7 +231,7 @@ export function askText(
       h("form", { method: "dialog", onsubmit: (e: Event) => { e.preventDefault(); done(input.value.trim() || null); } },
         h("h2", { text: title }),
         opts.label ? h("label", { class: "field" }, h("span", { class: "field-label", text: opts.label }), input) : input,
-        h("div", { class: "row", style: { marginTop: "14px" } },
+        h("div", { class: "row gap-l" },
           h("div", { class: "spacer" }),
           button("Cancel", () => done(null), { type: "button" }),
           h("button", { type: "submit", class: "primary" }, opts.confirm ?? "OK"),
@@ -222,7 +263,7 @@ export function askConfirm(
     const dialog = h("dialog", { "aria-label": title },
       h("h2", { text: title }),
       h("p", { text }),
-      h("div", { class: "row", style: { marginTop: "14px" } },
+      h("div", { class: "row gap-l" },
         h("div", { class: "spacer" }),
         button("Cancel", () => done(false)),
         ok,
@@ -330,7 +371,7 @@ export function askFolder(
     const dialog = h("dialog", { "aria-label": title },
       h("h2", { text: title }),
       list,
-      h("div", { class: "row", style: { marginTop: "14px" } },
+      h("div", { class: "row gap-l" },
         h("div", { class: "spacer" }),
         button("Cancel", () => done(null)),
         button("Move here", () => done(chosen), { class: "primary" }),

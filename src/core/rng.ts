@@ -5,8 +5,11 @@
  *   - CryptoSource  wraps crypto.getRandomValues; not reproducible, the default.
  *   - SeededSource  xoshiro128** driven by a string seed; reproducible, opt-in.
  *
- * Both produce unbiased integers by rejection sampling. Nothing else in the
- * codebase may call Math.random or crypto directly.
+ * Both produce unbiased integers by rejection sampling. Every result that
+ * reaches an outcome comes from one of these and from nothing else.
+ * `Math.random` is allowed for cosmetics only — the scatter of a wheel's
+ * labels, the axes a die tumbles about — and never for anything a person
+ * reads as the answer.
  */
 
 export interface RandomSource {
@@ -88,8 +91,15 @@ export class CryptoSource implements RandomSource {
   }
 }
 
-/** FNV-1a over the UTF-8 bytes of a string, as two 32-bit halves. */
-export function fnv1a64(s: string): [number, number] {
+/**
+ * A string seed as two 32-bit words, to start the generator from.
+ *
+ * FNV-1a in the first half only; the second is a different mixing constant
+ * over the same bytes, so the pair is not one hash cut in two. It is a seed
+ * expander, not a hash function — do not use it for anything that needs
+ * collision resistance.
+ */
+export function seedHash64(s: string): [number, number] {
   const bytes = new TextEncoder().encode(s);
   let h1 = 0x811c9dc5 | 0;
   let h2 = 0x01000193 | 0;
@@ -102,7 +112,7 @@ export function fnv1a64(s: string): [number, number] {
 
 /** A small stable hash for non-cryptographic use (wheel colour rotation, C8.3). */
 export function hash32(s: string): number {
-  return fnv1a64(s)[0];
+  return seedHash64(s)[0];
 }
 
 function splitmix32(seed: number): () => number {
@@ -128,7 +138,7 @@ export class SeededSource implements RandomSource {
 
   constructor(seed: string) {
     this.seed = seed;
-    const [h1, h2] = fnv1a64(seed);
+    const [h1, h2] = seedHash64(seed);
     const mix = splitmix32(h1 ^ Math.imul(h2, 0x2545f491));
     this.#s = new Uint32Array([mix(), mix(), mix(), mix()]);
     if ((this.#s[0] | this.#s[1] | this.#s[2] | this.#s[3]) === 0) this.#s[0] = 1;

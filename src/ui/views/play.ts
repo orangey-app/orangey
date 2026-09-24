@@ -7,23 +7,25 @@
  * home, so that a stray press cannot swap out what the table is rolling.
  */
 
-import { emptyRandomizer, newId, type Randomizer } from "../../model/randomizer.ts";
+import { emptyRandomizer, newId, type Randomizer, type Rollable } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
-import { button, h, setChildren } from "../dom.ts";
+import { button, h, isTyping, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
-import { createCoin, createDiceTray } from "../components/dice.ts";
+import { createDiceTray } from "../components/dice.ts";
+import { createCoin } from "../components/coin.ts";
 import { createResultPanel } from "../components/result.ts";
 import { createRecentRolls } from "../components/recent.ts";
 import { createChainRow } from "../components/chain.ts";
-import { longestOutcome, rollRandomizer, whyCannotRoll, type Outcome } from "../roll.ts";
-import { summarize } from "../mascot/events.ts";
-import { effectiveFeel, motionScale } from "../feel.ts";
-import { appBase, isLinkableBase, navigate, slideLink, wheelLink, type LinkParams } from "../router.ts";
-import { LINK_HARD_LIMIT, LINK_SOFT_LIMIT, encodeRandomizer } from "../../model/link.ts";
-import type { View } from "./editor.ts";
-import { displayPercents } from "../../core/weighted.ts";
+import { longestOutcome } from "../roll.ts";
+import { createRoller } from "../rolling.ts";
+import { openLinkDialog } from "../components/linkdialog.ts";
+import { isPresenting, setPresenting } from "../presenting.ts";
+import { effectiveFeel } from "../feel.ts";
+import { navigate, type LinkParams } from "../router.ts";
+import type { View } from "../view.ts";
+import { displayPercents, isRollable } from "../../core/weighted.ts";
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
 
@@ -37,7 +39,6 @@ export function createPlayView(
   linked: Randomizer | null = null,
 ): View {
   let randomizer: Randomizer = node?.randomizer ?? linked ?? adHocDice("d20");
-  let rolling = false;
   /** Opened from the library or from a link: either way, one fixed randomizer. */
   const fixed = node !== null || linked !== null;
 
@@ -92,67 +93,27 @@ export function createPlayView(
   /** The settings this roll uses: global, this randomizer's own, and the play-time switch. */
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
-  async function doRoll(): Promise<void> {
-    if (rolling) {
-      skip();
-      return;
-    }
-    const problem = whyCannotRoll(randomizer);
-    if (problem) {
-      result.clear(problem);
-      state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
-      return;
-    }
-    let outcome: Outcome;
-    try {
-      outcome = rollRandomizer(randomizer, state.source());
-    } catch (e) {
-      result.clear((e as Error).message);
-      state.tell({ type: "roll:fail", source: randomizer.type, reason: (e as Error).message });
-      return;
-    }
+  const roller = createRoller({
+    randomizer: () => randomizer as Rollable,
+    result,
+    wheel: () => wheel,
+    tray,
+    coin,
+    feel: feelNow,
+    live: true,
+    // While a roll runs the button offers to cut it short; pressing it again
+    // is what `roller.roll()` reads as "skip".
+    onStart: (willAnimate: boolean) => {
+      rollButton.textContent = willAnimate ? "Skip" : "Roll";
+    },
+    onEnd: () => {
+      rollButton.textContent = "Roll";
+    },
+  });
 
-    const feel = feelNow();
-    const instant = motionScale(feel.motion) === 0;
-    // A list shown as a list has nothing to animate, so it reveals at once.
-    const willAnimate =
-      !instant &&
-      ((randomizer.type === "list" && wheel !== null && outcome.itemIndex !== undefined) ||
-        (randomizer.type === "dice" && outcome.dice !== undefined) ||
-        randomizer.type === "coin");
-    rolling = true;
-    rollButton.textContent = willAnimate ? "Skip" : "Roll";
+  const doRoll = (): Promise<void> => roller.roll();
 
-    // The outcome is already decided; nothing shows it until the animation has
-    // finished arriving at it, so the table finds out when the dice stop, not
-    // when they start. The screen reader is told at the same moment.
-    if (willAnimate) {
-      result.pending();
-      state.tell({ type: "roll:start", source: randomizer.type });
-    } else result.show(outcome);
-
-    if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) {
-      await wheel.spinTo(outcome.itemIndex, feel);
-    } else if (randomizer.type === "dice" && outcome.dice) {
-      await tray.show(outcome.dice, feel);
-    } else if (randomizer.type === "coin") {
-      await coin.show(outcome.text, feel);
-    }
-
-    if (willAnimate) result.show(outcome);
-    // The landing: the result, the announcement and the mascot's reaction
-    // all happen here, never at the start (plan C10).
-    state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
-    rolling = false;
-    rollButton.textContent = "Roll";
-    void state.record(randomizer, outcome);
-  }
-
-  function skip(): void {
-    wheel?.skip();
-    tray.skip();
-    coin.skip();
-  }
+  const skip = (): void => roller.skip();
 
   // ---- quick bar -----------------------------------------------------------
 
@@ -299,133 +260,12 @@ export function createPlayView(
 
   /* ---- presenting, and links for slides -------------------------------- */
 
-  function presenting(): boolean {
-    return document.body.classList.contains("presenting");
-  }
-
-  function setPresenting(on: boolean): void {
-    document.body.classList.toggle("presenting", on);
-    exitButton.hidden = !on;
-    presentButton.textContent = on ? "Leave full screen" : "Full screen";
-    if (on && document.documentElement.requestFullscreen) {
-      void document.documentElement.requestFullscreen().catch(() => {
-        /* the browser may refuse without a gesture; the layout still applies */
-      });
-    } else if (!on && document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
-  }
-
-  const exitButton = button("Leave full screen", () => setPresenting(false), { class: "leave-presenting" });
+  const exitButton = button("Leave full screen", () => present(false), { class: "leave-presenting" });
   exitButton.hidden = true;
-  const presentButton = button("Full screen", () => setPresenting(!presenting()), { class: "ghost present-button" });
+  const presentButton = button("Full screen", () => present(!isPresenting()), { class: "ghost present-button" });
+  const present = (on: boolean): void => setPresenting(on, { exitButton, presentButton });
 
-  /**
-   * Two kinds of link, side by side.
-   *
-   * "With the wheel inside" carries the randomizer in the address, so it
-   * rolls on anyone's machine and keeps rolling whatever happens to the
-   * library — frozen at today's version, and longer. "To my library" is short
-   * and follows every edit, but only works where the library is. The first is
-   * offered first, because it is what most people pasting into a deck mean.
-   */
-  async function openLinkDialog(): Promise<void> {
-    if (!fixed) return;
-    const base = appBase();
-    const rollOnOpen = h("input", { type: "checkbox", checked: true });
-    const fullScreen = h("input", { type: "checkbox", checked: true });
-    const field = h("input", { type: "text", readonly: true, "aria-label": "Link to paste onto a slide", spellcheck: "false" });
-    const note = h("p", { class: "faint link-note" });
-    const sizeNote = h("p", { class: "warning link-size" });
-
-    let payload: string | null = null;
-    try {
-      payload = await encodeRandomizer(randomizer);
-    } catch {
-      payload = null;
-    }
-    const embeddedLength = payload === null ? Infinity : wheelLink(base, payload, { roll: true, present: true }).length;
-    const canEmbed = payload !== null && embeddedLength <= LINK_HARD_LIMIT;
-    const canLibrary = node?.randomizer != null;
-    if (!canEmbed && !canLibrary) {
-      state.toast("This randomizer is too big to put in a link, and it is not in your library.");
-      return;
-    }
-
-    let kind: "embedded" | "library" = canEmbed ? "embedded" : "library";
-    const kinds = h("div", { class: "segmented link-kinds", role: "group", "aria-label": "What the link carries" });
-
-    const refresh = () => {
-      const opts = { roll: rollOnOpen.checked, present: fullScreen.checked };
-      field.value = kind === "embedded" && payload
-        ? wheelLink(base, payload, opts)
-        : slideLink(base, node!.randomizer!.id, opts);
-      note.textContent = kind === "embedded"
-        ? "The wheel travels inside the link, so it works for anyone who opens the deck, on any machine, with nothing installed. It is a snapshot: editing the wheel afterwards does not change decks you have already made."
-        : "Short, and it follows every edit you make. It points at the randomizer's identity rather than its file name, so renaming it or moving it to another folder will not break the deck — but it only works on a device where this library is stored.";
-      const tooLong = kind === "embedded" && field.value.length > LINK_SOFT_LIMIT;
-      sizeNote.hidden = !tooLong;
-      if (tooLong) {
-        sizeNote.textContent = `This link is ${field.value.length} characters. Slides and PowerPoint will take it, but it is unwieldy to handle;${canLibrary ? " a link to your library would be a few dozen." : " trimming the table would shorten it."}`;
-      }
-      for (const b of kinds.querySelectorAll("button")) {
-        b.setAttribute("aria-pressed", b.dataset.kind === kind ? "true" : "false");
-      }
-    };
-
-    const kindButton = (value: "embedded" | "library", label: string) => {
-      const b = button(label, () => { kind = value; refresh(); }, { class: `link-kind-${value}` });
-      b.dataset.kind = value;
-      return b;
-    };
-    setChildren(kinds,
-      canEmbed ? kindButton("embedded", "With the wheel inside") : null,
-      canLibrary ? kindButton("library", "To my library") : null,
-    );
-
-    rollOnOpen.addEventListener("change", refresh);
-    fullScreen.addEventListener("change", refresh);
-    refresh();
-
-    const copied = h("span", { class: "faint" });
-    const dialog = h("dialog", { class: "link-dialog", "aria-label": "Link for a slide" },
-      h("h2", { text: "Link for a slide" }),
-      h("p", { class: "faint", text:
-        `Put this on a shape or an image in Google Slides or PowerPoint. Clicking it during the presentation opens ${randomizer.name} and rolls it; closing the tab returns you to the deck.` }),
-      kinds.children.length > 1 ? kinds : null,
-      field,
-      h("div", { class: "row tight", style: { marginTop: "10px" } },
-        h("label", { class: "row tight" }, rollOnOpen, "Roll as soon as it opens"),
-        h("label", { class: "row tight" }, fullScreen, "Fill the screen"),
-      ),
-      isLinkableBase(base)
-        ? null
-        : h("p", { class: "warning", text:
-            "This copy of Orangey is open from a file rather than a web address, so this link will not work from a slide — browsers refuse to follow a link from a web page to a local file. Open the published copy and make the link there." }),
-      sizeNote,
-      note,
-      h("div", { class: "row", style: { marginTop: "14px" } },
-        button("Copy", async () => {
-          try {
-            await navigator.clipboard.writeText(field.value);
-            copied.textContent = "Copied";
-          } catch {
-            field.select();
-            copied.textContent = "Press Ctrl+C to copy";
-          }
-        }, { class: "primary copy-link" }),
-        copied,
-        h("div", { class: "spacer" }),
-        button("Close", () => dialog.close()),
-      ),
-    );
-    dialog.addEventListener("close", () => dialog.remove());
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    field.select();
-  }
-
-  const linkButton = button("Link…", () => void openLinkDialog(), { class: "ghost link-button" });
+  const linkButton = button("Link…", () => void openLinkDialog(randomizer, node), { class: "ghost link-button" });
   linkButton.hidden = !fixed;
 
   // Switch animation off for now without touching the settings — after the
@@ -436,20 +276,19 @@ export function createPlayView(
 
   header.append(animateToggle, presentButton, linkButton, exitButton);
 
-  if (params.present) setPresenting(true);
+  if (params.present) present(true);
   if (params.roll) {
     // Wait a frame so the stage is laid out before the animation starts.
     requestAnimationFrame(() => void doRoll());
   }
 
   const onKey = (e: KeyboardEvent) => {
-    const target = e.target as HTMLElement | null;
-    const typing = target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    const typing = isTyping(e);
     if (e.key === "Escape") {
       // Mid-roll, Escape means "get to the answer"; otherwise it leaves the
       // full-screen view, which is the only way out on a projector.
-      if (rolling) skip();
-      else if (document.body.classList.contains("presenting")) setPresenting(false);
+      if (roller.rolling) skip();
+      else if (isPresenting()) present(false);
       return;
     }
     if (typing) return;
@@ -478,7 +317,7 @@ export function createPlayView(
 function describeType(r: Randomizer): string {
   switch (r.type) {
     case "list":
-      return `${r.items.filter((i) => !i.disabled && i.weight > 0).length} possible outcomes`;
+      return `${r.items.filter(isRollable).length} possible outcomes`;
     case "dice":
       return "Dice";
     case "coin":

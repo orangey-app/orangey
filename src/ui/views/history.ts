@@ -4,12 +4,12 @@
  * agreed not to count is struck instead: the line stays, drawn through.
  */
 
-import { button, formatWhen, h, setChildren } from "../dom.ts";
+import { askConfirm, button, download, formatWhen, h, setChildren } from "../dom.ts";
 import { appdb, HISTORY_CAP } from "../../storage/appdb.ts";
 import { state, type HistoryRow } from "../state.ts";
 import { navigate } from "../router.ts";
-import { download } from "./library.ts";
-import type { View } from "./editor.ts";
+
+import type { View } from "../view.ts";
 
 /**
  * The history as a spreadsheet. A struck roll is exported like any other,
@@ -106,6 +106,12 @@ export function createHistoryView(): View {
     download("orangey-history.txt", `${text}\n`, "text/plain");
   }
 
+  async function clearAll(): Promise<void> {
+    if (await askConfirm("Clear the history", "Clear the whole history?", { confirm: "Clear", danger: true })) {
+      void state.clearHistory();
+    }
+  }
+
   const el = h("div", {},
     h("div", { class: "card" },
       h("div", { class: "row" },
@@ -113,9 +119,7 @@ export function createHistoryView(): View {
         h("div", { class: "spacer" }),
         button("Export CSV", () => void exportCsv(), { class: "ghost" }),
         button("Export text", () => void exportText(), { class: "ghost" }),
-        button("Clear", () => {
-          if (confirm("Clear the whole history?")) void state.clearHistory();
-        }, { class: "ghost danger" }),
+        button("Clear", () => void clearAll(), { class: "ghost danger" }),
       ),
       summary,
       list,

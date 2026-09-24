@@ -122,10 +122,6 @@ export function pickFromTable(table: CumulativeTable, rng: RandomSource): number
   return table.indices[at];
 }
 
-export function pickWeighted<T extends Weighted>(items: readonly T[], rng: RandomSource): T {
-  return items[pickWeightedIndex(items, rng)];
-}
-
 /** Uniform pick over any array; used where weights do not apply. */
 export function pick<T>(items: readonly T[], rng: RandomSource): T {
   if (items.length === 0) throw new NotRollableError("empty list");

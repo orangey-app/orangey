@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { CryptoSource, SeededSource, fnv1a64, hash32, intFromWords } from "../../src/core/rng.ts";
+import { CryptoSource, SeededSource, seedHash64, hash32, intFromWords } from "../../src/core/rng.ts";
 import {
   NotRollableError,
   buildCumulative,
@@ -81,7 +81,7 @@ describe("RandomSource", () => {
   test("hashes are stable and differ between similar strings", () => {
     assert.equal(hash32("Forest Encounters"), hash32("Forest Encounters"));
     assert.notEqual(hash32("wheel-1"), hash32("wheel-2"));
-    assert.equal(fnv1a64("").length, 2);
+    assert.equal(seedHash64("").length, 2);
   });
 });
 

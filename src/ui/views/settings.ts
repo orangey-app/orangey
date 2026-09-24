@@ -12,19 +12,20 @@ import { createMascot, type Mascot } from "../mascot/mascot.ts";
 import { DEFAULT_REACTIONS } from "../mascot/reactions.ts";
 import { MASCOT_BUILTIN_STATES } from "../mascot/states.ts";
 import { choice, coinControls, diceControls, wheelControls } from "../components/feelpanel.ts";
-import { button, h, setChildren } from "../dom.ts";
+import { button, download, h, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
-import { createCoin, createDiceTray } from "../components/dice.ts";
+import { createDiceTray } from "../components/dice.ts";
+import { createCoin } from "../components/coin.ts";
 import { makeItem } from "../../model/randomizer.ts";
 import { rollDice } from "../../core/dice/evaluate.ts";
 import { CryptoSource } from "../../core/rng.ts";
-import { download } from "./library.ts";
+
 import { SETTINGS_FILE_NAME, MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS } from "../../model/settings-file.ts";
 import { ValidationError } from "../../model/validate.ts";
 import { SINGLE_FILE_NAME, isSingleFile, releasesUrl } from "../single.ts";
 import { askToPersist, canUseFolder, describeStorage, exportLibraryZip, isPersisted, stopUsingFolder, useFolder } from "../storage-actions.ts";
-import type { View } from "./editor.ts";
+import type { View } from "../view.ts";
 
 const PREVIEW_ITEMS = ["Goblin patrol", "Merchant", "Wolf pack", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
 
@@ -155,7 +156,7 @@ export function createSettingsView(): View {
           checkbox(f.haptics, (v) => setFeel({ haptics: v })),
           "Vibrate on a result (where the device supports it)",
         ),
-        h("label", { class: "field", style: { marginTop: "12px" } },
+        h("label", { class: "field gap-m" },
           h("span", { class: "field-label", text: "Seed" }),
           seedInput(),
           h("span", { class: "field-hint", text: "Set a seed and everyone using it sees the same sequence of rolls. Leave it empty for ordinary random rolls." }),
@@ -233,7 +234,7 @@ export function createSettingsView(): View {
               )),
           )
         : h("p", { class: "faint", text: "None yet." }),
-      h("div", { class: "row tight add-colour-row", style: { marginTop: "8px" } },
+      h("div", { class: "row tight add-colour-row gap-s" },
         colourInput,
         nameInput,
         button("Add", add, { class: "add-colour", disabled: full ? "" : null }),

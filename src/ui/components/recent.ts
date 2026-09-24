@@ -8,7 +8,7 @@
  * the quick play screen has in front of it.
  */
 
-import { button, formatTime, h, setChildren } from "../dom.ts";
+import { askConfirm, button, formatTime, h, setChildren } from "../dom.ts";
 import { rollsInScope, state } from "../state.ts";
 import { navigate } from "../router.ts";
 
@@ -48,15 +48,20 @@ export function createRecentRolls(opts: RecentRollsOptions): RecentRollsView {
 
   const scoped = () => rollsInScope(state.history, opts.ids());
 
-  function clearScope(): void {
+  async function clearScope(): Promise<void> {
     const ids = opts.ids();
     const rows = scoped();
     if (rows.length === 0) {
       state.toast("There is nothing here to clear.");
       return;
     }
-    if (!confirm(clearRollsPrompt(rows.length, ids.length === 0 ? "" : opts.scopeName()))) return;
-    void state.clearHistoryFor(ids);
+    // The app's own dialog rather than the browser's: it returns the keyboard
+    // where it came from, and it looks like the rest of Orangey.
+    const sure = await askConfirm("Clear these rolls", clearRollsPrompt(rows.length, ids.length === 0 ? "" : opts.scopeName()), {
+      confirm: "Clear",
+      danger: true,
+    });
+    if (sure) void state.clearHistoryFor(ids);
   }
 
   function refresh(): void {
@@ -79,7 +84,7 @@ export function createRecentRolls(opts: RecentRollsOptions): RecentRollsView {
     h("div", { class: "row" },
       h("h2", { text: "Recent rolls", style: { margin: "0" } }),
       h("div", { class: "spacer" }),
-      button("Clear", clearScope, { class: "ghost danger" }),
+      button("Clear", () => void clearScope(), { class: "ghost danger" }),
       button("All history", () => navigate("#/history"), { class: "ghost" }),
     ),
     list,

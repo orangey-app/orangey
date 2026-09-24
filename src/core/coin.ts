@@ -14,9 +14,3 @@ export function flip(faces: [string, string], rng: RandomSource): CoinResult {
   const side = rng.int(0, 1) as 0 | 1;
   return { side, face: faces[side], faces, seed: rng.seed };
 }
-
-export function flipMany(faces: [string, string], count: number, rng: RandomSource): CoinResult[] {
-  const out: CoinResult[] = [];
-  for (let i = 0; i < count; i++) out.push(flip(faces, rng));
-  return out;
-}

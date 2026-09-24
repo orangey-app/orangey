@@ -13,9 +13,9 @@ import { canPickFolder, forgetFolder, pickFolder } from "../storage/fsdir.ts";
 import { imageBytes, imageDataUrl, imageStoredName, putImageData } from "../storage/images.ts";
 import { createZip, type ZipEntry } from "../storage/zip.ts";
 import { parent } from "../storage/paths.ts";
-import { askConfirm } from "./dom.ts";
+import { askConfirm, downloadBytes } from "./dom.ts";
 import { state } from "./state.ts";
-import { downloadBytes } from "./views/library.ts";
+
 
 /** Whether this browser lets the library be a real folder (Chrome and Edge do). */
 export function canUseFolder(): boolean {

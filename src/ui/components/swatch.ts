@@ -6,7 +6,7 @@
 import { chroma, hexToOklab, hueAngle, isHex } from "../../core/color.ts";
 import { PALETTE, type PaletteColor } from "../styles/palette.ts";
 import { MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS, type CustomColour } from "../../model/settings-file.ts";
-import { appendChildren, button, h } from "../dom.ts";
+import { appendChildren, button, h, openDialog } from "../dom.ts";
 
 /**
  * The palette, grouped by hue and ordered light to dark within each group,
@@ -134,7 +134,7 @@ export function openSwatchPicker(anchor: HTMLElement, opts: SwatchPickerOptions)
         save();
       }
     });
-    addRow = h("div", { class: "field swatch-add", style: { marginTop: "12px" } },
+    addRow = h("div", { class: "field swatch-add gap-m" },
       h("span", { class: "field-label", text: "Add to my colours" }),
       h("div", { class: "row tight" }, colourInput, nameInput, button("Save", save, { class: "swatch-add-save" })),
       full ? h("span", { class: "field-hint", text: `You have ${MAX_CUSTOM_COLOURS} already; remove one in Settings to add another.` }) : null,
@@ -147,12 +147,12 @@ export function openSwatchPicker(anchor: HTMLElement, opts: SwatchPickerOptions)
     h("h2", { text: "Colour" }),
     nameOut,
     grid,
-    h("div", { class: "row hex-row", style: { marginTop: "12px" } },
+    h("div", { class: "row hex-row gap-m" },
       hexInput,
       button("Use", apply, { class: "primary" }),
     ),
     addRow,
-    h("div", { class: "row", style: { marginTop: "12px" } },
+    h("div", { class: "row gap-m" },
       button("Back to automatic", () => {
         opts.onPick(null);
         dialog.close();
@@ -162,11 +162,6 @@ export function openSwatchPicker(anchor: HTMLElement, opts: SwatchPickerOptions)
     ),
   );
 
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    anchor.focus();
-  });
-  document.body.appendChild(dialog);
-  dialog.showModal();
+  openDialog(dialog, anchor);
   (grid.querySelector("button") as HTMLElement | null)?.focus();
 }

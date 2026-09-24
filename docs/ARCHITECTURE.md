@@ -41,7 +41,12 @@ that outcome until the animation resolves — the result panel holds a muted
 shows nothing — and the reveal and the screen-reader announcement happen
 together at the landing. This is why pressing Esc mid-spin is safe: skipping
 jumps to the landing, and the answer it reveals is the one that was already
-rolled.
+rolled. `src/ui/rolling.ts` holds that sequence once, for the play screen, a
+board's cells and the editor's preview alike. A cell emits `roll:start` just
+as the play screen does — a decision, not an oversight: it keeps the two
+consistent, a board has no mascot slot for the event to disturb, and a chain
+reads better when it says it has begun rolling rather than only that it has
+landed.
 
 **Pictures live beside the library, not in it.** An outcome's `image` is an id
 into `src/storage/images.ts`, which writes `images/<id>.png` through the library
@@ -159,6 +164,13 @@ fixed number of degrees past its target and comes back, and the dice and coin
 drop, squash and hop before resting. `easeSpin` adds the overshoot as a damped
 half-sine over the last quarter of the spin, and it is exactly zero at t = 1,
 so the wheel still stops precisely where the result says.
+
+**Every result comes from a `RandomSource`.** `state.source()` hands out a
+crypto-backed one, or a seeded one when a seed is set, and everything that
+reaches an `Outcome` draws from it. `Math.random` is for cosmetics only — the
+scatter of a label, the axes a die tumbles about — because a seeded session
+has to replay exactly, and anything a person reads as the answer is part of
+that replay.
 
 **All animation timing lives in `src/ui/feel.ts`.** `npm run check` fails the
 build if a duration appears anywhere else, which is what makes the settings
