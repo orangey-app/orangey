@@ -229,7 +229,11 @@ export function longestOutcome(r: Randomizer): string {
     case "dice": {
       try {
         const bounds = expressionBounds(r.expression);
-        return longest([String(bounds.min), String(bounds.max)]);
+        const widest = longest([String(bounds.min), String(bounds.max)]);
+        // An exploding roll has no ceiling, so `max` is a floor. One more
+        // character is not a guarantee, but it stops the common case — a
+        // single explosion — from resizing the panel.
+        return bounds.openEnded ? `${widest}0` : widest;
       } catch {
         return r.expression;
       }

@@ -1798,6 +1798,54 @@ async function main() {
 
   // ---- AB: bags, hidden rolls and boards of dice ---------------------------
 
+  await test("AB two wireframe dice trays on one board both tumble, and Fate dice land", async (page) => {
+    await open(page, "", { fresh: true });
+    const dicePath = (name, expression) =>
+      page.evaluate(`
+        const { state } = window.orangey;
+        const now = new Date().toISOString();
+        return await state.library.create("", { id: ${JSON.stringify(name)}, type: "dice",
+          name: ${JSON.stringify(name)}, expression: ${JSON.stringify(expression)}, created: now, modified: now });
+      `);
+    await dicePath("Exploding", "3d6!");
+    await dicePath("Fate", "4dF");
+    const board = await createBoard(page, "Both", ["Exploding", "Fate"]);
+
+    await page.evaluate(`window.orangey.state.setFeel({ dice: { style: "wireframe" } })`);
+    await open(page, `#/r/${encodeURIComponent(board)}`);
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 2`);
+
+    await page.click(".roll-all");
+    // Both trays must be drawing. The loop is shared by every tray on the
+    // page, and a tray starting a roll once cleared the whole of it, which
+    // left the other tray's dice painted but frozen (bug 4).
+    await page.waitForFunction(`document.querySelectorAll(".die-canvas").length >= 7`);
+    const sample = () => page.evaluate(`
+      return [...document.querySelectorAll(".cell")].map((cell) => {
+        const c = cell.querySelector("canvas");
+        return c ? c.toDataURL().length + ":" + c.toDataURL().slice(-40) : "none";
+      });
+    `);
+    const first = await sample();
+    await new Promise((r) => setTimeout(r, 100));
+    const second = await sample();
+    assert.equal(first.length, 2);
+    assert.notDeepEqual(first[0], second[0], "the first tray stopped tumbling");
+    assert.notDeepEqual(first[1], second[1], "the second tray stopped tumbling");
+
+    // And they land: four Fate dice, each reading as a sign. Wait for the
+    // dice themselves to settle — a cell's result panel says "Rolling…"
+    // while the tray is still in the air, which is not "Ready" either.
+    await page.waitForFunction(`document.querySelectorAll(".die-slot.rolling").length === 0`, 20000);
+    const faces = await page.evaluate(`
+      const cell = [...document.querySelectorAll(".cell")].find((c) => c.textContent.includes("Fate"));
+      return [...cell.querySelectorAll(".die-value")].map((v) => v.textContent);
+    `);
+    assert.equal(faces.length, 4, `the Fate tray showed ${faces.length} dice`);
+    for (const f of faces) assert.ok(["+", "0", "−"].includes(f), `unexpected Fate face "${f}"`);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
   await test("AB a bag empties as it is drawn, survives a reload, and refills", async (page) => {
     await open(page, "", { fresh: true });
     const path = await createList(page, "Bag", [

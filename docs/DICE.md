@@ -1,17 +1,26 @@
 # Dice notation
 
-## What 0.1 understands
+## What Orangey understands
 
 ```
 expr     := term (("+" | "-") term)*
-term     := dice | integer
-dice     := [count] "d" sides [keepdrop]
-count    := 1–100        (default 1)
-sides    := 2–1000, or "%" meaning 100
+term     := dice | integer | "adv" | "dis"
+dice     := [count] "d" sides [explode] [reroll] [keepdrop] [success]
+count    := 1–100                          (default 1)
+sides    := 2–1000, or "%" meaning 100, or "F" for Fate
+explode  := "!"
+reroll   := ("ro" | "r") [cmp] integer     cmp defaults to "="
 keepdrop := ("kh" | "kl" | "dh" | "dl") integer
+success  := cmp integer
+cmp      := ">=" | "<=" | ">" | "<" | "="
 ```
 
 Whitespace and case are ignored, so `2D6 + 3` and `2d6+3` are the same thing.
+
+**The modifiers come in that order.** `2d6!r1kh1>=4` is valid; `2d6kh1!` is
+not, and says so. A fixed order means every expression has exactly one
+canonical form, which is what gets stored in a file and repeated from the
+history.
 
 | you type | it means |
 |---|---|
@@ -21,8 +30,19 @@ Whitespace and case are ignored, so `2D6 + 3` and `2d6+3` are the same thing.
 | `4d6kh3` | roll four, **k**eep the **h**ighest three — the classic ability score |
 | `2d20kh1` | advantage |
 | `2d20kl1` | disadvantage |
+| `adv` / `dis` | the same two, spelled the way people say them |
 | `3d8dl1` | roll three, **d**rop the **l**owest |
 | `d20 + 5 - 2` | modifiers stack, and may be negative |
+| `3d6!` | **exploding**: every 6 adds another die, and that one can explode too |
+| `4d6r1` | **reroll** every 1, as often as it takes |
+| `4d6ro1` | reroll a 1 **o**nce, and take what comes |
+| `4d6r<3` | reroll anything under 3 |
+| `5d10>=8` | a **success pool**: the answer is how many dice made it |
+| `4dF` | four **Fate** dice, each −1, 0 or +1 |
+
+A reroll that would reject every face is refused rather than looping for
+ever, and Fate dice cannot explode: there is no single top face to explode
+on. Runaway rolls stop at 100 rerolls per die and 100 extra dice per term.
 
 ## What you get back
 
@@ -35,8 +55,16 @@ Every die is recorded individually, kept or dropped, so the app can show
 with the dropped die in brackets and struck through, and a screen reader hears
 "4d6kh3: 5, 2, 5, dropping 1. Total 12."
 
+Rerolled dice appear in brackets like dropped ones — what happened at the
+table is part of the answer — exploded dice carry a `!`, and Fate dice show
+their sign: `4dF [+1, -1, 0, +1] = 1`. A success pool ends in words rather
+than a bare number: `5d10>=8 [9, 3, 8, 10, 1] = 3 successes`.
+
 The theoretical minimum and maximum are computed alongside the result, which is
-how a natural 20 is highlighted without hard-coding what a d20 is.
+how a natural 20 is highlighted without hard-coding what a d20 is. An
+exploding roll has no maximum, so the one reported is a floor and the result
+is flagged open-ended instead. A reroll narrows the range in the other
+direction: `d6r1` can never end on a 1, so its minimum is 2.
 
 ## Errors
 
@@ -48,26 +76,14 @@ expression" with no position is useless when you are typing at a table:
       ^ expected a number or a die such as d20
 ```
 
-## Coming in 0.2
+## Not supported
 
-`!` exploding dice, `r<N` and `ro` rerolls, `>=N` success counting, `dF` Fate
-dice, `adv`/`dis` as sugar for `2d20kh1`/`2d20kl1`, and `Nx(...)` repetition.
+Deliberately out of scope, because each needs an expression tree rather than
+the flat list of signed terms this grammar produces, and that is a larger
+piece of work than the notation itself:
+
+brackets, multiplication, `Nx(...)` repetition, compounding or penetrating
+explosions, and reroll-and-keep variants.
+
 The grammar module is separate from everything else so that it can eventually
 become a small library of its own.
-
-## Dice inside an outcome
-
-An outcome's label or description may carry dice in braces, and they are
-rolled when that outcome comes up:
-
-    {2d4} wolves, hungry     ->   3 wolves, hungry
-
-The braces are the whole of the opt-in. Without them nothing is touched, so
-"a d20 system" and "2d6 × 10 gp" stay as written — which matters, because
-tables are full of prose that mentions dice without meaning to roll any. The
-breakdown appears beside the result, the same way a dice randomizer shows
-its own. Anything in braces that is not a valid expression is left exactly as
-typed, so a typo is visible rather than silently swallowed.
-
-The wheel, the editor and the history keep showing the label as it was
-written; only the result is expanded.

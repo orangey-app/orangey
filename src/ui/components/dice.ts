@@ -52,6 +52,25 @@ interface TrayDie {
   value: number;
   kept: boolean;
   sides: number;
+  /**
+   * The lowest and highest this die could finally show.
+   *
+   * Not 1 and `sides`: a Fate die runs -1 to +1, so a `+1` compared against
+   * `sides` would be painted as a minimum. The evaluator already knows the
+   * real range, so it travels with the result.
+   */
+  faceMin: number;
+  faceMax: number;
+  fate: boolean;
+  rerolled: boolean;
+  exploded: boolean;
+  /**
+   * Which face of the solid to come to rest on, counting from zero.
+   *
+   * A Fate die's value can be -1, and `value - 1` would then index a face
+   * that does not exist.
+   */
+  face: number;
 }
 
 /**
@@ -94,14 +113,32 @@ export function createDiceTray(): DiceTray {
    */
   const dieClasses = (die: TrayDie, base: string): string => {
     const classes = [base];
-    if (!die.kept) classes.push("dropped");
-    if (die.kept && die.value === die.sides) classes.push("max");
-    if (die.kept && die.value === 1) classes.push("min");
+    // A rerolled die reads like a dropped one: it happened, it does not count.
+    if (!die.kept) classes.push(die.rerolled ? "dropped rerolled" : "dropped");
+    if (die.exploded) classes.push("exploded");
+    if (die.kept && die.value === die.faceMax) classes.push("max");
+    if (die.kept && die.value === die.faceMin) classes.push("min");
     return classes.join(" ");
   };
 
-  const titleFor = (die: TrayDie): string =>
-    die.kept ? `${die.value} on a d${die.sides}` : `${die.value}, dropped`;
+  /** What a face reads as: a Fate die is a sign, not a number. */
+  const faceText = (die: TrayDie, value = die.value): string => {
+    if (!die.fate) return String(value);
+    return value > 0 ? "+" : value < 0 ? "−" : "0";
+  };
+
+  const titleFor = (die: TrayDie): string => {
+    const what = die.fate
+      ? `${die.value > 0 ? "plus" : die.value < 0 ? "minus" : "blank"} on a Fate die`
+      : `${die.value} on a d${die.sides}`;
+    if (die.rerolled) return `${what}, rerolled`;
+    if (!die.kept) return `${die.value}, dropped`;
+    return die.exploded ? `${what}, exploded` : what;
+  };
+
+  /** A face that is not the answer, for the tumble. */
+  const tumbleFace = (die: TrayDie): string =>
+    die.fate ? faceText(die, Math.floor(Math.random() * 3) - 1) : String(1 + Math.floor(Math.random() * die.sides));
 
   /**
    * The wireframe dice this tray put in the shared animation loop.
@@ -118,7 +155,7 @@ export function createDiceTray(): DiceTray {
   function showFlat(dice: TrayDie[], feel: FeelSettings, duration: number, bounce: number): Promise<void> {
     if (duration <= 0) {
       el.replaceChildren(
-        ...dice.map((die) => h("div", { class: dieClasses(die, "die"), title: titleFor(die) }, String(die.value))),
+        ...dice.map((die) => h("div", { class: dieClasses(die, "die"), title: titleFor(die) }, faceText(die))),
       );
       return Promise.resolve();
     }
@@ -137,7 +174,7 @@ export function createDiceTray(): DiceTray {
           animationDuration: `${Math.round(tumbleCycle)}ms`,
         } as Partial<CSSStyleDeclaration>,
         "aria-hidden": "true",
-      }, String(1 + Math.floor(Math.random() * die.sides))),
+      }, tumbleFace(die)),
     );
     const wrappers = elements.map((e) => h("div", { class: "die-flight" }, e));
     el.replaceChildren(...wrappers);
@@ -145,7 +182,7 @@ export function createDiceTray(): DiceTray {
 
     const spin = setInterval(() => {
       elements.forEach((node, i) => {
-        node.textContent = String(1 + Math.floor(Math.random() * dice[i].sides));
+        node.textContent = tumbleFace(dice[i]);
       });
     }, faceChange);
 
@@ -157,7 +194,7 @@ export function createDiceTray(): DiceTray {
           const die = dice[i];
           wrappers[i].classList.remove("flying");
           node.className = dieClasses(die, "die");
-          node.textContent = String(die.value);
+          node.textContent = faceText(die);
           node.removeAttribute("aria-hidden");
           node.title = titleFor(die);
           if (bounce > 0) {
@@ -226,11 +263,11 @@ export function createDiceTray(): DiceTray {
         settleEnd: now + schedule.settleEnd,
         // Resting square-on to the viewer, allowing for the camera tilt, so
         // the face is seen undistorted and its number can sit inside it.
-        rest: restQuaternion(solid, die.value - 1, Math.random() * Math.PI * 2, VIEW_TILT),
+        rest: restQuaternion(solid, die.face % solid.faces.length, Math.random() * Math.PI * 2, VIEW_TILT),
         ink: colours.ink,
         accent: colours.accent,
         radius: size * 0.34,
-        faceIndex: (die.value - 1) % solid.faces.length,
+        faceIndex: die.face % solid.faces.length,
         landed: false,
       };
     });
@@ -244,8 +281,8 @@ export function createDiceTray(): DiceTray {
         draw(wire);
         slots[i].flight.classList.remove("flying");
         slots[i].slot.className = dieClasses(die, "die-slot");
-        slots[i].value.textContent = String(die.value);
-        slots[i].caption.textContent = String(die.value);
+        slots[i].value.textContent = faceText(die);
+        slots[i].caption.textContent = faceText(die);
       });
       // One size for every number in the tray, comfortable in the smallest
       // face present, so a d12 beside a d6 reads as a set rather than a
@@ -294,7 +331,18 @@ export function createDiceTray(): DiceTray {
     el,
     show(result, feel) {
       const dice: TrayDie[] = result.terms.flatMap((t) =>
-        (t.dice ?? []).map((d) => ({ value: d.value, kept: d.kept, sides: t.sides! })),
+        (t.dice ?? []).map((d) => ({
+          value: d.value,
+          kept: d.kept,
+          sides: t.sides!,
+          faceMin: t.faceMin ?? 1,
+          faceMax: t.faceMax ?? t.sides!,
+          fate: t.fate === true,
+          rerolled: d.rerolled === true,
+          exploded: d.exploded === true,
+          // Fate runs -1..1, so its zero-based face is value + 1.
+          face: t.fate ? d.value + 1 : d.value - 1,
+        })),
       );
       const shown = dice.slice(0, 40);
       const duration = motionScale(feel.motion) === 0 ? 0 : diceDuration(feel);

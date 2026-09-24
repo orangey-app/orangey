@@ -1,11 +1,11 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { ParseError, parse, tryParse } from "../../src/core/dice/grammar.ts";
-import { rollDice } from "../../src/core/dice/evaluate.ts";
+import { evaluate, expressionBounds, rollDice } from "../../src/core/dice/evaluate.ts";
 import { formatResult, speakResult } from "../../src/core/dice/format.ts";
 import { longestOutcome, rollRandomizer } from "../../src/ui/roll.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
-import { SeededSource } from "../../src/core/rng.ts";
+import { SeededSource, type RandomSource } from "../../src/core/rng.ts";
 
 describe("dice notation", () => {
   test("canonical forms", () => {
@@ -24,6 +24,19 @@ describe("dice notation", () => {
       // Space before keep/drop is how people write it, and DICE.md says so.
       ["4d6 kh3", "4d6kh3"],
       ["2d20  kl1", "2d20kl1"],
+      // 0.4 notation.
+      ["2d6!", "2d6!"],
+      ["2d6r1", "2d6r1"],
+      ["2d6r=1", "2d6r1"],
+      ["2d6ro<3", "2d6ro<3"],
+      ["5d10>=8", "5d10>=8"],
+      ["4dF", "4dF"],
+      ["4DF", "4dF"],
+      ["3d6 ! r1 kh2 >= 5", "3d6!r1kh2>=5"],
+      // adv and dis are sugar, and normalise to what they stand for.
+      ["adv", "2d20kh1"],
+      ["ADV", "2d20kh1"],
+      ["dis", "2d20kl1"],
     ];
     for (const [input, expected] of cases) {
       assert.equal(parse(input).normalized, expected, `for ${input}`);
@@ -60,6 +73,11 @@ describe("dice notation", () => {
       ["4d6kh5", 3, /cannot keep 5 of 4/],
       ["4d6dl4", 3, /cannot drop 4 of 4/],
       ["2d6 3", 4, /expected \+ or -/],
+      // 0.4 notation.
+      ["4dF!", 3, /Fate dice cannot explode/],
+      ["d6r<7", 2, /reroll every face/],
+      ["2d6kh1!", 6, /the order is/],
+      ["2d6>=3r1", 6, /the order is/],
     ];
     for (const [input, position, message] of cases) {
       const r = tryParse(input);
@@ -71,6 +89,84 @@ describe("dice notation", () => {
         assert.ok(r.error.caret().includes("^"));
       }
     }
+  });
+
+  /**
+   * A source that hands out the values a test asks for, in order.
+   *
+   * Seeds are fine for "does this stay the same", but useless for "what
+   * happens when a 6 explodes into a 6": you end up hunting for a seed that
+   * happens to do it. This states the dice instead.
+   */
+  function scripted(values: number[]): RandomSource {
+    let at = 0;
+    return {
+      int: () => {
+        if (at >= values.length) throw new Error(`the script ran out after ${values.length} draws`);
+        return values[at++];
+      },
+      float: () => 0,
+    };
+  }
+
+  test("exploding dice and rerolls", () => {
+    // 2d6!: a 6 adds a die, and that die can add another.
+    const boom = evaluate(parse("2d6!"), scripted([6, 3, 6, 2]));
+    assert.deepEqual(boom.terms[0].dice?.map((d) => [d.value, d.kept, d.exploded === true]),
+      [[6, true, false], [3, true, false], [6, true, true], [2, true, true]]);
+    assert.equal(boom.total, 17);
+    assert.equal(boom.openEnded, true);
+    assert.match(formatResult(boom), /6!/);
+
+    // 2d6r1: a 1 is thrown away and shown, like a dropped die.
+    const rr = evaluate(parse("2d6r1"), scripted([1, 4, 5]));
+    assert.deepEqual(rr.terms[0].dice?.map((d) => [d.value, d.kept, d.rerolled === true]),
+      [[1, false, true], [5, true, false], [4, true, false]]);
+    assert.equal(rr.total, 9);
+    assert.equal(rr.openEnded, false);
+    // An unlimited reroll takes those faces out of the range entirely.
+    assert.deepEqual(expressionBounds("2d6r1"), { min: 4, max: 12, openEnded: false });
+
+    // ro rerolls once and takes the replacement even when it matches again.
+    const once = evaluate(parse("2d6ro1"), scripted([1, 3, 1]));
+    assert.deepEqual(once.terms[0].dice?.map((d) => [d.value, d.kept, d.rerolled === true]),
+      [[1, false, true], [1, true, false], [3, true, false]]);
+    assert.equal(once.total, 4);
+  });
+
+  test("success pools count dice rather than adding them up", () => {
+    const pool = evaluate(parse("5d10>=8"), scripted([9, 3, 8, 10, 1]));
+    assert.equal(pool.total, 3);
+    assert.match(formatResult(pool), /= 3 successes$/);
+    assert.match(speakResult(pool), /3 successes/);
+    assert.deepEqual(expressionBounds("5d10>=8"), { min: 0, max: 5, openEnded: false });
+
+    // One success reads as one, not "1 successes".
+    const single = evaluate(parse("5d10>=8"), scripted([9, 3, 2, 4, 1]));
+    assert.match(formatResult(single), /= 1 success$/);
+
+    // An exploded die counts towards the pool like any other.
+    const boom = evaluate(parse("3d10!>=8"), scripted([10, 2, 3, 9]));
+    assert.equal(boom.total, 2, formatResult(boom));
+  });
+
+  test("Fate dice run minus one to plus one", () => {
+    const fate = evaluate(parse("4dF"), scripted([3, 1, 2, 3]));
+    assert.deepEqual(fate.terms[0].dice?.map((d) => d.value), [1, -1, 0, 1]);
+    assert.equal(fate.total, 1);
+    assert.deepEqual(expressionBounds("4dF"), { min: -4, max: 4, openEnded: false });
+    assert.match(formatResult(fate), /\[\+1, -1, 0, \+1\]/);
+
+    // All four at the top is a maximum; one at the top on its own is not a
+    // minimum, which the old "value === 1" rule would have called it.
+    const best = evaluate(parse("4dF"), scripted([3, 3, 3, 3]));
+    assert.equal(best.isMaximum, true);
+    assert.equal(best.isMinimum, false);
+    const one = evaluate(parse("dF"), scripted([3]));
+    assert.equal(one.isMinimum, false, "+1 was read as a minimum");
+    assert.equal(one.isMaximum, true);
+    const worst = evaluate(parse("4dF"), scripted([1, 1, 1, 1]));
+    assert.equal(worst.isMinimum, true);
   });
 
   test("recorded fixtures for a shared seed", () => {
