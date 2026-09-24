@@ -708,6 +708,16 @@ async function main() {
     const hit = await page.evaluate(`return document.querySelector(".search-hit").textContent`);
     assert.match(hit, /Forest Encounters/);
     assert.match(hit, /outcome: Goblin patrol/);
+
+    // A favourite is offered on the screen you land on, not only in here.
+    await page.evaluate(`
+      const { state } = window.orangey;
+      state.toggleFavourite(state.library.files()[0].randomizer.id);
+    `);
+    await open(page, "#/");
+    await page.waitForFunction(`document.querySelector(".home-shortcuts:not([hidden]) .shortcut")`);
+    const shortcut = await page.evaluate(`return document.querySelector(".home-shortcuts .shortcut").textContent`);
+    assert.equal(shortcut, "Forest Encounters");
   });
 
   await test("L history exports as CSV and can be cleared", async (page) => {
@@ -1819,6 +1829,35 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".bag-count").textContent === "3 of 3 left"`);
     await page.click(".roll-button");
     await page.waitForFunction(`document.querySelector(".bag-count").textContent === "2 of 3 left"`);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AB a hidden roll shows nothing until it is revealed", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await createList(page, "Behind the screen", [
+      { label: "Ambush", weight: 1 },
+      { label: "Nothing", weight: 1 },
+    ], "list");
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".hidden-box")`);
+
+    const rows = () => page.evaluate(`return window.orangey.state.history.length`);
+    assert.equal(await rows(), 0);
+
+    await page.click(".hidden-box");
+    await page.click(".roll-button");
+    await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Reveal"`);
+
+    // Rolled, but the table is told nothing and nothing is written down.
+    const held = await page.evaluate(`return document.querySelector(".result-value").textContent`);
+    assert.doesNotMatch(held, /Ambush|Nothing/, `the answer leaked: "${held}"`);
+    assert.equal(await rows(), 0, "a hidden roll was recorded before it was revealed");
+
+    await page.click(".roll-button");
+    await page.waitForFunction(`/Ambush|Nothing/.test(document.querySelector(".result-value").textContent)`);
+    await page.waitForFunction(`window.orangey.state.history.length === 1`);
+    assert.equal(await rows(), 1, "revealing should write exactly one row");
     assert.deepEqual(page.consoleErrors, []);
   });
 

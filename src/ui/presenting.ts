@@ -15,6 +15,39 @@ export interface PresentingControls {
   presentButton: HTMLElement;
 }
 
+/**
+ * The lock that keeps the display on while a wheel is on a projector.
+ *
+ * A table can go several minutes between rolls, which is long enough for a
+ * laptop to dim and a phone to lock. The browser may refuse — it needs a
+ * gesture, or the API may not exist at all — and that is fine: the worst case
+ * is the screen behaving exactly as it did before.
+ */
+let wakeLock: WakeLockSentinel | null = null;
+
+async function holdScreenAwake(): Promise<void> {
+  if (wakeLock) return;
+  try {
+    wakeLock = (await navigator.wakeLock?.request("screen")) ?? null;
+    // The browser drops it whenever the tab is hidden, so it has to be asked
+    // for again when the tab comes back and the wheel is still up there.
+    wakeLock?.addEventListener("release", () => {
+      wakeLock = null;
+    });
+  } catch {
+    wakeLock = null;
+  }
+}
+
+function letScreenSleep(): void {
+  void wakeLock?.release().catch(() => {});
+  wakeLock = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && isPresenting()) void holdScreenAwake();
+});
+
 export function isPresenting(): boolean {
   return document.body.classList.contains("presenting");
 }
@@ -23,6 +56,8 @@ export function setPresenting(on: boolean, controls: PresentingControls): void {
   document.body.classList.toggle("presenting", on);
   controls.exitButton.hidden = !on;
   controls.presentButton.textContent = on ? "Leave full screen" : "Full screen";
+  if (on) void holdScreenAwake();
+  else letScreenSleep();
   if (on && document.documentElement.requestFullscreen) {
     void document.documentElement.requestFullscreen().catch(() => {
       /* the browser may refuse without a gesture; the layout still applies */

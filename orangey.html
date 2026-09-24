@@ -304,6 +304,11 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .gap-l { margin-top: 14px; }
 .bag-line { justify-content: flex-end; margin: 4px 0 2px; min-height: 28px; }
 .bag-line[hidden] { display: none; }
+.home-shortcuts[hidden] { display: none; }
+.home-shortcuts h2 { font-size: 15px; margin: 0 0 6px; }
+.shortcut-group + .shortcut-group { margin-top: 12px; }
+.roll-count { width: 56px; }
+.roll-count-field[hidden] { display: none; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); font-size: 13px; }
@@ -8461,6 +8466,8 @@ function formatNumbers(r              )         {
                       
                                                                             
                              
+                                                                                  
+                     
  
 
 function rollRandomizer(r            , rng              )          {
@@ -8557,6 +8564,40 @@ function rollList(r                , rng              )          {
     itemIndex: index,
     image: item.image,
     reaction: item.reaction,
+  };
+}
+
+/**
+ * Several outcomes from one list in one press.
+ *
+ * "Roll six wandering monsters" is one roll with six answers, not six rolls:
+ * one history row, one landing, one line of text. There is no `itemIndex`,
+ * so nothing chains, no picture shows and no tagged reaction fires — those
+ * are all about a single winning outcome, and there is no single winner here.
+ *
+ * A bag draws without putting back and stops when the bag runs out; an
+ * ordinary list can repeat itself, which is what "with replacement" means.
+ */
+function rollListMany(r                , n        , rng              , drawn                      )          {
+  const bag = r.withoutReplacement === true;
+  const pool = bag && drawn ? withoutDrawn(r.items, drawn) : r.items;
+  const wanted = Math.max(1, Math.min(20, Math.trunc(n)));
+
+  const indices           = bag
+    ? drawWithoutReplacement(pool, Math.min(wanted, rollableIndices(pool).length), rng)
+    : Array.from({ length: wanted }, () => pickWeightedIndex(pool, rng));
+
+  const rolled           = [];
+  const labels = indices.map((i) => expandInlineDice(r.items[i].label, rng, rolled));
+  const text = labels.join(", ");
+  return {
+    kind: "list",
+    text,
+    detail: `${labels.length} outcome${labels.length === 1 ? "" : "s"}`,
+    speak: `${r.name}: ${text}.`,
+    seed: rng.seed,
+    // Deliberately no itemIndex, image or reaction: see above.
+    indices,
   };
 }
 
@@ -8731,16 +8772,34 @@ function bagRefill(randomizerId        )       {
                      
                                                                                    
                            
+     
+                                                                        
+    
+                                                                           
+                                                                            
+                                                                          
+     
+                         
+                                                                          
+                       
+                                                  
+                      
  
 
                          
                         
                
                             
+                                                 
+                            
+                                                                      
+                  
  
 
 function createRoller(opts               )         {
   let rolling = false;
+  /** A hidden roll that has happened but has not been shown yet. */
+  let held                                                                                     = null;
 
   function skip()       {
     opts.wheel()?.skip();
@@ -8764,6 +8823,13 @@ function createRoller(opts               )         {
       skip();
       return;
     }
+    // A second press after a hidden roll means "show the table".
+    if (held) {
+      const { outcome, randomizer: what, bag } = held;
+      held = null;
+      await land(what, outcome, bag, false);
+      return;
+    }
     const randomizer = opts.randomizer();
     // Bag mode: the roll is made against what is still in the bag, and the
     // list as a whole is left alone — `withoutDrawn` only marks, so every
@@ -8782,7 +8848,10 @@ function createRoller(opts               )         {
 
     let outcome         ;
     try {
-      outcome = rollRandomizer(rollable, state.source());
+      const many = Math.max(1, Math.trunc(opts.count?.() ?? 1));
+      outcome = many > 1 && rollable.type === "list"
+        ? rollListMany(rollable, many, state.source(), bag ?? undefined)
+        : rollRandomizer(rollable, state.source());
     } catch (e) {
       const reason = (e         ).message;
       opts.result.clear(reason);
@@ -8790,8 +8859,35 @@ function createRoller(opts               )         {
       return;
     }
 
+    // Hidden: it has been rolled, and that is all anybody may know yet.
+    // Nothing lands, nothing is recorded, the bag keeps its outcome, and
+    // navigating away without revealing throws the roll away.
+    if (opts.hidden?.()) {
+      held = { outcome, randomizer, bag };
+      opts.result.pending("Rolled. Press Reveal.");
+      opts.onHeld?.();
+      return;
+    }
+
+    rolling = true;
+    await land(randomizer, outcome, bag, true);
+  }
+
+  /**
+   * The landing, in the order the whole app depends on (P8): the answer, the
+   * announcement and the mascot's reaction together, once, at the end.
+   *
+   * `animated` is false for a reveal: the table has been waiting already, so
+   * the answer arrives at once rather than after another spin.
+   */
+  async function land(
+    randomizer          ,
+    outcome         ,
+    bag                            ,
+    animated         ,
+  )                {
     const feel = opts.feel();
-    const willAnimate = animates(randomizer, outcome, feel);
+    const willAnimate = animated && animates(randomizer, outcome, feel);
     rolling = true;
     opts.onStart?.(willAnimate);
 
@@ -8804,19 +8900,20 @@ function createRoller(opts               )         {
 
     const wheel = opts.wheel();
     if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) {
-      await wheel.spinTo(outcome.itemIndex, feel);
+      await wheel.spinTo(outcome.itemIndex, willAnimate ? feel : { ...feel, motion: "instant" });
     } else if (randomizer.type === "dice" && opts.tray && outcome.dice) {
-      await opts.tray.show(outcome.dice, feel);
+      await opts.tray.show(outcome.dice, willAnimate ? feel : { ...feel, motion: "instant" });
     } else if (randomizer.type === "coin" && opts.coin) {
-      await opts.coin.show(outcome.text, feel);
+      await opts.coin.show(outcome.text, willAnimate ? feel : { ...feel, motion: "instant" });
     }
 
     if (willAnimate) opts.result.show(outcome);
     // Out of the bag at the landing, never at the start: a skipped roll still
     // lands, so it still takes, and a roll that never arrived never did.
-    if (bag && randomizer.type === "list" && outcome.itemIndex !== undefined) {
-      bagTake(randomizer.id, randomizer.items[outcome.itemIndex].id);
-      opts.onBagChange?.();
+    if (bag && randomizer.type === "list") {
+      const taken = outcome.indices ?? (outcome.itemIndex !== undefined ? [outcome.itemIndex] : []);
+      for (const at of taken) bagTake(randomizer.id, randomizer.items[at].id);
+      if (taken.length) opts.onBagChange?.();
     }
     if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
     rolling = false;
@@ -8829,6 +8926,12 @@ function createRoller(opts               )         {
     skip,
     get rolling() {
       return rolling;
+    },
+    get holding() {
+      return held !== null;
+    },
+    discard() {
+      held = null;
     },
   };
 }
@@ -9457,6 +9560,39 @@ async function openLinkDialog(randomizer            , node                    ) 
                              
  
 
+/**
+ * The lock that keeps the display on while a wheel is on a projector.
+ *
+ * A table can go several minutes between rolls, which is long enough for a
+ * laptop to dim and a phone to lock. The browser may refuse — it needs a
+ * gesture, or the API may not exist at all — and that is fine: the worst case
+ * is the screen behaving exactly as it did before.
+ */
+let wakeLock                          = null;
+
+async function holdScreenAwake()                {
+  if (wakeLock) return;
+  try {
+    wakeLock = (await navigator.wakeLock?.request("screen")) ?? null;
+    // The browser drops it whenever the tab is hidden, so it has to be asked
+    // for again when the tab comes back and the wheel is still up there.
+    wakeLock?.addEventListener("release", () => {
+      wakeLock = null;
+    });
+  } catch {
+    wakeLock = null;
+  }
+}
+
+function letScreenSleep()       {
+  void wakeLock?.release().catch(() => {});
+  wakeLock = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && isPresenting()) void holdScreenAwake();
+});
+
 function isPresenting()          {
   return document.body.classList.contains("presenting");
 }
@@ -9465,6 +9601,8 @@ function setPresenting(on         , controls                    )       {
   document.body.classList.toggle("presenting", on);
   controls.exitButton.hidden = !on;
   controls.presentButton.textContent = on ? "Leave full screen" : "Full screen";
+  if (on) void holdScreenAwake();
+  else letScreenSleep();
   if (on && document.documentElement.requestFullscreen) {
     void document.documentElement.requestFullscreen().catch(() => {
       /* the browser may refuse without a gesture; the layout still applies */
@@ -9523,6 +9661,45 @@ function createPlayView(
   const result = createResultPanel(fixed ? "Ready" : "Pick something to roll");
   const stage = h("div", { class: "stage" });
   const rollButton = button("Roll", () => void doRoll(), { class: "primary roll-button", style: { width: "100%", minHeight: "52px", fontSize: "17px" } });
+
+  /**
+   * Roll behind the screen.
+   *
+   * Not a preference: it is a thing you do for one roll or one scene, and a
+   * hidden roll that outlived the session it belonged to would be a nasty
+   * surprise. Play screen only — a board's cells all roll at once, so there
+   * is no "the" roll to hold back.
+   */
+  const hiddenBox = h("input", { type: "checkbox", class: "hidden-box", "aria-label": "Roll without showing the result" });
+  hiddenBox.addEventListener("change", () => {
+    if (!hiddenBox.checked && roller.holding) {
+      roller.discard();
+      result.clear("Ready");
+      rollButton.textContent = "Roll";
+    }
+  });
+  const hiddenToggle = h("label", { class: "row tight hidden-toggle faint" }, hiddenBox, "Hidden");
+
+  // How many outcomes one press draws. Lists only: there is no sense in
+  // "six" of a coin flip that is already one of two things.
+  const countInput = h("input", {
+    type: "number", min: "1", max: "20", value: "1", class: "roll-count", "aria-label": "How many to roll at once",
+  });
+  countInput.addEventListener("change", () => {
+    countInput.value = String(rollCount());
+    reserveResult();
+  });
+  const countField = h("label", { class: "row tight roll-count-field faint" }, "×", countInput);
+
+  function rollCount()         {
+    const n = Math.trunc(Number.parseInt(countInput.value, 10));
+    return Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 1;
+  }
+
+  function updateHeaderControls()       {
+    countField.hidden = randomizer.type !== "list";
+    if (randomizer.type !== "list") countInput.value = "1";
+  }
 
   let wheel                                        = null;
   const tray = createDiceTray();
@@ -9605,6 +9782,11 @@ function createPlayView(
       updateBagLine();
       if (randomizer.type === "list" && randomizer.view === "list") buildStage();
     },
+    hidden: () => hiddenBox.checked,
+    count: () => rollCount(),
+    onHeld: () => {
+      rollButton.textContent = "Reveal";
+    },
   });
 
   const doRoll = ()                => {
@@ -9677,10 +9859,12 @@ function createPlayView(
     title.textContent = next.type === "dice" ? (next                          ).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
     editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    roller.discard();
     reserveResult();
     result.clear("Ready");
     buildStage();
     updateBagLine();
+    updateHeaderControls();
     // The bag is read from the app database, so it arrives a moment later;
     // until then the wheel simply shows everything, which is also what it
     // shows for a randomizer that does not use a bag at all.
@@ -9698,7 +9882,10 @@ function createPlayView(
 
   /** Fix the result panel's height from what this randomizer can produce. */
   function reserveResult()       {
-    result.reserve(longestOutcome(randomizer), { seed: state.prefs.seed !== null });
+    const one = longestOutcome(randomizer);
+    const n = randomizer.type === "list" ? rollCount() : 1;
+    const longest = n > 1 ? Array.from({ length: n }, () => one).join(", ") : one;
+    result.reserve(longest, { seed: state.prefs.seed !== null });
   }
 
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer                          ).expression : randomizer.name });
@@ -9759,12 +9946,58 @@ function createPlayView(
     refillButton.hidden = left === total;
   }
 
+  /**
+   * A way back to what you actually roll, on the screen you land on.
+   *
+   * The home screen offers dice presets and nothing else, so the wheel a
+   * table has used all evening is three taps away behind the library. Only
+   * here: with a randomizer open, this is the wrong thing to be looking at.
+   */
+  const shortcuts = h("div", { class: "card home-shortcuts" });
+
+  function renderShortcuts()       {
+    if (fixed) return;
+    const seen = new Set        ();
+    const pick = (id        ) => {
+      if (seen.has(id)) return null;
+      const node = state.library.findById(id);
+      if (!node?.randomizer) return null;
+      seen.add(id);
+      return node;
+    };
+
+    const favourites = state.prefs.favourites.map(pick).filter((n) => n !== null);
+    const recents = [...new Set(state.history.map(rollOwnerId).filter((id)               => id !== null))]
+      .map(pick)
+      .filter((n) => n !== null)
+      .slice(0, 6);
+
+    shortcuts.hidden = favourites.length === 0 && recents.length === 0;
+    if (shortcuts.hidden) {
+      setChildren(shortcuts);
+      return;
+    }
+    const group = (heading        , nodes                   ) =>
+      nodes.length
+        ? h("div", { class: "shortcut-group" },
+            h("h2", { text: heading }),
+            h("div", { class: "row wrap" },
+              ...nodes.map((n) =>
+                button(n.randomizer .name, () => navigate(`#/r/${encodeURIComponent(n.path)}`), { class: "ghost shortcut" })),
+            ),
+          )
+        : null;
+    setChildren(shortcuts, group("Favourites", favourites), group("Recently rolled", recents));
+  }
+
   const playCard = h("div", { class: "card play-card" }, header, stage, bagLine, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
     playCard,
+    ...(fixed ? [] : [shortcuts]),
     recent.el,
   );
+  renderShortcuts();
 
   /**
    * An outcome that points at another randomizer opens it beside this one.
@@ -9791,6 +10024,7 @@ function createPlayView(
   reserveResult();
   buildStage();
   updateBagLine();
+  updateHeaderControls();
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
     const opened = randomizer.id;
     void bagLoad(opened).then(() => {
@@ -9805,7 +10039,8 @@ function createPlayView(
   const unsubscribe = state.subscribe(() => {
     recent.refresh();
     reserveResult();
-  }, ["history", "prefs"]);
+    renderShortcuts();
+  }, ["history", "prefs", "library"]);
 
   /* ---- presenting, and links for slides -------------------------------- */
 
@@ -9823,7 +10058,7 @@ function createPlayView(
   animateBox.addEventListener("change", () => void state.savePrefs({ animationsOff: !animateBox.checked }));
   const animateToggle = h("label", { class: "row tight animate-toggle faint" }, animateBox, "Animate");
 
-  header.append(animateToggle, presentButton, linkButton, exitButton);
+  header.append(hiddenToggle, countField, animateToggle, presentButton, linkButton, exitButton);
 
   if (params.present) present(true);
   if (params.roll) {

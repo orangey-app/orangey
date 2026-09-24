@@ -1,6 +1,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { CryptoSource, SeededSource, seedHash64, hash32, intFromWords } from "../../src/core/rng.ts";
+import { rollListMany } from "../../src/ui/roll.ts";
+import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import {
   NotRollableError,
   buildCumulative,
@@ -120,6 +122,30 @@ describe("weighted selection", () => {
     const pool = Array.from({ length: 8 }, (_, i) => ({ weight: i + 1 }));
     assert.equal(new Set(drawWithoutReplacement(pool, 8, rng)).size, 8, "a bag draw never repeats itself");
     assert.throws(() => drawWithoutReplacement(pool, 9, rng), NotRollableError);
+  });
+
+  test("rolling several at once, with and without a bag", () => {
+    const list = {
+      ...emptyRandomizer("list", "Monsters"),
+      items: [makeItem("One", 1), makeItem("Two", 1), makeItem("Three", 1)],
+    } as ListRandomizer;
+
+    // With replacement: three draws, and nothing about a single winner.
+    const many = rollListMany(list, 3, new SeededSource("many"));
+    assert.equal(many.text.split(", ").length, 3, many.text);
+    assert.equal(many.detail, "3 outcomes");
+    assert.equal(many.itemIndex, undefined, "a multiple draw has no single winner to chain from");
+    assert.equal(many.image, undefined);
+    assert.equal(many.reaction, undefined);
+
+    // A bag gives what is left and no more, however many are asked for.
+    const bag = { ...list, withoutReplacement: true } as ListRandomizer;
+    const drawn = new Set([bag.items[0].id]);
+    const out = rollListMany(bag, 5, new SeededSource("bag-many"), drawn);
+    const labels = out.text.split(", ");
+    assert.equal(labels.length, 2, `asked for 5 with 2 left, got ${out.text}`);
+    assert.deepEqual([...labels].sort(), ["Three", "Two"]);
+    assert.deepEqual(out.indices, out.indices?.slice().filter((i) => i !== 0), "a drawn outcome came up again");
   });
 
   test("a bag empties one outcome at a time, and the list keeps its order", () => {

@@ -13,7 +13,7 @@ import { tryParse } from "../core/dice/grammar.ts";
 import { formatResult, speakResult } from "../core/dice/format.ts";
 import { drawNumbers, formatNumbers } from "../core/number.ts";
 import { type RandomSource } from "../core/rng.ts";
-import { isRollable, pickWeightedIndex, withoutDrawn } from "../core/weighted.ts";
+import { drawWithoutReplacement, isRollable, pickWeightedIndex, rollableIndices, withoutDrawn } from "../core/weighted.ts";
 import type { ListRandomizer, OutcomeReaction, Randomizer } from "../model/randomizer.ts";
 import type { RollResult } from "../core/dice/evaluate.ts";
 
@@ -37,6 +37,8 @@ export interface Outcome {
   isMinimum?: boolean;
   /** The game master tagged this outcome for Orangey (wheels and coins). */
   reaction?: OutcomeReaction;
+  /** For a multiple draw: every outcome that came up, in list order positions. */
+  indices?: number[];
 }
 
 export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
@@ -133,6 +135,40 @@ function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
     itemIndex: index,
     image: item.image,
     reaction: item.reaction,
+  };
+}
+
+/**
+ * Several outcomes from one list in one press.
+ *
+ * "Roll six wandering monsters" is one roll with six answers, not six rolls:
+ * one history row, one landing, one line of text. There is no `itemIndex`,
+ * so nothing chains, no picture shows and no tagged reaction fires — those
+ * are all about a single winning outcome, and there is no single winner here.
+ *
+ * A bag draws without putting back and stops when the bag runs out; an
+ * ordinary list can repeat itself, which is what "with replacement" means.
+ */
+export function rollListMany(r: ListRandomizer, n: number, rng: RandomSource, drawn?: ReadonlySet<string>): Outcome {
+  const bag = r.withoutReplacement === true;
+  const pool = bag && drawn ? withoutDrawn(r.items, drawn) : r.items;
+  const wanted = Math.max(1, Math.min(20, Math.trunc(n)));
+
+  const indices: number[] = bag
+    ? drawWithoutReplacement(pool, Math.min(wanted, rollableIndices(pool).length), rng)
+    : Array.from({ length: wanted }, () => pickWeightedIndex(pool, rng));
+
+  const rolled: string[] = [];
+  const labels = indices.map((i) => expandInlineDice(r.items[i].label, rng, rolled));
+  const text = labels.join(", ");
+  return {
+    kind: "list",
+    text,
+    detail: `${labels.length} outcome${labels.length === 1 ? "" : "s"}`,
+    speak: `${r.name}: ${text}.`,
+    seed: rng.seed,
+    // Deliberately no itemIndex, image or reaction: see above.
+    indices,
   };
 }
 

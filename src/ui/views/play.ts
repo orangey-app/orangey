@@ -11,7 +11,7 @@ import { emptyRandomizer, newId, type ListItem, type Randomizer, type Rollable }
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
 import { button, h, isTyping, setChildren } from "../dom.ts";
-import { state } from "../state.ts";
+import { rollOwnerId, state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { createDiceTray } from "../components/dice.ts";
 import { createCoin } from "../components/coin.ts";
@@ -46,6 +46,45 @@ export function createPlayView(
   const result = createResultPanel(fixed ? "Ready" : "Pick something to roll");
   const stage = h("div", { class: "stage" });
   const rollButton = button("Roll", () => void doRoll(), { class: "primary roll-button", style: { width: "100%", minHeight: "52px", fontSize: "17px" } });
+
+  /**
+   * Roll behind the screen.
+   *
+   * Not a preference: it is a thing you do for one roll or one scene, and a
+   * hidden roll that outlived the session it belonged to would be a nasty
+   * surprise. Play screen only — a board's cells all roll at once, so there
+   * is no "the" roll to hold back.
+   */
+  const hiddenBox = h("input", { type: "checkbox", class: "hidden-box", "aria-label": "Roll without showing the result" });
+  hiddenBox.addEventListener("change", () => {
+    if (!hiddenBox.checked && roller.holding) {
+      roller.discard();
+      result.clear("Ready");
+      rollButton.textContent = "Roll";
+    }
+  });
+  const hiddenToggle = h("label", { class: "row tight hidden-toggle faint" }, hiddenBox, "Hidden");
+
+  // How many outcomes one press draws. Lists only: there is no sense in
+  // "six" of a coin flip that is already one of two things.
+  const countInput = h("input", {
+    type: "number", min: "1", max: "20", value: "1", class: "roll-count", "aria-label": "How many to roll at once",
+  });
+  countInput.addEventListener("change", () => {
+    countInput.value = String(rollCount());
+    reserveResult();
+  });
+  const countField = h("label", { class: "row tight roll-count-field faint" }, "×", countInput);
+
+  function rollCount(): number {
+    const n = Math.trunc(Number.parseInt(countInput.value, 10));
+    return Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 1;
+  }
+
+  function updateHeaderControls(): void {
+    countField.hidden = randomizer.type !== "list";
+    if (randomizer.type !== "list") countInput.value = "1";
+  }
 
   let wheel: ReturnType<typeof createWheel> | null = null;
   const tray = createDiceTray();
@@ -128,6 +167,11 @@ export function createPlayView(
       updateBagLine();
       if (randomizer.type === "list" && randomizer.view === "list") buildStage();
     },
+    hidden: () => hiddenBox.checked,
+    count: () => rollCount(),
+    onHeld: () => {
+      rollButton.textContent = "Reveal";
+    },
   });
 
   const doRoll = (): Promise<void> => {
@@ -200,10 +244,12 @@ export function createPlayView(
     title.textContent = next.type === "dice" ? (next as { expression: string }).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
     editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    roller.discard();
     reserveResult();
     result.clear("Ready");
     buildStage();
     updateBagLine();
+    updateHeaderControls();
     // The bag is read from the app database, so it arrives a moment later;
     // until then the wheel simply shows everything, which is also what it
     // shows for a randomizer that does not use a bag at all.
@@ -221,7 +267,10 @@ export function createPlayView(
 
   /** Fix the result panel's height from what this randomizer can produce. */
   function reserveResult(): void {
-    result.reserve(longestOutcome(randomizer), { seed: state.prefs.seed !== null });
+    const one = longestOutcome(randomizer);
+    const n = randomizer.type === "list" ? rollCount() : 1;
+    const longest = n > 1 ? Array.from({ length: n }, () => one).join(", ") : one;
+    result.reserve(longest, { seed: state.prefs.seed !== null });
   }
 
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer as { expression: string }).expression : randomizer.name });
@@ -282,12 +331,58 @@ export function createPlayView(
     refillButton.hidden = left === total;
   }
 
+  /**
+   * A way back to what you actually roll, on the screen you land on.
+   *
+   * The home screen offers dice presets and nothing else, so the wheel a
+   * table has used all evening is three taps away behind the library. Only
+   * here: with a randomizer open, this is the wrong thing to be looking at.
+   */
+  const shortcuts = h("div", { class: "card home-shortcuts" });
+
+  function renderShortcuts(): void {
+    if (fixed) return;
+    const seen = new Set<string>();
+    const pick = (id: string) => {
+      if (seen.has(id)) return null;
+      const node = state.library.findById(id);
+      if (!node?.randomizer) return null;
+      seen.add(id);
+      return node;
+    };
+
+    const favourites = state.prefs.favourites.map(pick).filter((n) => n !== null);
+    const recents = [...new Set(state.history.map(rollOwnerId).filter((id): id is string => id !== null))]
+      .map(pick)
+      .filter((n) => n !== null)
+      .slice(0, 6);
+
+    shortcuts.hidden = favourites.length === 0 && recents.length === 0;
+    if (shortcuts.hidden) {
+      setChildren(shortcuts);
+      return;
+    }
+    const group = (heading: string, nodes: typeof favourites) =>
+      nodes.length
+        ? h("div", { class: "shortcut-group" },
+            h("h2", { text: heading }),
+            h("div", { class: "row wrap" },
+              ...nodes.map((n) =>
+                button(n.randomizer!.name, () => navigate(`#/r/${encodeURIComponent(n.path)}`), { class: "ghost shortcut" })),
+            ),
+          )
+        : null;
+    setChildren(shortcuts, group("Favourites", favourites), group("Recently rolled", recents));
+  }
+
   const playCard = h("div", { class: "card play-card" }, header, stage, bagLine, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
     playCard,
+    ...(fixed ? [] : [shortcuts]),
     recent.el,
   );
+  renderShortcuts();
 
   /**
    * An outcome that points at another randomizer opens it beside this one.
@@ -314,6 +409,7 @@ export function createPlayView(
   reserveResult();
   buildStage();
   updateBagLine();
+  updateHeaderControls();
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
     const opened = randomizer.id;
     void bagLoad(opened).then(() => {
@@ -328,7 +424,8 @@ export function createPlayView(
   const unsubscribe = state.subscribe(() => {
     recent.refresh();
     reserveResult();
-  }, ["history", "prefs"]);
+    renderShortcuts();
+  }, ["history", "prefs", "library"]);
 
   /* ---- presenting, and links for slides -------------------------------- */
 
@@ -346,7 +443,7 @@ export function createPlayView(
   animateBox.addEventListener("change", () => void state.savePrefs({ animationsOff: !animateBox.checked }));
   const animateToggle = h("label", { class: "row tight animate-toggle faint" }, animateBox, "Animate");
 
-  header.append(animateToggle, presentButton, linkButton, exitButton);
+  header.append(hiddenToggle, countField, animateToggle, presentButton, linkButton, exitButton);
 
   if (params.present) present(true);
   if (params.roll) {

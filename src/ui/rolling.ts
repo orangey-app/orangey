@@ -21,7 +21,7 @@ import type { ResultPanel } from "./components/result.ts";
 import type { WheelView } from "./components/wheel.ts";
 import type { DiceTray } from "./components/dice.ts";
 import type { CoinView } from "./components/coin.ts";
-import { rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
+import { rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
 import { bagDrawn, bagTake } from "./bag.ts";
 import { withoutDrawn } from "../core/weighted.ts";
 import { summarize } from "./mascot/events.ts";
@@ -41,16 +41,34 @@ export interface RollerOptions {
   onEnd?: () => void;
   /** Told after an outcome has been taken out of the bag, so a view can redraw. */
   onBagChange?: () => void;
+  /**
+   * Roll behind the screen: decide the outcome, show nothing, and wait.
+   *
+   * A game master with the wheel on a projector needs to know what came up
+   * before the table does. The first press rolls and says only that it has;
+   * the second reveals, and only then does anything land or get recorded.
+   */
+  hidden?: () => boolean;
+  /** How many outcomes one press draws. Lists only; 1 everywhere else. */
+  count?: () => number;
+  /** The roll is held, waiting to be revealed. */
+  onHeld?: () => void;
 }
 
 export interface Roller {
   roll(): Promise<void>;
   skip(): void;
   readonly rolling: boolean;
+  /** A hidden roll is waiting to be revealed. */
+  readonly holding: boolean;
+  /** Throw away an unrevealed roll — leaving the screen does this. */
+  discard(): void;
 }
 
 export function createRoller(opts: RollerOptions): Roller {
   let rolling = false;
+  /** A hidden roll that has happened but has not been shown yet. */
+  let held: { outcome: Outcome; randomizer: Rollable; bag: ReadonlySet<string> | null } | null = null;
 
   function skip(): void {
     opts.wheel()?.skip();
@@ -74,6 +92,13 @@ export function createRoller(opts: RollerOptions): Roller {
       skip();
       return;
     }
+    // A second press after a hidden roll means "show the table".
+    if (held) {
+      const { outcome, randomizer: what, bag } = held;
+      held = null;
+      await land(what, outcome, bag, false);
+      return;
+    }
     const randomizer = opts.randomizer();
     // Bag mode: the roll is made against what is still in the bag, and the
     // list as a whole is left alone — `withoutDrawn` only marks, so every
@@ -92,7 +117,10 @@ export function createRoller(opts: RollerOptions): Roller {
 
     let outcome: Outcome;
     try {
-      outcome = rollRandomizer(rollable, state.source());
+      const many = Math.max(1, Math.trunc(opts.count?.() ?? 1));
+      outcome = many > 1 && rollable.type === "list"
+        ? rollListMany(rollable, many, state.source(), bag ?? undefined)
+        : rollRandomizer(rollable, state.source());
     } catch (e) {
       const reason = (e as Error).message;
       opts.result.clear(reason);
@@ -100,8 +128,35 @@ export function createRoller(opts: RollerOptions): Roller {
       return;
     }
 
+    // Hidden: it has been rolled, and that is all anybody may know yet.
+    // Nothing lands, nothing is recorded, the bag keeps its outcome, and
+    // navigating away without revealing throws the roll away.
+    if (opts.hidden?.()) {
+      held = { outcome, randomizer, bag };
+      opts.result.pending("Rolled. Press Reveal.");
+      opts.onHeld?.();
+      return;
+    }
+
+    rolling = true;
+    await land(randomizer, outcome, bag, true);
+  }
+
+  /**
+   * The landing, in the order the whole app depends on (P8): the answer, the
+   * announcement and the mascot's reaction together, once, at the end.
+   *
+   * `animated` is false for a reveal: the table has been waiting already, so
+   * the answer arrives at once rather than after another spin.
+   */
+  async function land(
+    randomizer: Rollable,
+    outcome: Outcome,
+    bag: ReadonlySet<string> | null,
+    animated: boolean,
+  ): Promise<void> {
     const feel = opts.feel();
-    const willAnimate = animates(randomizer, outcome, feel);
+    const willAnimate = animated && animates(randomizer, outcome, feel);
     rolling = true;
     opts.onStart?.(willAnimate);
 
@@ -114,19 +169,20 @@ export function createRoller(opts: RollerOptions): Roller {
 
     const wheel = opts.wheel();
     if (randomizer.type === "list" && wheel && outcome.itemIndex !== undefined) {
-      await wheel.spinTo(outcome.itemIndex, feel);
+      await wheel.spinTo(outcome.itemIndex, willAnimate ? feel : { ...feel, motion: "instant" });
     } else if (randomizer.type === "dice" && opts.tray && outcome.dice) {
-      await opts.tray.show(outcome.dice, feel);
+      await opts.tray.show(outcome.dice, willAnimate ? feel : { ...feel, motion: "instant" });
     } else if (randomizer.type === "coin" && opts.coin) {
-      await opts.coin.show(outcome.text, feel);
+      await opts.coin.show(outcome.text, willAnimate ? feel : { ...feel, motion: "instant" });
     }
 
     if (willAnimate) opts.result.show(outcome);
     // Out of the bag at the landing, never at the start: a skipped roll still
     // lands, so it still takes, and a roll that never arrived never did.
-    if (bag && randomizer.type === "list" && outcome.itemIndex !== undefined) {
-      bagTake(randomizer.id, randomizer.items[outcome.itemIndex].id);
-      opts.onBagChange?.();
+    if (bag && randomizer.type === "list") {
+      const taken = outcome.indices ?? (outcome.itemIndex !== undefined ? [outcome.itemIndex] : []);
+      for (const at of taken) bagTake(randomizer.id, randomizer.items[at].id);
+      if (taken.length) opts.onBagChange?.();
     }
     if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
     rolling = false;
@@ -139,6 +195,12 @@ export function createRoller(opts: RollerOptions): Roller {
     skip,
     get rolling() {
       return rolling;
+    },
+    get holding() {
+      return held !== null;
+    },
+    discard() {
+      held = null;
     },
   };
 }
