@@ -18,6 +18,15 @@ export interface DieRoll {
   exploded?: boolean;
   /** For a success pool: did this kept die meet the target? */
   success?: boolean;
+  /**
+   * Which throw this face arrived in: absent for the dice first thrown, 1 for
+   * a die an explosion added or a face a reroll replaced, 2 for one added by
+   * that, and so on. The tray lands the throws one after another, the way
+   * they happen at a table. Recorded here, where the dice are made, because
+   * rebuilding it from the order of the array would break the moment this
+   * loop changed.
+   */
+  wave?: number;
 }
 
 export interface TermResult {
@@ -132,15 +141,18 @@ function evalNode(node: Node, rng: RandomSource): { value: number; dice?: DieRol
         ) {
           // The face that was thrown away stays visible, the way a dropped
           // die does: what happened at the table is part of the answer.
-          dice.splice(i, 0, { value: die.value, kept: false, rerolled: true, exploded: die.exploded });
+          dice.splice(i, 0, { value: die.value, kept: false, rerolled: true, exploded: die.exploded, ...(die.wave ? { wave: die.wave } : {}) });
           i++;
           die.value = drawFace(node, rng);
+          // The replacement is thrown after the face it replaces has landed.
+          die.wave = (die.wave ?? 0) + 1;
           rerolls++;
         }
       }
       if (node.explode && die.value === top && added < EXPLODE_CAP) {
         added++;
-        dice.push({ value: drawFace(node, rng), kept: true, exploded: true });
+        // Thrown once the die that exploded has landed on its top face.
+        dice.push({ value: drawFace(node, rng), kept: true, exploded: true, wave: (die.wave ?? 0) + 1 });
       }
     }
   }

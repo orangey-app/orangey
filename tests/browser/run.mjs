@@ -661,6 +661,60 @@ async function main() {
     assert.equal(settled.dropped, 1, "4d6kh3 must show exactly one dropped die");
     const kept = settled.values.slice().sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0);
     assert.equal(settled.total, kept, "the total must be the three kept dice");
+
+    // Exploding dice land in throws: the die an explosion added waits, unseen,
+    // until the first throw is down, and the answer waits for the last. The
+    // seed fixes the roll — seed "table" makes the first 2d2! a 1 and a 2,
+    // and the 2 explodes into a 1 — so this is one roll, not a hunt for one.
+    await page.evaluate(`
+      const { state } = window.orangey;
+      await state.savePrefs({ seed: "table" });
+      state.resetSeedSequence();
+    `);
+    const staged = await page.evaluate(`
+      const field = document.querySelector('.quickbar input[type="text"]');
+      field.focus();
+      field.value = "2d2!";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      const look = () => ({
+        dice: document.querySelectorAll(".dice-tray .die").length,
+        waiting: document.querySelectorAll(".die-flight.waiting").length,
+        down: document.querySelectorAll(".dice-tray .die:not(.rolling)").length,
+        panel: document.querySelector(".result-value").textContent,
+      });
+      // The first throw lands at 1400 ms and the second at 1960 ms.
+      await new Promise((r) => setTimeout(r, 300));
+      const early = look();
+      await new Promise((r) => setTimeout(r, 1350));
+      return { early, between: look() };
+    `);
+    assert.deepEqual(staged.early, { dice: 3, waiting: 1, down: 0, panel: "Rolling…" }, "in the air: the explosion's die waits");
+    assert.deepEqual(staged.between, { dice: 3, waiting: 0, down: 2, panel: "Rolling…" }, "first throw down, second in the air");
+    await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
+    assert.equal(await page.evaluate(`return document.querySelector(".result-value").textContent`), "4");
+    assert.equal(await page.evaluate(`return [...document.querySelectorAll(".dice-tray .die")].map((d) => d.textContent).join(",")`), "1,2,1");
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".die-flight.waiting, .die.rolling").length`), 0);
+    // Finish only once the roll's history row is stored: a page closed in the
+    // middle of that write is a suspect in a later test's storage failing.
+    await page.evaluate(`
+      for (let i = 0; i < 100; i++) {
+        const stored = await new Promise((resolve, reject) => {
+          const req = indexedDB.open("orangey");
+          req.onerror = () => reject(req.error);
+          req.onsuccess = () => {
+            const db = req.result;
+            const count = db.transaction("history").objectStore("history").count();
+            count.onsuccess = () => { db.close(); resolve(count.result); };
+            count.onerror = () => { db.close(); reject(count.error); };
+          };
+        });
+        if (stored >= 2) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw new Error("the 2d2! roll never reached the stored history");
+    `);
+    await page.evaluate(`await window.orangey.state.savePrefs({ seed: null })`);
   });
 
   await test("flat is the default, and the dice style setting sticks", async (page) => {

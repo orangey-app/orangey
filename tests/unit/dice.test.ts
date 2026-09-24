@@ -126,6 +126,8 @@ describe("dice notation", () => {
     assert.deepEqual(boom.terms[0].dice?.map((d) => [d.value, d.kept, d.exploded === true]),
       [[6, true, false], [3, true, false], [6, true, true], [2, true, true]]);
     assert.equal(boom.total, 17);
+    // Each explosion is a throw after the one that caused it.
+    assert.deepEqual(boom.terms[0].dice?.map((d) => d.wave ?? 0), [0, 0, 1, 2]);
     assert.equal(boom.openEnded, true);
     assert.match(formatResult(boom), /6!/);
 
@@ -134,6 +136,8 @@ describe("dice notation", () => {
     assert.deepEqual(rr.terms[0].dice?.map((d) => [d.value, d.kept, d.rerolled === true]),
       [[1, false, true], [5, true, false], [4, true, false]]);
     assert.equal(rr.total, 9);
+    // The replacement is thrown after the face it replaces has landed.
+    assert.deepEqual(rr.terms[0].dice?.map((d) => d.wave ?? 0), [0, 1, 0]);
     assert.equal(rr.openEnded, false);
     // An unlimited reroll takes those faces out of the range entirely.
     assert.deepEqual(expressionBounds("2d6r1"), { min: 4, max: 12, openEnded: false });

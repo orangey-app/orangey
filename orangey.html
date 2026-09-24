@@ -511,6 +511,9 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
    their own slots. Ease-in-out: slow to leave the hand, slow to arrive. */
 .die-flight { will-change: transform; }
 .die-flight.flying { animation: throw var(--flight, 900ms) cubic-bezier(0.45, 0, 0.25, 1) both; }
+/* A later throw — dice an explosion or a reroll added — is not in the air
+   yet: it keeps its place in the row, unseen, until it is thrown. */
+.die-flight.waiting { visibility: hidden; }
 @keyframes throw {
   0%   { transform: translate(var(--sx, 0px), var(--sy, 0px)) scale(0.8); }
   45%  { transform: translate(var(--mx, 0px), var(--my, 0px)) scale(1.06); }
@@ -670,6 +673,10 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .history-list .what { flex: 1; min-width: 0; }
 .history-list .what .name { font-weight: 600; }
 .history-list .what .detail { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+/* The dice behind an answer and the roll that led to it: under the headline,
+   quieter than it, one line each. */
+.history-list .what .roll-note { display: block; font-size: 12px; color: var(--ink-faint); }
+.history-list .what .roll-parts { font-family: var(--mono); }
 
 /* Full-screen result, for a link clicked from a slide or a projector.
    The chrome is hidden here rather than with the hidden attribute, which the
@@ -1557,6 +1564,19 @@ function sourceFor(seed                           )               {
                 
                                                                         
                                                                                      
+                                                                      
+                   
+     
+                                                                    
+                                                                              
+                                                        
+     
+                    
+ 
+
+                             
+                         
+                
  
 
                         
@@ -4454,6 +4474,31 @@ function curveExponent(curve           )         {
  */
 const WIREFRAME_DICE_LIMIT = 20;
 
+/**
+ * Exploding dice and rerolls land in throws, one after another.
+ *
+ * The first throw tumbles for the whole dice duration. Each later throw is
+ * thrown in as the one before it lands and flies for a share of that, so a
+ * `3d6!` reads as a second handful rather than one handful that took longer.
+ * Only the first few throws get a beat of their own: `50d6!` can explode for
+ * a long time, and anything past the last staged throw lands with it.
+ *
+ * Not a Feel setting: dice Feel settings can travel inside a randomizer file,
+ * and a new one there would be a change to the file format.
+ */
+const DICE_WAVE_GAP = 0.4;
+const DICE_WAVES_STAGED = 3;
+
+/** When each die is thrown and when it lands, in ms from the start of the roll. */
+function diceWaves(duration        , waves                   )                                        {
+  if (duration <= 0) return waves.map(() => ({ throwAt: 0, landAt: 0 }));
+  const gap = duration * DICE_WAVE_GAP;
+  return waves.map((raw) => {
+    const w = Math.min(Math.max(0, raw), DICE_WAVES_STAGED);
+    return w === 0 ? { throwAt: 0, landAt: duration } : { throwAt: duration + (w - 1) * gap, landAt: duration + w * gap };
+  });
+}
+
 /** The roll-back to use for one particular spin: a random share of the maximum. */
 function settleForSpin(feel              , random               = Math.random)         {
   const max = feel.wheel.settleDegrees;
@@ -4972,6 +5017,18 @@ function rollOwnerId(row            )                {
   return row.repeat?.kind === "randomizer" ? row.repeat.id : row.randomizerId;
 }
 
+/**
+ * What a row says beyond its headline: the dice rolled inside the outcome,
+ * and the roll that sent you here. Each is its own line, and either may be
+ * missing — a row written before 0.5 has neither.
+ */
+function rollDetails(row            )                                                {
+  return {
+    parts: row.parts?.length ? row.parts.join(" · ") : null,
+    from: row.from ? `from ${row.from.randomizerName} → ${row.from.label}` : null,
+  };
+}
+
 /** The rows belonging to these randomizers; no ids at all means all of them. */
 function rollsInScope(rows              , ids          )               {
   if (ids.length === 0) return rows;
@@ -5218,7 +5275,7 @@ class AppState {
     emitMascotEvent(this.events, event);
   }
 
-  async record(randomizer            , outcome         )                {
+  async record(randomizer            , outcome         , from             )                {
     this.lastOutcome = { outcome, randomizer };
     const entry             = {
       id: newId(),
@@ -5233,6 +5290,8 @@ class AppState {
         randomizer.type === "dice"
           ? { kind: "dice", expression: randomizer.expression }
           : { kind: "randomizer", id: randomizer.id },
+      ...(outcome.rolled?.length ? { parts: outcome.rolled } : {}),
+      ...(from ? { from } : {}),
     };
     this.history = [entry, ...this.history].slice(0, HISTORY_IN_MEMORY);
     this.emit("history", "outcome");
@@ -7567,6 +7626,8 @@ function project(v      , radius        , distanceFromCamera = 4)            {
                 
                     
                     
+                                                                        
+               
      
                                                                     
     
@@ -7602,6 +7663,22 @@ function launch(tray             , wrappers               , feel              , 
     w.style.animationDelay = `${Math.round(i * 30 * spread)}ms`;
     w.classList.add("flying");
   });
+}
+
+/**
+ * The dice grouped by when they land, earliest first, each group with the
+ * time it is thrown in. One group for an ordinary roll; more when something
+ * exploded or was rerolled.
+ */
+function throwsOf(dice           , duration        )                                                           {
+  const times = diceWaves(duration, dice.map((d) => d.wave));
+  const byLanding = new Map                                                                ();
+  times.forEach((t, i) => {
+    const group = byLanding.get(t.landAt) ?? { throwAt: t.throwAt, landAt: t.landAt, indices: [] };
+    group.indices.push(i);
+    byLanding.set(t.landAt, group);
+  });
+  return [...byLanding.values()].sort((a, b) => a.landAt - b.landAt);
 }
 
 function createDiceTray()           {
@@ -7681,38 +7758,72 @@ function createDiceTray()           {
     );
     const wrappers = elements.map((e) => h("div", { class: "die-flight" }, e));
     el.replaceChildren(...wrappers);
-    launch(el, wrappers, feel, duration);
+
+    // A die an explosion or a reroll adds is not in the air until the throw
+    // before it has landed: it waits, unseen, in the place it will land.
+    const throws = throwsOf(dice, duration);
+    const landed = new Set        ();
+    const timers                                  = [];
+    for (const t of throws) {
+      const flight = t.indices.map((i) => wrappers[i]);
+      if (t.throwAt === 0) {
+        launch(el, flight, feel, t.landAt);
+        continue;
+      }
+      for (const w of flight) w.classList.add("waiting");
+      timers.push(setTimeout(() => {
+        for (const w of flight) w.classList.remove("waiting");
+        launch(el, flight, feel, t.landAt - t.throwAt);
+      }, t.throwAt));
+    }
 
     const spin = setInterval(() => {
       elements.forEach((node, i) => {
-        node.textContent = tumbleFace(dice[i]);
+        if (!landed.has(i)) node.textContent = tumbleFace(dice[i]);
       });
     }, faceChange);
 
     return new Promise      ((resolve) => {
-      const land = () => {
-        clearInterval(spin);
-        clearTimeout(timer);
-        elements.forEach((node, i) => {
+      /** Put these dice down on their real faces. */
+      const put = (indices          ) => {
+        indices.forEach((i, n) => {
+          if (landed.has(i)) return;
+          landed.add(i);
+          const node = elements[i];
           const die = dice[i];
-          wrappers[i].classList.remove("flying");
+          wrappers[i].classList.remove("flying", "waiting");
           node.className = dieClasses(die, "die");
           node.textContent = faceText(die);
           node.removeAttribute("aria-hidden");
           node.title = titleFor(die);
           if (bounce > 0) {
             node.style.setProperty("--bounce", `${bounce}ms`);
-            node.style.animationDelay = `${Math.round(i * 25 * feel.dice.spread)}ms`;
+            node.style.animationDelay = `${Math.round(n * 25 * feel.dice.spread)}ms`;
             node.classList.add("landing");
           }
         });
         vibrate(feel, 12);
+      };
+      /** The last throw is down: the roll is over once its bounce is. */
+      const done = (lastCount        ) => {
+        clearInterval(spin);
+        for (const timer of timers) clearTimeout(timer);
         finish = null;
-        if (bounce > 0) setTimeout(resolve, bounce + dice.length * 25 * feel.dice.spread);
+        if (bounce > 0) setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
         else resolve();
       };
-      finish = land;
-      const timer = setTimeout(land, duration);
+      throws.forEach((t, k) => {
+        timers.push(setTimeout(() => {
+          put(t.indices);
+          if (k === throws.length - 1) done(t.indices.length);
+        }, t.landAt));
+      });
+      // Skipping puts every die down at once, the later throws included.
+      finish = () => {
+        const rest = dice.map((_, i) => i).filter((i) => !landed.has(i));
+        put(rest);
+        done(rest.length);
+      };
     });
   }
 
@@ -7739,17 +7850,41 @@ function createDiceTray()           {
       return { slot, stage, canvas, value, caption, flight };
     });
     el.replaceChildren(...slots.map((s) => s.flight));
-    if (duration > 0) launch(el, slots.map((s) => s.flight), feel, duration);
 
+    // As in the flat tray: a later throw waits, unseen, where it will land.
+    const throws = throwsOf(dice, duration);
+    const timing = new Map                                             ();
+    for (const t of throws) for (const i of t.indices) timing.set(i, t);
+    const timers                                  = [];
+    if (duration > 0) {
+      for (const t of throws) {
+        const flight = t.indices.map((i) => slots[i].flight);
+        if (t.throwAt === 0) {
+          launch(el, flight, feel, t.landAt);
+          continue;
+        }
+        for (const f of flight) f.classList.add("waiting");
+        timers.push(setTimeout(() => {
+          for (const f of flight) f.classList.remove("waiting");
+          launch(el, flight, feel, t.landAt - t.throwAt);
+        }, t.throwAt));
+      }
+    }
+
+    const start = performance.now();
     const wires            = dice.map((die, i) => {
       const solid = solidForSides(die.sides);
       const axes = pickTumbleAxes(solid);
+      // Each die tumbles for its own flight: the whole duration for the first
+      // throw, the gap before it lands for a later one.
+      const when = timing.get(i) ?? { throwAt: 0, landAt: duration };
+      const flight = Math.max(1, when.landAt - when.throwAt);
       // Two or three whole turns across the tumble, so the die reads as
       // rolling rather than shivering, whatever the duration is set to.
       const turns = 2 + Math.random() * 1.5;
-      const base = (Math.PI * 2 * turns) / Math.max(0.2, duration / 1000);
-      const now = performance.now();
-      const schedule = bounceSchedule(duration, feel.dice.bounces);
+      const base = (Math.PI * 2 * turns) / Math.max(0.2, flight / 1000);
+      const from = start + when.throwAt;
+      const schedule = bounceSchedule(flight, feel.dice.bounces);
       return {
         canvas: slots[i].canvas,
         ctx: slots[i].canvas.getContext("2d"),
@@ -7758,12 +7893,12 @@ function createDiceTray()           {
         q: quatFromAxisAngle(axes[0], Math.random() * Math.PI * 2),
         axes,
         speeds: [base * (Math.random() < 0.5 ? -1 : 1), base * 0.65 * (Math.random() < 0.5 ? -1 : 1)],
-        bounceAt: schedule.bounceAt.map((t) => now + t),
+        bounceAt: schedule.bounceAt.map((t) => from + t),
         nextBounce: 0,
         nextAxis: 0,
         settleFrom: null,
-        settleStart: now + schedule.settleStart,
-        settleEnd: now + schedule.settleEnd,
+        settleStart: from + schedule.settleStart,
+        settleEnd: from + schedule.settleEnd,
         // Resting square-on to the viewer, allowing for the camera tilt, so
         // the face is seen undistorted and its number can sit inside it.
         rest: restQuaternion(solid, die.face % solid.faces.length, Math.random() * Math.PI * 2, VIEW_TILT),
@@ -7775,32 +7910,39 @@ function createDiceTray()           {
       };
     });
 
-    const reveal = () => {
-      wires.forEach((wire, i) => {
+    // One size for every number in the tray, comfortable in the smallest
+    // face present, so a d12 beside a d6 reads as a set rather than a jumble
+    // of type sizes. Worked out once for all of them, whichever throw lands
+    // first, so a later throw does not change the size of numbers already down.
+    let fits                                             = null;
+    let fitSize = Infinity;
+
+    /** Put these dice down on their real faces. */
+    const reveal = (indices          ) => {
+      if (!fits) {
+        fits = wires.map((wire, i) => fitValueToFace(wire, slots[i].value));
+        fitSize = Math.min(...fits.map((f) => f?.size ?? Infinity));
+      }
+      indices.forEach((i, n) => {
+        const wire = wires[i];
+        if (wire.landed) return;
         const die = dice[i];
         active.delete(wire);
         wire.q = wire.rest;
         wire.landed = true;
         draw(wire);
-        slots[i].flight.classList.remove("flying");
+        slots[i].flight.classList.remove("flying", "waiting");
         slots[i].slot.className = dieClasses(die, "die-slot");
         slots[i].value.textContent = faceText(die);
         slots[i].caption.textContent = faceText(die);
-      });
-      // One size for every number in the tray, comfortable in the smallest
-      // face present, so a d12 beside a d6 reads as a set rather than a
-      // jumble of type sizes.
-      const fits = wires.map((wire, i) => fitValueToFace(wire, slots[i].value));
-      const size = Math.min(...fits.map((f) => f?.size ?? Infinity));
-      fits.forEach((fit, i) => {
-        if (!fit) return;
-        slots[i].value.style.fontSize = `${Math.max(8, Number.isFinite(size) ? size : fit.size).toFixed(1)}px`;
-        slots[i].value.style.transform = `translate(${fit.centre.x.toFixed(1)}px, ${fit.centre.y.toFixed(1)}px)`;
-      });
-      wires.forEach((_, i) => {
+        const fit = fits [i];
+        if (fit) {
+          slots[i].value.style.fontSize = `${Math.max(8, Number.isFinite(fitSize) ? fitSize : fit.size).toFixed(1)}px`;
+          slots[i].value.style.transform = `translate(${fit.centre.x.toFixed(1)}px, ${fit.centre.y.toFixed(1)}px)`;
+        }
         if (bounce > 0) {
           slots[i].stage.style.setProperty("--bounce", `${bounce}ms`);
-          slots[i].stage.style.animationDelay = `${Math.round(i * 25 * feel.dice.spread)}ms`;
+          slots[i].stage.style.animationDelay = `${Math.round(n * 25 * feel.dice.spread)}ms`;
           slots[i].stage.classList.add("landing");
         }
       });
@@ -7809,7 +7951,7 @@ function createDiceTray()           {
     mine = wires;
 
     if (duration <= 0) {
-      reveal();
+      reveal(dice.map((_, i) => i));
       return Promise.resolve();
     }
 
@@ -7817,16 +7959,26 @@ function createDiceTray()           {
     ensureLoop();
 
     return new Promise      ((resolve) => {
-      const land = () => {
-        clearTimeout(timer);
-        reveal();
-        vibrate(feel, 12);
+      const done = (lastCount        ) => {
+        for (const timer of timers) clearTimeout(timer);
         finish = null;
-        if (bounce > 0) setTimeout(resolve, bounce + dice.length * 25 * feel.dice.spread);
+        if (bounce > 0) setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
         else resolve();
       };
-      finish = land;
-      const timer = setTimeout(land, duration);
+      throws.forEach((t, k) => {
+        timers.push(setTimeout(() => {
+          reveal(t.indices);
+          vibrate(feel, 12);
+          if (k === throws.length - 1) done(t.indices.length);
+        }, t.landAt));
+      });
+      // Skipping puts every die down at once, the later throws included.
+      finish = () => {
+        const rest = wires.map((_, i) => i).filter((i) => !wires[i].landed);
+        reveal(rest);
+        vibrate(feel, 12);
+        done(rest.length);
+      };
     });
   }
 
@@ -7843,6 +7995,7 @@ function createDiceTray()           {
           fate: t.fate === true,
           rerolled: d.rerolled === true,
           exploded: d.exploded === true,
+          wave: d.wave ?? 0,
           // Fate runs -1..1, so its zero-based face is value + 1.
           face: t.fate ? d.value + 1 : d.value - 1,
         })),
@@ -8349,6 +8502,18 @@ function createResultPanel(placeholder = "Ready")              {
 const RECENT_ROLLS_LIMIT = 8;
 
 /**
+ * The faint lines under a row's result, for this panel and the History view
+ * alike: "3 wolves" stays the headline and the dice behind the 3 sit beneath.
+ */
+function rollDetailLines(row            )                {
+  const { parts, from } = rollDetails(row);
+  return [
+    parts ? h("span", { class: "roll-note roll-parts", text: parts }) : null,
+    from ? h("span", { class: "roll-note roll-from", text: from }) : null,
+  ].filter((el)                        => el !== null);
+}
+
+/**
  * What Clear is about to take, named. An empty scope is the whole history.
  *
  * The count is every roll of those randomizers, not the few rows on screen:
@@ -8393,6 +8558,7 @@ function createRecentRolls(opts                    )                  {
             h("span", { class: "name", text: row.randomizerName }),
             " ",
             h("span", { class: "detail", text: row.resultText }),
+            ...rollDetailLines(row),
           ),
           button(row.struck ? "Unstrike" : "Strike", () => void state.setStruck(row.id, !row.struck), { class: "ghost" }),
         ),
@@ -8443,6 +8609,15 @@ function flip(faces                  , rng              )             {
                      
                                                                
                     
+     
+                                                                              
+                                                                             
+                                                                          
+                                                                            
+                                                                          
+                  
+     
+                
  
 
                              
@@ -8557,15 +8732,18 @@ function evalNode(node      , rng              )                                
         ) {
           // The face that was thrown away stays visible, the way a dropped
           // die does: what happened at the table is part of the answer.
-          dice.splice(i, 0, { value: die.value, kept: false, rerolled: true, exploded: die.exploded });
+          dice.splice(i, 0, { value: die.value, kept: false, rerolled: true, exploded: die.exploded, ...(die.wave ? { wave: die.wave } : {}) });
           i++;
           die.value = drawFace(node, rng);
+          // The replacement is thrown after the face it replaces has landed.
+          die.wave = (die.wave ?? 0) + 1;
           rerolls++;
         }
       }
       if (node.explode && die.value === top && added < EXPLODE_CAP) {
         added++;
-        dice.push({ value: drawFace(node, rng), kept: true, exploded: true });
+        // Thrown once the die that exploded has landed on its top face.
+        dice.push({ value: drawFace(node, rng), kept: true, exploded: true, wave: (die.wave ?? 0) + 1 });
       }
     }
   }
@@ -8883,6 +9061,12 @@ function formatNumbers(r              )         {
                              
                                                                                   
                      
+     
+                                                                            
+                                                                             
+                                                                  
+     
+                    
  
 
 function rollRandomizer(r            , rng              )          {
@@ -8979,6 +9163,7 @@ function rollList(r                , rng              )          {
     itemIndex: index,
     image: item.image,
     reaction: item.reaction,
+    ...(rolled.length ? { rolled } : {}),
   };
 }
 
@@ -9013,6 +9198,7 @@ function rollListMany(r                , n        , rng              , drawn    
     seed: rng.seed,
     // Deliberately no itemIndex, image or reaction: see above.
     indices,
+    ...(rolled.length ? { rolled } : {}),
   };
 }
 
@@ -9176,6 +9362,7 @@ function bagRefill(randomizerId        )       {
 
 
 
+                                                      
 
                                 
                              
@@ -9196,6 +9383,8 @@ function bagRefill(randomizerId        )       {
                                                                         
      
                                         
+                                                                            
+                    
                                                                                    
                            
      
@@ -9345,7 +9534,7 @@ function createRoller(opts               )         {
     rolling = false;
     opts.onEnd?.();
     opts.onLanded?.(outcome);
-    if (opts.live) void state.record(randomizer, outcome);
+    if (opts.live) void state.record(randomizer, outcome, opts.from);
   }
 
   return {
@@ -9383,6 +9572,7 @@ function createRoller(opts               )         {
 
 
                                           
+                                                         
 
 
 
@@ -9397,7 +9587,10 @@ function createRoller(opts               )         {
                                   
  
 
-function createCell(randomizer            , opts                                                                 = {})           {
+function createCell(
+  randomizer            ,
+  opts                                                                                    = {},
+)           {
   const result = createResultPanel("Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
@@ -9438,6 +9631,7 @@ function createCell(randomizer            , opts                                
     live: true,
     onStart: () => opts.onRoll?.(),
     onLanded: (outcome) => opts.onLanded?.(outcome),
+    from: opts.from,
   });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
@@ -9605,7 +9799,8 @@ function createChainSurface(
       ),
     };
   }
-  const cell = createCell(found, { onLanded: opts.onLanded });
+  // Its history row says what sent you here, so the two rolls read as one.
+  const cell = createCell(found, { onLanded: opts.onLanded, from: { randomizerName: sender, label: link.from } });
   return { cell, el: h("div", { class: "chain-link" }, from, cell.el, cellRollButton(cell, "primary chain-roll")) };
 }
 
@@ -14246,24 +14441,33 @@ async function absorbArchive(entries            )                               
 
 
 
+
                                        
 
 /**
  * The history as a spreadsheet. A struck roll is exported like any other,
  * with the column saying it was struck: the log of a session is only complete
  * if what the table set aside is in it too.
+ *
+ * `details` and `from` came later and are appended, never inserted: a sheet
+ * that reads these columns by position keeps working.
  */
 function historyCsv(rows              )         {
   const table = [
-    ["time", "randomizer", "type", "result", "seed", "struck"],
-    ...rows.map((e) => [
-      new Date(e.at).toISOString(),
-      e.randomizerName,
-      e.type,
-      e.resultText,
-      e.seed ?? "",
-      e.struck ? "yes" : "",
-    ]),
+    ["time", "randomizer", "type", "result", "seed", "struck", "details", "from"],
+    ...rows.map((e) => {
+      const more = rollDetails(e);
+      return [
+        new Date(e.at).toISOString(),
+        e.randomizerName,
+        e.type,
+        e.resultText,
+        e.seed ?? "",
+        e.struck ? "yes" : "",
+        more.parts ?? "",
+        e.from ? `${e.from.randomizerName} → ${e.from.label}` : "",
+      ];
+    }),
   ];
   return table.map((r) => r.map(csvCell).join(",")).join("\n");
 }
@@ -14294,6 +14498,7 @@ function createHistoryView()       {
             " ",
             h("span", { class: "detail", text: entry.resultText }),
             entry.seed ? h("span", { class: "faint", text: ` · seed ${entry.seed}` }) : null,
+            ...rollDetailLines(entry),
           ),
           button("Repeat", () => {
             if (entry.repeat?.kind === "randomizer") {
@@ -14307,7 +14512,8 @@ function createHistoryView()       {
           }, { class: "ghost" }),
           button(entry.struck ? "Unstrike" : "Strike", () => void state.setStruck(entry.id, !entry.struck), { class: "ghost" }),
           button("Copy", () => {
-            void navigator.clipboard?.writeText(`${entry.randomizerName}: ${entry.resultText}`);
+            const { parts } = rollDetails(entry);
+            void navigator.clipboard?.writeText(`${entry.randomizerName}: ${entry.resultText}${parts ? ` (${parts})` : ""}`);
             state.toast("Copied");
           }, { class: "ghost" }),
           button("Remove", () => void state.removeHistory(entry.id), { class: "ghost danger" }),
@@ -14336,7 +14542,10 @@ function createHistoryView()       {
 
   async function exportText()                {
     const text = (await allRows())
-      .map((e) => `${formatWhen(e.at)}  ${e.randomizerName}  →  ${e.resultText}`)
+      .map((e) => {
+        const { parts, from } = rollDetails(e);
+        return `${formatWhen(e.at)}  ${e.randomizerName}  →  ${e.resultText}${parts ? `  (${parts})` : ""}${from ? `  [${from}]` : ""}`;
+      })
       .join("\n");
     download("orangey-history.txt", `${text}\n`, "text/plain");
   }

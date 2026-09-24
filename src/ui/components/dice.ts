@@ -21,6 +21,7 @@ import type { RollResult } from "../../core/dice/evaluate.ts";
 import {
   bounceMs,
   diceDuration,
+  diceWaves,
   motionScale,
   vibrate,
   WIREFRAME_DICE_LIMIT,
@@ -64,6 +65,8 @@ interface TrayDie {
   fate: boolean;
   rerolled: boolean;
   exploded: boolean;
+  /** Which throw it arrives in: 0 for the first. See `DieRoll.wave`. */
+  wave: number;
   /**
    * Which face of the solid to come to rest on, counting from zero.
    *
@@ -99,6 +102,22 @@ function launch(tray: HTMLElement, wrappers: HTMLElement[], feel: FeelSettings, 
     w.style.animationDelay = `${Math.round(i * 30 * spread)}ms`;
     w.classList.add("flying");
   });
+}
+
+/**
+ * The dice grouped by when they land, earliest first, each group with the
+ * time it is thrown in. One group for an ordinary roll; more when something
+ * exploded or was rerolled.
+ */
+function throwsOf(dice: TrayDie[], duration: number): { throwAt: number; landAt: number; indices: number[] }[] {
+  const times = diceWaves(duration, dice.map((d) => d.wave));
+  const byLanding = new Map<number, { throwAt: number; landAt: number; indices: number[] }>();
+  times.forEach((t, i) => {
+    const group = byLanding.get(t.landAt) ?? { throwAt: t.throwAt, landAt: t.landAt, indices: [] };
+    group.indices.push(i);
+    byLanding.set(t.landAt, group);
+  });
+  return [...byLanding.values()].sort((a, b) => a.landAt - b.landAt);
 }
 
 export function createDiceTray(): DiceTray {
@@ -178,38 +197,72 @@ export function createDiceTray(): DiceTray {
     );
     const wrappers = elements.map((e) => h("div", { class: "die-flight" }, e));
     el.replaceChildren(...wrappers);
-    launch(el, wrappers, feel, duration);
+
+    // A die an explosion or a reroll adds is not in the air until the throw
+    // before it has landed: it waits, unseen, in the place it will land.
+    const throws = throwsOf(dice, duration);
+    const landed = new Set<number>();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const t of throws) {
+      const flight = t.indices.map((i) => wrappers[i]);
+      if (t.throwAt === 0) {
+        launch(el, flight, feel, t.landAt);
+        continue;
+      }
+      for (const w of flight) w.classList.add("waiting");
+      timers.push(setTimeout(() => {
+        for (const w of flight) w.classList.remove("waiting");
+        launch(el, flight, feel, t.landAt - t.throwAt);
+      }, t.throwAt));
+    }
 
     const spin = setInterval(() => {
       elements.forEach((node, i) => {
-        node.textContent = tumbleFace(dice[i]);
+        if (!landed.has(i)) node.textContent = tumbleFace(dice[i]);
       });
     }, faceChange);
 
     return new Promise<void>((resolve) => {
-      const land = () => {
-        clearInterval(spin);
-        clearTimeout(timer);
-        elements.forEach((node, i) => {
+      /** Put these dice down on their real faces. */
+      const put = (indices: number[]) => {
+        indices.forEach((i, n) => {
+          if (landed.has(i)) return;
+          landed.add(i);
+          const node = elements[i];
           const die = dice[i];
-          wrappers[i].classList.remove("flying");
+          wrappers[i].classList.remove("flying", "waiting");
           node.className = dieClasses(die, "die");
           node.textContent = faceText(die);
           node.removeAttribute("aria-hidden");
           node.title = titleFor(die);
           if (bounce > 0) {
             node.style.setProperty("--bounce", `${bounce}ms`);
-            node.style.animationDelay = `${Math.round(i * 25 * feel.dice.spread)}ms`;
+            node.style.animationDelay = `${Math.round(n * 25 * feel.dice.spread)}ms`;
             node.classList.add("landing");
           }
         });
         vibrate(feel, 12);
+      };
+      /** The last throw is down: the roll is over once its bounce is. */
+      const done = (lastCount: number) => {
+        clearInterval(spin);
+        for (const timer of timers) clearTimeout(timer);
         finish = null;
-        if (bounce > 0) setTimeout(resolve, bounce + dice.length * 25 * feel.dice.spread);
+        if (bounce > 0) setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
         else resolve();
       };
-      finish = land;
-      const timer = setTimeout(land, duration);
+      throws.forEach((t, k) => {
+        timers.push(setTimeout(() => {
+          put(t.indices);
+          if (k === throws.length - 1) done(t.indices.length);
+        }, t.landAt));
+      });
+      // Skipping puts every die down at once, the later throws included.
+      finish = () => {
+        const rest = dice.map((_, i) => i).filter((i) => !landed.has(i));
+        put(rest);
+        done(rest.length);
+      };
     });
   }
 
@@ -236,17 +289,41 @@ export function createDiceTray(): DiceTray {
       return { slot, stage, canvas, value, caption, flight };
     });
     el.replaceChildren(...slots.map((s) => s.flight));
-    if (duration > 0) launch(el, slots.map((s) => s.flight), feel, duration);
 
+    // As in the flat tray: a later throw waits, unseen, where it will land.
+    const throws = throwsOf(dice, duration);
+    const timing = new Map<number, { throwAt: number; landAt: number }>();
+    for (const t of throws) for (const i of t.indices) timing.set(i, t);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (duration > 0) {
+      for (const t of throws) {
+        const flight = t.indices.map((i) => slots[i].flight);
+        if (t.throwAt === 0) {
+          launch(el, flight, feel, t.landAt);
+          continue;
+        }
+        for (const f of flight) f.classList.add("waiting");
+        timers.push(setTimeout(() => {
+          for (const f of flight) f.classList.remove("waiting");
+          launch(el, flight, feel, t.landAt - t.throwAt);
+        }, t.throwAt));
+      }
+    }
+
+    const start = performance.now();
     const wires: WireDie[] = dice.map((die, i) => {
       const solid = solidForSides(die.sides);
       const axes = pickTumbleAxes(solid);
+      // Each die tumbles for its own flight: the whole duration for the first
+      // throw, the gap before it lands for a later one.
+      const when = timing.get(i) ?? { throwAt: 0, landAt: duration };
+      const flight = Math.max(1, when.landAt - when.throwAt);
       // Two or three whole turns across the tumble, so the die reads as
       // rolling rather than shivering, whatever the duration is set to.
       const turns = 2 + Math.random() * 1.5;
-      const base = (Math.PI * 2 * turns) / Math.max(0.2, duration / 1000);
-      const now = performance.now();
-      const schedule = bounceSchedule(duration, feel.dice.bounces);
+      const base = (Math.PI * 2 * turns) / Math.max(0.2, flight / 1000);
+      const from = start + when.throwAt;
+      const schedule = bounceSchedule(flight, feel.dice.bounces);
       return {
         canvas: slots[i].canvas,
         ctx: slots[i].canvas.getContext("2d"),
@@ -255,12 +332,12 @@ export function createDiceTray(): DiceTray {
         q: quatFromAxisAngle(axes[0], Math.random() * Math.PI * 2),
         axes,
         speeds: [base * (Math.random() < 0.5 ? -1 : 1), base * 0.65 * (Math.random() < 0.5 ? -1 : 1)],
-        bounceAt: schedule.bounceAt.map((t) => now + t),
+        bounceAt: schedule.bounceAt.map((t) => from + t),
         nextBounce: 0,
         nextAxis: 0,
         settleFrom: null,
-        settleStart: now + schedule.settleStart,
-        settleEnd: now + schedule.settleEnd,
+        settleStart: from + schedule.settleStart,
+        settleEnd: from + schedule.settleEnd,
         // Resting square-on to the viewer, allowing for the camera tilt, so
         // the face is seen undistorted and its number can sit inside it.
         rest: restQuaternion(solid, die.face % solid.faces.length, Math.random() * Math.PI * 2, VIEW_TILT),
@@ -272,32 +349,39 @@ export function createDiceTray(): DiceTray {
       };
     });
 
-    const reveal = () => {
-      wires.forEach((wire, i) => {
+    // One size for every number in the tray, comfortable in the smallest
+    // face present, so a d12 beside a d6 reads as a set rather than a jumble
+    // of type sizes. Worked out once for all of them, whichever throw lands
+    // first, so a later throw does not change the size of numbers already down.
+    let fits: ReturnType<typeof fitValueToFace>[] | null = null;
+    let fitSize = Infinity;
+
+    /** Put these dice down on their real faces. */
+    const reveal = (indices: number[]) => {
+      if (!fits) {
+        fits = wires.map((wire, i) => fitValueToFace(wire, slots[i].value));
+        fitSize = Math.min(...fits.map((f) => f?.size ?? Infinity));
+      }
+      indices.forEach((i, n) => {
+        const wire = wires[i];
+        if (wire.landed) return;
         const die = dice[i];
         active.delete(wire);
         wire.q = wire.rest;
         wire.landed = true;
         draw(wire);
-        slots[i].flight.classList.remove("flying");
+        slots[i].flight.classList.remove("flying", "waiting");
         slots[i].slot.className = dieClasses(die, "die-slot");
         slots[i].value.textContent = faceText(die);
         slots[i].caption.textContent = faceText(die);
-      });
-      // One size for every number in the tray, comfortable in the smallest
-      // face present, so a d12 beside a d6 reads as a set rather than a
-      // jumble of type sizes.
-      const fits = wires.map((wire, i) => fitValueToFace(wire, slots[i].value));
-      const size = Math.min(...fits.map((f) => f?.size ?? Infinity));
-      fits.forEach((fit, i) => {
-        if (!fit) return;
-        slots[i].value.style.fontSize = `${Math.max(8, Number.isFinite(size) ? size : fit.size).toFixed(1)}px`;
-        slots[i].value.style.transform = `translate(${fit.centre.x.toFixed(1)}px, ${fit.centre.y.toFixed(1)}px)`;
-      });
-      wires.forEach((_, i) => {
+        const fit = fits![i];
+        if (fit) {
+          slots[i].value.style.fontSize = `${Math.max(8, Number.isFinite(fitSize) ? fitSize : fit.size).toFixed(1)}px`;
+          slots[i].value.style.transform = `translate(${fit.centre.x.toFixed(1)}px, ${fit.centre.y.toFixed(1)}px)`;
+        }
         if (bounce > 0) {
           slots[i].stage.style.setProperty("--bounce", `${bounce}ms`);
-          slots[i].stage.style.animationDelay = `${Math.round(i * 25 * feel.dice.spread)}ms`;
+          slots[i].stage.style.animationDelay = `${Math.round(n * 25 * feel.dice.spread)}ms`;
           slots[i].stage.classList.add("landing");
         }
       });
@@ -306,7 +390,7 @@ export function createDiceTray(): DiceTray {
     mine = wires;
 
     if (duration <= 0) {
-      reveal();
+      reveal(dice.map((_, i) => i));
       return Promise.resolve();
     }
 
@@ -314,16 +398,26 @@ export function createDiceTray(): DiceTray {
     ensureLoop();
 
     return new Promise<void>((resolve) => {
-      const land = () => {
-        clearTimeout(timer);
-        reveal();
-        vibrate(feel, 12);
+      const done = (lastCount: number) => {
+        for (const timer of timers) clearTimeout(timer);
         finish = null;
-        if (bounce > 0) setTimeout(resolve, bounce + dice.length * 25 * feel.dice.spread);
+        if (bounce > 0) setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
         else resolve();
       };
-      finish = land;
-      const timer = setTimeout(land, duration);
+      throws.forEach((t, k) => {
+        timers.push(setTimeout(() => {
+          reveal(t.indices);
+          vibrate(feel, 12);
+          if (k === throws.length - 1) done(t.indices.length);
+        }, t.landAt));
+      });
+      // Skipping puts every die down at once, the later throws included.
+      finish = () => {
+        const rest = wires.map((_, i) => i).filter((i) => !wires[i].landed);
+        reveal(rest);
+        vibrate(feel, 12);
+        done(rest.length);
+      };
     });
   }
 
@@ -340,6 +434,7 @@ export function createDiceTray(): DiceTray {
           fate: t.fate === true,
           rerolled: d.rerolled === true,
           exploded: d.exploded === true,
+          wave: d.wave ?? 0,
           // Fate runs -1..1, so its zero-based face is value + 1.
           face: t.fate ? d.value + 1 : d.value - 1,
         })),

@@ -232,6 +232,31 @@ export function curveExponent(curve: SpinCurve): number {
  */
 export const WIREFRAME_DICE_LIMIT = 20;
 
+/**
+ * Exploding dice and rerolls land in throws, one after another.
+ *
+ * The first throw tumbles for the whole dice duration. Each later throw is
+ * thrown in as the one before it lands and flies for a share of that, so a
+ * `3d6!` reads as a second handful rather than one handful that took longer.
+ * Only the first few throws get a beat of their own: `50d6!` can explode for
+ * a long time, and anything past the last staged throw lands with it.
+ *
+ * Not a Feel setting: dice Feel settings can travel inside a randomizer file,
+ * and a new one there would be a change to the file format.
+ */
+export const DICE_WAVE_GAP = 0.4;
+export const DICE_WAVES_STAGED = 3;
+
+/** When each die is thrown and when it lands, in ms from the start of the roll. */
+export function diceWaves(duration: number, waves: readonly number[]): { throwAt: number; landAt: number }[] {
+  if (duration <= 0) return waves.map(() => ({ throwAt: 0, landAt: 0 }));
+  const gap = duration * DICE_WAVE_GAP;
+  return waves.map((raw) => {
+    const w = Math.min(Math.max(0, raw), DICE_WAVES_STAGED);
+    return w === 0 ? { throwAt: 0, landAt: duration } : { throwAt: duration + (w - 1) * gap, landAt: duration + w * gap };
+  });
+}
+
 /** The roll-back to use for one particular spin: a random share of the maximum. */
 export function settleForSpin(feel: FeelSettings, random: () => number = Math.random): number {
   const max = feel.wheel.settleDegrees;

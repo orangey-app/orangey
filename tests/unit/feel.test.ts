@@ -7,6 +7,7 @@ import {
   coinDuration,
   curveExponent,
   diceDuration,
+  diceWaves,
   easeSpin,
   effectiveFeel,
   motionScale,
@@ -76,6 +77,11 @@ describe("feel settings", () => {
     assert.equal(diceDuration(f), DEFAULT_FEEL.dice.tumbleMs * 0.4);
     assert.equal(coinDuration(f), DEFAULT_FEEL.coin.durationMs * 0.4);
     assert.equal(wheelDuration({ ...DEFAULT_FEEL, motion: "instant" }), 0);
+    // Exploding dice land in throws a share of the tumble apart; past the
+    // third extra throw they land together, and instant lands all at once.
+    assert.deepEqual(diceWaves(1000, [0, 1, 2, 3, 7]).map((t) => [t.throwAt, t.landAt]),
+      [[0, 1000], [1000, 1400], [1400, 1800], [1800, 2200], [1800, 2200]]);
+    assert.deepEqual(diceWaves(0, [0, 2]), [{ throwAt: 0, landAt: 0 }, { throwAt: 0, landAt: 0 }]);
   });
 });
 
