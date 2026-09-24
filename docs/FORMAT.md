@@ -55,7 +55,18 @@ two ways.
 |---|---|
 | `items` | at least one outcome |
 | `view` | `"wheel"` or `"list"` |
-| `withoutReplacement` | reserved for bag mode in 0.2 |
+| `withoutReplacement` | bag mode: an outcome that has come up cannot come up again until the bag is refilled |
+
+**Where the bag's state is kept.** The flag above says the randomizer is a
+bag; it does not say what has been drawn out of it. That list lives in the
+browser's app database, keyed by the randomizer's id, exactly like history
+does — never in this file. Two reasons: a draw would otherwise be a write to
+the user's library on every roll, with everything that means for a library in
+Dropbox or Git; and two people rolling the same shared wheel would be sharing
+one bag, which is not what "draw without putting back" means at a table. A
+randomizer that arrived inside a link gets a bag that lasts as long as the
+page, because its item ids are made fresh on every load and a stored bag
+could never match them again.
 
 Each item has `id`, `label` (1–200 characters), `weight`, and optionally
 `disabled`, `description`, `color` (a hex string), `reaction` (see below),

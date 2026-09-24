@@ -27,6 +27,24 @@ export function parseNumberLoose(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * A roll range, as a published table writes one: `01-65`, `66–85`, `00`.
+ *
+ * Returns how many rolls the range covers, which is the outcome's weight.
+ * `00` is 100 on a d100, the way every table in print means it. Deliberately
+ * not part of `parseNumberLoose`: that one also decides delimiters and
+ * headers, and a hyphen must not start looking numeric there.
+ */
+export function parseRollRange(raw: string): number | null {
+  const m = /^\s*(\d{1,3})\s*[-–—]\s*(\d{1,3})\s*$/.exec(raw);
+  if (!m) return null;
+  const end = (v: string) => (/^0+$/.test(v) ? 100 : Number.parseInt(v, 10));
+  const lo = end(m[1]);
+  const hi = end(m[2]);
+  if (hi < lo) return null;
+  return hi - lo + 1;
+}
+
 function score(rows: string[][]): { score: number; columns: number } {
   if (rows.length === 0) return { score: -1, columns: 0 };
   const counts = new Map<number, number>();
@@ -81,7 +99,8 @@ export function guessHeader(rows: string[][]): boolean {
 }
 
 const LABEL_HINTS = /^(name|label|title|option|outcome|entry|item|result|thing)s?$/i;
-const WEIGHT_HINTS = /^(weight|probability|prob|chance|odds|likelihood|freq(uency)?|%|percent(age)?|share)s?$/i;
+// `d100`, `d%` and `roll` are what a printed table calls its range column.
+const WEIGHT_HINTS = /^(weight|probability|prob|chance|odds|likelihood|freq(uency)?|%|percent(age)?|share|d\d+|d%|roll|range)s?$/i;
 const DESC_HINTS = /^(desc(ription)?|notes?|detail|details|comment|text)s?$/i;
 const COLOR_HINTS = /^(colou?r|hex)$/i;
 
@@ -104,10 +123,13 @@ export function guessColumns(rows: string[][], hasHeader: boolean): ColumnGuess 
   let description = find(DESC_HINTS);
   const color = find(COLOR_HINTS);
 
+  // A roll range counts as numeric here. `01-65` is not a number, but a
+  // column of them is plainly not the labels either, and without this the
+  // first column of a published d100 table gets taken for the outcome names.
   const numericShare = (col: number) => {
     const cells = body.map((r) => r[col] ?? "").filter((c) => c !== "");
     if (cells.length === 0) return 0;
-    return cells.filter((c) => parseNumberLoose(c) !== null).length / cells.length;
+    return cells.filter((c) => parseNumberLoose(c) !== null || parseRollRange(c) !== null).length / cells.length;
   };
 
   if (label < 0) {

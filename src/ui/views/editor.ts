@@ -173,6 +173,16 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     save(descInput);
   });
 
+  // Bag mode. Editing the outcomes does not empty or refill the bag: what has
+  // been drawn is per device and lives in the app database, not in the file.
+  const bagToggle = h("input", { type: "checkbox", class: "bag-toggle", checked: model.withoutReplacement === true });
+  bagToggle.addEventListener("change", () => {
+    model = { ...model, withoutReplacement: bagToggle.checked || undefined };
+    if (!bagToggle.checked) delete (model as { withoutReplacement?: boolean }).withoutReplacement;
+    saveNow(bagToggle);
+  });
+  const bagField = h("label", { class: "row tight" }, bagToggle, "Draw without putting back");
+
   const viewToggle = h("div", { class: "segmented", role: "group", "aria-label": "How this looks when rolled" });
   const renderViewToggle = () => {
     setChildren(viewToggle, 
@@ -693,7 +703,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),

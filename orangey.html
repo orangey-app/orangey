@@ -302,6 +302,8 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .gap-s { margin-top: 8px; }
 .gap-m { margin-top: 12px; }
 .gap-l { margin-top: 14px; }
+.bag-line { justify-content: flex-end; margin: 4px 0 2px; min-height: 28px; }
+.bag-line[hidden] { display: none; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); font-size: 13px; }
@@ -1916,6 +1918,18 @@ class NotRollableError extends Error {
 /** The single definition of "can this outcome come up". */
 function isRollable(item          )          {
   return !item.disabled && Number.isFinite(item.weight) && item.weight > 0;
+}
+
+/**
+ * The same list with what has already been drawn taken out of play.
+ *
+ * Marked `disabled` rather than filtered: `Outcome.itemIndex`, the wheel's
+ * colours and an outcome's chain target are all positions in this array, so
+ * the order and the length have to survive. A drawn outcome is exactly an
+ * outcome that cannot come up, which is what `disabled` already means.
+ */
+function withoutDrawn                                     (items              , drawn                     )      {
+  return items.map((item) => (drawn.has(item.id) ? { ...item, disabled: true } : item));
 }
 
 function isValidWeight(w         )              {
@@ -4668,7 +4682,7 @@ function starters()            {
       randomizer: list("Forest Encounters", "Daytime, levels 1–4", [
         ["Goblin patrol", 50, "Three goblins, one with a horn"],
         ["Merchant", 20, "Friendly, overpriced"],
-        ["Wolf pack", 20, "2d4 wolves, hungry"],
+        ["Wolf pack", 20, "{2d4} wolves, hungry"],
         ["Nothing", 9],
         ["Young green dragon", 1, "Run."],
       ]),
@@ -8423,6 +8437,7 @@ function formatNumbers(r              )         {
 
 
 
+
                                                                                           
                                                            
 
@@ -8497,17 +8512,47 @@ function rollRandomizer(r            , rng              )          {
   }
 }
 
+/** `{2d4}` in an outcome's text. Braces are required, so nothing else is touched. */
+const INLINE_DICE = /\{([^{}]{1,60})\}/g;
+
+/**
+ * Roll the dice written into an outcome's text.
+ *
+ * "{2d4} wolves" should arrive at the table as "3 wolves". The braces are the
+ * whole of the opt-in: without them, "a d20 system" and "2d6 × 10 gp" are
+ * prose that happens to mention dice, and rolling those would be a surprise.
+ * Anything inside braces that does not parse is left exactly as typed, so a
+ * typo shows itself rather than vanishing.
+ *
+ * Drawn from the same source as the pick, and only ever after it (P12): a
+ * seeded session replays if and only if the draws happen in the same order.
+ */
+function expandInlineDice(text        , rng              , rolled          )         {
+  return text.replace(INLINE_DICE, (whole, expression        ) => {
+    const parsed = tryParse(expression);
+    if (!parsed.ok) return whole;
+    const result = evaluate(parsed.expression, rng, expression);
+    rolled.push(formatResult(result));
+    return String(result.total);
+  });
+}
+
 function rollList(r                , rng              )          {
   const index = pickWeightedIndex(r.items, rng);
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
   const pct = `${percent.toFixed(percent < 10 ? 1 : 0)}%`;
+  // After the pick, never before it.
+  const rolled           = [];
+  const label = expandInlineDice(item.label, rng, rolled);
+  const description = item.description ? expandInlineDice(item.description, rng, rolled) : undefined;
+  const parts = [...rolled, description, pct].filter(Boolean);
   return {
     kind: "list",
-    text: item.label,
-    detail: item.description ? `${item.description} · ${pct}` : pct,
-    speak: `${r.name}: ${item.label}. Probability ${pct}.`,
+    text: label,
+    detail: parts.join(" · "),
+    speak: `${r.name}: ${label}. Probability ${pct}.`,
     seed: rng.seed,
     itemIndex: index,
     image: item.image,
@@ -8515,12 +8560,17 @@ function rollList(r                , rng              )          {
   };
 }
 
-function whyCannotRoll(r            )                {
+function whyCannotRoll(r            , drawn                      )                {
   if (r.type === "board") return r.entries.length ? null : "This board has nothing on it yet.";
   if (r.type !== "list") return null;
   if (r.items.length === 0) return "This randomizer has no outcomes yet.";
   if (!r.items.some(isRollable)) {
     return "No outcomes can come up: they are all disabled or weigh nothing.";
+  }
+  // An empty bag is its own answer: everything is still here, it has just
+  // all been drawn, and the way out is Refill rather than editing anything.
+  if (r.withoutReplacement && drawn && !withoutDrawn(r.items, drawn).some(isRollable)) {
+    return "The bag is empty. Refill it to draw again.";
   }
   return null;
 }
@@ -8534,13 +8584,25 @@ function whyCannotRoll(r            )                {
  * bound, not a prediction: dice report their widest total, a number draw its
  * widest row, a list its longest label.
  */
+/** A label with every rollable `{expr}` at its maximum. */
+function widestLabel(label        )         {
+  return label.replace(INLINE_DICE, (whole, expression        ) => {
+    try {
+      return String(expressionBounds(expression).max);
+    } catch {
+      return whole;
+    }
+  });
+}
+
 function longestOutcome(r            )         {
   const longest = (texts          ) => texts.reduce((a, b) => (b.length > a.length ? b : a), "");
   switch (r.type) {
     case "list": {
       // Disabled outcomes cannot come up, but enabling one must not resize
-      // the panel, so every label counts.
-      return longest(r.items.map((i) => i.label));
+      // the panel, so every label counts. Dice written into a label are
+      // measured at their largest, since that is the widest it can ever read.
+      return longest(r.items.map((i) => widestLabel(i.label)));
     }
     case "coin":
       return longest([...r.faces]);
@@ -8561,6 +8623,68 @@ function longestOutcome(r            )         {
       }
     }
   }
+}
+
+// ---- src\ui\bag.ts -----------------------------------------------
+/**
+ * Bag mode: which outcomes have already been drawn.
+ *
+ * "Draw without putting back" is a property of the randomizer and lives in
+ * its file; *what has been drawn so far* is not. It is like history: it
+ * belongs to this device and this session of play, and two people rolling the
+ * same shared wheel each have their own bag. Putting it in the file would
+ * make every draw a write to the user's library and a change to sync.
+ *
+ * So the bag lives in the app database, keyed by randomizer id, with an
+ * in-memory copy the roll path can read synchronously.
+ */
+
+
+
+
+const bags = new Map                     ();
+
+function bagKey(randomizerId        )         {
+  return `bag:${randomizerId}`;
+}
+
+/**
+ * A randomizer that came out of a link has no file behind it, and its item
+ * ids are made fresh on every load — so a stored bag could never match, and
+ * storing one would only leave debris in the database. Those bags live for
+ * as long as the page does.
+ */
+function isPersistent(randomizerId        )          {
+  return state.library.findById(randomizerId) !== null;
+}
+
+/** Read the bag for a randomizer into memory. Safe to call more than once. */
+async function bagLoad(randomizerId        )                {
+  if (bags.has(randomizerId)) return;
+  if (!isPersistent(randomizerId)) {
+    bags.set(randomizerId, new Set());
+    return;
+  }
+  const stored = await appdb.get          (bagKey(randomizerId));
+  bags.set(randomizerId, new Set(Array.isArray(stored) ? stored : []));
+}
+
+function bagDrawn(randomizerId        )                      {
+  return bags.get(randomizerId) ?? new Set        ();
+}
+
+/** Take an outcome out of the bag. Called at the landing, not at the start. */
+function bagTake(randomizerId        , itemId        )       {
+  const drawn = bags.get(randomizerId) ?? new Set        ();
+  drawn.add(itemId);
+  bags.set(randomizerId, drawn);
+  if (isPersistent(randomizerId)) void appdb.set(bagKey(randomizerId), [...drawn]);
+}
+
+/** Everything goes back in. */
+function bagRefill(randomizerId        )       {
+  bags.set(randomizerId, new Set());
+  if (isPersistent(randomizerId)) void appdb.set(bagKey(randomizerId), []);
 }
 
 // ---- src\ui\rolling.ts -------------------------------------------
@@ -8591,6 +8715,8 @@ function longestOutcome(r            )         {
 
 
 
+
+
                                 
                              
                       
@@ -8603,6 +8729,8 @@ function longestOutcome(r            )         {
                 
                                            
                      
+                                                                                   
+                           
  
 
                          
@@ -8637,8 +8765,15 @@ function createRoller(opts               )         {
       return;
     }
     const randomizer = opts.randomizer();
+    // Bag mode: the roll is made against what is still in the bag, and the
+    // list as a whole is left alone — `withoutDrawn` only marks, so every
+    // index, colour and chain target still points where it did.
+    const bag = randomizer.type === "list" && randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
+    const rollable = bag && randomizer.type === "list"
+      ? { ...randomizer, items: withoutDrawn(randomizer.items, bag) }
+      : randomizer;
 
-    const problem = whyCannotRoll(randomizer);
+    const problem = whyCannotRoll(randomizer, bag ?? undefined);
     if (problem) {
       opts.result.clear(problem);
       if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
@@ -8647,7 +8782,7 @@ function createRoller(opts               )         {
 
     let outcome         ;
     try {
-      outcome = rollRandomizer(randomizer, state.source());
+      outcome = rollRandomizer(rollable, state.source());
     } catch (e) {
       const reason = (e         ).message;
       opts.result.clear(reason);
@@ -8677,6 +8812,12 @@ function createRoller(opts               )         {
     }
 
     if (willAnimate) opts.result.show(outcome);
+    // Out of the bag at the landing, never at the start: a skipped roll still
+    // lands, so it still takes, and a roll that never arrived never did.
+    if (bag && randomizer.type === "list" && outcome.itemIndex !== undefined) {
+      bagTake(randomizer.id, randomizer.items[outcome.itemIndex].id);
+      opts.onBagChange?.();
+    }
     if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
     rolling = false;
     opts.onEnd?.();
@@ -8713,6 +8854,8 @@ function createRoller(opts               )         {
 
 
 
+
+
                            
                   
                                                     
@@ -8732,7 +8875,10 @@ function createCell(randomizer            , opts                          = {}) 
 
   if (randomizer.type === "list" && randomizer.view === "wheel") {
     wheel = createWheel({
-      items: () => (randomizer                                         ).items,
+      items: () => {
+        const r = randomizer                                         ;
+        return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
+      },
       id: () => randomizer.id,
       onActivate: () => void roller.roll(),
       size: 260,
@@ -8746,6 +8892,10 @@ function createCell(randomizer            , opts                          = {}) 
   result.reserve(longestOutcome(randomizer));
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
+
+  if (randomizer.type === "list" && randomizer.withoutReplacement) {
+    void bagLoad(randomizer.id).then(() => wheel?.refresh());
+  }
 
   const roller = createRoller({
     randomizer: () => randomizer            ,
@@ -9351,6 +9501,7 @@ function setPresenting(on         , controls                    )       {
 
 
 
+
                                        
 
 
@@ -9389,7 +9540,7 @@ function createPlayView(
     if (randomizer.type === "list") {
       if (randomizer.view === "wheel") {
         wheel = createWheel({
-          items: () => (randomizer.type === "list" ? randomizer.items : []),
+          items: () => inPlay(),
           id: () => randomizer.id,
           onActivate: () => void doRoll(),
         });
@@ -9404,11 +9555,22 @@ function createPlayView(
     }
   }
 
+  /**
+   * The outcomes as they stand for the next roll: in bag mode, the ones
+   * already drawn are marked disabled rather than removed, so indices,
+   * colours and chain targets all still line up.
+   */
+  function inPlay()             {
+    if (randomizer.type !== "list") return [];
+    if (!randomizer.withoutReplacement) return randomizer.items;
+    return withoutDrawn(randomizer.items, bagDrawn(randomizer.id));
+  }
+
   function renderOutcomeList()              {
-    const r = randomizer                                         ;
-    const percents = displayPercents(r.items);
+    const items = inPlay();
+    const percents = displayPercents(items);
     return h("ul", { class: "outcome-list" },
-      ...r.items.map((item, i) =>
+      ...items.map((item, i) =>
         h("li", { class: item.disabled ? "disabled muted" : "" },
           h("span", { text: item.label }),
           h("span", { class: "faint", text: ` ${percents[i].toFixed(1)}%` }),
@@ -9436,9 +9598,20 @@ function createPlayView(
     onEnd: () => {
       rollButton.textContent = "Roll";
     },
+    // The count changes at the landing; the wheel does not. Taking the
+    // winning slice off the wheel the instant it wins would make it vanish
+    // from under the pointer, so the wheel catches up on the next roll.
+    onBagChange: () => {
+      updateBagLine();
+      if (randomizer.type === "list" && randomizer.view === "list") buildStage();
+    },
   });
 
-  const doRoll = ()                => roller.roll();
+  const doRoll = ()                => {
+    // The wheel drops what was drawn last time here, not when it was drawn.
+    wheel?.refresh();
+    return roller.roll();
+  };
 
   const skip = ()       => roller.skip();
 
@@ -9507,6 +9680,18 @@ function createPlayView(
     reserveResult();
     result.clear("Ready");
     buildStage();
+    updateBagLine();
+    // The bag is read from the app database, so it arrives a moment later;
+    // until then the wheel simply shows everything, which is also what it
+    // shows for a randomizer that does not use a bag at all.
+    if (next.type === "list" && next.withoutReplacement) {
+      void bagLoad(next.id).then(() => {
+        if (randomizer.id !== next.id) return;
+        updateBagLine();
+        wheel?.refresh();
+        if (next.view === "list") buildStage();
+      });
+    }
     // Nothing the old randomizer opened has anything to do with this one.
     chain.reset();
   }
@@ -9547,7 +9732,34 @@ function createPlayView(
   // Orangey's place: the corner of the result panel, where he can react to
   // the number without ever sitting on the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
-  const playCard = h("div", { class: "card play-card" }, header, stage, result.el, rollButton);
+  /**
+   * How much is left in the bag, and the way to put it all back.
+   *
+   * Only shown for a list that draws without putting back; for anything else
+   * the row is hidden, so the card's height does not change under it.
+   */
+  const bagCount = h("span", { class: "faint bag-count" });
+  const refillButton = button("Refill", () => {
+    bagRefill(randomizer.id);
+    result.clear();
+    wheel?.refresh();
+    if (randomizer.type === "list" && randomizer.view === "list") buildStage();
+    updateBagLine();
+  }, { class: "ghost refill-bag" });
+  const bagLine = h("div", { class: "row tight bag-line" }, bagCount, refillButton);
+
+  function updateBagLine()       {
+    const on = randomizer.type === "list" && randomizer.withoutReplacement === true;
+    bagLine.hidden = !on;
+    if (!on || randomizer.type !== "list") return;
+    const drawn = bagDrawn(randomizer.id);
+    const total = randomizer.items.filter(isRollable).length;
+    const left = withoutDrawn(randomizer.items, drawn).filter(isRollable).length;
+    bagCount.textContent = `${left} of ${total} left`;
+    refillButton.hidden = left === total;
+  }
+
+  const playCard = h("div", { class: "card play-card" }, header, stage, bagLine, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
     playCard,
@@ -9578,6 +9790,16 @@ function createPlayView(
 
   reserveResult();
   buildStage();
+  updateBagLine();
+  if (randomizer.type === "list" && randomizer.withoutReplacement) {
+    const opened = randomizer.id;
+    void bagLoad(opened).then(() => {
+      if (randomizer.id !== opened) return;
+      updateBagLine();
+      wheel?.refresh();
+      if (randomizer.type === "list" && randomizer.view === "list") buildStage();
+    });
+  }
   // Settings can change the seed while this view is alive, and the seed line
   // is part of what the panel reserves room for.
   const unsubscribe = state.subscribe(() => {
@@ -11410,6 +11632,16 @@ function createListEditor(node             , initial                )       {
     save(descInput);
   });
 
+  // Bag mode. Editing the outcomes does not empty or refill the bag: what has
+  // been drawn is per device and lives in the app database, not in the file.
+  const bagToggle = h("input", { type: "checkbox", class: "bag-toggle", checked: model.withoutReplacement === true });
+  bagToggle.addEventListener("change", () => {
+    model = { ...model, withoutReplacement: bagToggle.checked || undefined };
+    if (!bagToggle.checked) delete (model                                    ).withoutReplacement;
+    saveNow(bagToggle);
+  });
+  const bagField = h("label", { class: "row tight" }, bagToggle, "Draw without putting back");
+
   const viewToggle = h("div", { class: "segmented", role: "group", "aria-label": "How this looks when rolled" });
   const renderViewToggle = () => {
     setChildren(viewToggle, 
@@ -11930,7 +12162,7 @@ function createListEditor(node             , initial                )       {
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),
@@ -12247,6 +12479,24 @@ function parseNumberLoose(s        )                {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * A roll range, as a published table writes one: `01-65`, `66–85`, `00`.
+ *
+ * Returns how many rolls the range covers, which is the outcome's weight.
+ * `00` is 100 on a d100, the way every table in print means it. Deliberately
+ * not part of `parseNumberLoose`: that one also decides delimiters and
+ * headers, and a hyphen must not start looking numeric there.
+ */
+function parseRollRange(raw        )                {
+  const m = /^\s*(\d{1,3})\s*[-–—]\s*(\d{1,3})\s*$/.exec(raw);
+  if (!m) return null;
+  const end = (v        ) => (/^0+$/.test(v) ? 100 : Number.parseInt(v, 10));
+  const lo = end(m[1]);
+  const hi = end(m[2]);
+  if (hi < lo) return null;
+  return hi - lo + 1;
+}
+
 function score(rows            )                                     {
   if (rows.length === 0) return { score: -1, columns: 0 };
   const counts = new Map                ();
@@ -12301,7 +12551,8 @@ function guessHeader(rows            )          {
 }
 
 const LABEL_HINTS = /^(name|label|title|option|outcome|entry|item|result|thing)s?$/i;
-const WEIGHT_HINTS = /^(weight|probability|prob|chance|odds|likelihood|freq(uency)?|%|percent(age)?|share)s?$/i;
+// `d100`, `d%` and `roll` are what a printed table calls its range column.
+const WEIGHT_HINTS = /^(weight|probability|prob|chance|odds|likelihood|freq(uency)?|%|percent(age)?|share|d\d+|d%|roll|range)s?$/i;
 const DESC_HINTS = /^(desc(ription)?|notes?|detail|details|comment|text)s?$/i;
 const COLOR_HINTS = /^(colou?r|hex)$/i;
 
@@ -12324,10 +12575,13 @@ function guessColumns(rows            , hasHeader         )              {
   let description = find(DESC_HINTS);
   const color = find(COLOR_HINTS);
 
+  // A roll range counts as numeric here. `01-65` is not a number, but a
+  // column of them is plainly not the labels either, and without this the
+  // first column of a published d100 table gets taken for the outcome names.
   const numericShare = (col        ) => {
     const cells = body.map((r) => r[col] ?? "").filter((c) => c !== "");
     if (cells.length === 0) return 0;
-    return cells.filter((c) => parseNumberLoose(c) !== null).length / cells.length;
+    return cells.filter((c) => parseNumberLoose(c) !== null || parseRollRange(c) !== null).length / cells.length;
   };
 
   if (label < 0) {
@@ -12426,6 +12680,19 @@ function buildItems(rows            , hasHeader         , mapping         )     
   let missingDescriptions = 0;
   let defaultedWeights = 0;
 
+  /**
+   * A published encounter table gives a d100 range per row — `01-65` — and
+   * the width of that range IS the weight. One cell that reads as a range
+   * makes the column a range column; in one, a lone number such as `99` or
+   * `00` means that single roll, so its weight is 1 rather than 99.
+   */
+  const isRangeColumn =
+    mapping.weight !== null &&
+    body.some((row) => {
+      const raw = (row[mapping.weight          ] ?? "").trim();
+      return raw !== "" && parseRollRange(raw) !== null;
+    });
+
   body.forEach((row, i) => {
     const label = (row[mapping.label] ?? "").trim();
     if (label === "") {
@@ -12438,6 +12705,16 @@ function buildItems(rows            , hasHeader         , mapping         )     
       const raw = (row[mapping.weight] ?? "").trim();
       if (raw === "") {
         defaultedWeights++;
+      } else if (isRangeColumn) {
+        const span = parseRollRange(raw);
+        if (span !== null) {
+          weight = span;
+        } else if (parseNumberLoose(raw) !== null) {
+          weight = 1;
+        } else {
+          badWeights.push(`row ${rowNumber(i)} "${raw}"`);
+          return;
+        }
       } else {
         const n = parseNumberLoose(raw);
         if (n === null || n < 0) {
@@ -12481,6 +12758,9 @@ function buildItems(rows            , hasHeader         , mapping         )     
   const total = items.reduce((a, it) => a + it.weight, 0);
   if (items.length) {
     report.push({ level: "ok", text: `Weights valid (total ${round(total)})` });
+  }
+  if (isRangeColumn && items.length) {
+    report.push({ level: "ok", text: "Weights read from roll ranges (for example 01–65 gives 65)" });
   }
   if (defaultedWeights) {
     report.push({ level: "warn", text: `${plural(defaultedWeights, "entry", "entries")} had no weight — using 1` });

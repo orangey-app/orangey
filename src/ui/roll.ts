@@ -8,11 +8,12 @@
  */
 
 import { flip } from "../core/coin.ts";
-import { expressionBounds, rollDice } from "../core/dice/evaluate.ts";
+import { evaluate, expressionBounds, rollDice } from "../core/dice/evaluate.ts";
+import { tryParse } from "../core/dice/grammar.ts";
 import { formatResult, speakResult } from "../core/dice/format.ts";
 import { drawNumbers, formatNumbers } from "../core/number.ts";
 import { type RandomSource } from "../core/rng.ts";
-import { isRollable, pickWeightedIndex } from "../core/weighted.ts";
+import { isRollable, pickWeightedIndex, withoutDrawn } from "../core/weighted.ts";
 import type { ListRandomizer, OutcomeReaction, Randomizer } from "../model/randomizer.ts";
 import type { RollResult } from "../core/dice/evaluate.ts";
 
@@ -87,17 +88,47 @@ export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
   }
 }
 
+/** `{2d4}` in an outcome's text. Braces are required, so nothing else is touched. */
+const INLINE_DICE = /\{([^{}]{1,60})\}/g;
+
+/**
+ * Roll the dice written into an outcome's text.
+ *
+ * "{2d4} wolves" should arrive at the table as "3 wolves". The braces are the
+ * whole of the opt-in: without them, "a d20 system" and "2d6 × 10 gp" are
+ * prose that happens to mention dice, and rolling those would be a surprise.
+ * Anything inside braces that does not parse is left exactly as typed, so a
+ * typo shows itself rather than vanishing.
+ *
+ * Drawn from the same source as the pick, and only ever after it (P12): a
+ * seeded session replays if and only if the draws happen in the same order.
+ */
+function expandInlineDice(text: string, rng: RandomSource, rolled: string[]): string {
+  return text.replace(INLINE_DICE, (whole, expression: string) => {
+    const parsed = tryParse(expression);
+    if (!parsed.ok) return whole;
+    const result = evaluate(parsed.expression, rng, expression);
+    rolled.push(formatResult(result));
+    return String(result.total);
+  });
+}
+
 function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
   const index = pickWeightedIndex(r.items, rng);
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
   const pct = `${percent.toFixed(percent < 10 ? 1 : 0)}%`;
+  // After the pick, never before it.
+  const rolled: string[] = [];
+  const label = expandInlineDice(item.label, rng, rolled);
+  const description = item.description ? expandInlineDice(item.description, rng, rolled) : undefined;
+  const parts = [...rolled, description, pct].filter(Boolean);
   return {
     kind: "list",
-    text: item.label,
-    detail: item.description ? `${item.description} · ${pct}` : pct,
-    speak: `${r.name}: ${item.label}. Probability ${pct}.`,
+    text: label,
+    detail: parts.join(" · "),
+    speak: `${r.name}: ${label}. Probability ${pct}.`,
     seed: rng.seed,
     itemIndex: index,
     image: item.image,
@@ -105,12 +136,17 @@ function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
   };
 }
 
-export function whyCannotRoll(r: Randomizer): string | null {
+export function whyCannotRoll(r: Randomizer, drawn?: ReadonlySet<string>): string | null {
   if (r.type === "board") return r.entries.length ? null : "This board has nothing on it yet.";
   if (r.type !== "list") return null;
   if (r.items.length === 0) return "This randomizer has no outcomes yet.";
   if (!r.items.some(isRollable)) {
     return "No outcomes can come up: they are all disabled or weigh nothing.";
+  }
+  // An empty bag is its own answer: everything is still here, it has just
+  // all been drawn, and the way out is Refill rather than editing anything.
+  if (r.withoutReplacement && drawn && !withoutDrawn(r.items, drawn).some(isRollable)) {
+    return "The bag is empty. Refill it to draw again.";
   }
   return null;
 }
@@ -124,13 +160,25 @@ export function whyCannotRoll(r: Randomizer): string | null {
  * bound, not a prediction: dice report their widest total, a number draw its
  * widest row, a list its longest label.
  */
+/** A label with every rollable `{expr}` at its maximum. */
+function widestLabel(label: string): string {
+  return label.replace(INLINE_DICE, (whole, expression: string) => {
+    try {
+      return String(expressionBounds(expression).max);
+    } catch {
+      return whole;
+    }
+  });
+}
+
 export function longestOutcome(r: Randomizer): string {
   const longest = (texts: string[]) => texts.reduce((a, b) => (b.length > a.length ? b : a), "");
   switch (r.type) {
     case "list": {
       // Disabled outcomes cannot come up, but enabling one must not resize
-      // the panel, so every label counts.
-      return longest(r.items.map((i) => i.label));
+      // the panel, so every label counts. Dice written into a label are
+      // measured at their largest, since that is the widest it can ever read.
+      return longest(r.items.map((i) => widestLabel(i.label)));
     }
     case "coin":
       return longest([...r.faces]);

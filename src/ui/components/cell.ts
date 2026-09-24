@@ -16,6 +16,8 @@ import { createCoin } from "./coin.ts";
 import { createResultPanel } from "./result.ts";
 import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
+import { bagDrawn, bagLoad } from "../bag.ts";
+import { withoutDrawn } from "../../core/weighted.ts";
 import { effectiveFeel } from "../feel.ts";
 
 export interface CellView {
@@ -37,7 +39,10 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
 
   if (randomizer.type === "list" && randomizer.view === "wheel") {
     wheel = createWheel({
-      items: () => (randomizer as Extract<Randomizer, { type: "list" }>).items,
+      items: () => {
+        const r = randomizer as Extract<Randomizer, { type: "list" }>;
+        return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
+      },
       id: () => randomizer.id,
       onActivate: () => void roller.roll(),
       size: 260,
@@ -51,6 +56,10 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
   result.reserve(longestOutcome(randomizer));
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
+
+  if (randomizer.type === "list" && randomizer.withoutReplacement) {
+    void bagLoad(randomizer.id).then(() => wheel?.refresh());
+  }
 
   const roller = createRoller({
     randomizer: () => randomizer as Rollable,

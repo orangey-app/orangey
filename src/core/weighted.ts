@@ -26,6 +26,18 @@ export function isRollable(item: Weighted): boolean {
   return !item.disabled && Number.isFinite(item.weight) && item.weight > 0;
 }
 
+/**
+ * The same list with what has already been drawn taken out of play.
+ *
+ * Marked `disabled` rather than filtered: `Outcome.itemIndex`, the wheel's
+ * colours and an outcome's chain target are all positions in this array, so
+ * the order and the length have to survive. A drawn outcome is exactly an
+ * outcome that cannot come up, which is what `disabled` already means.
+ */
+export function withoutDrawn<T extends Weighted & { id: string }>(items: readonly T[], drawn: ReadonlySet<string>): T[] {
+  return items.map((item) => (drawn.has(item.id) ? { ...item, disabled: true } : item));
+}
+
 export function isValidWeight(w: unknown): w is number {
   return typeof w === "number" && Number.isFinite(w) && w >= 0;
 }

@@ -54,3 +54,20 @@ expression" with no position is useless when you are typing at a table:
 dice, `adv`/`dis` as sugar for `2d20kh1`/`2d20kl1`, and `Nx(...)` repetition.
 The grammar module is separate from everything else so that it can eventually
 become a small library of its own.
+
+## Dice inside an outcome
+
+An outcome's label or description may carry dice in braces, and they are
+rolled when that outcome comes up:
+
+    {2d4} wolves, hungry     ->   3 wolves, hungry
+
+The braces are the whole of the opt-in. Without them nothing is touched, so
+"a d20 system" and "2d6 × 10 gp" stay as written — which matters, because
+tables are full of prose that mentions dice without meaning to roll any. The
+breakdown appears beside the result, the same way a dice randomizer shows
+its own. Anything in braces that is not a valid expression is left exactly as
+typed, so a typo is visible rather than silently swallowed.
+
+The wheel, the editor and the history keep showing the label as it was
+written; only the result is expanded.

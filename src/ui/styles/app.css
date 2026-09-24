@@ -148,6 +148,8 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .gap-s { margin-top: 8px; }
 .gap-m { margin-top: 12px; }
 .gap-l { margin-top: 14px; }
+.bag-line { justify-content: flex-end; margin: 4px 0 2px; min-height: 28px; }
+.bag-line[hidden] { display: none; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); font-size: 13px; }

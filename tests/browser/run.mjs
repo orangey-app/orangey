@@ -1776,6 +1776,52 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
+  // ---- AB: bags, hidden rolls and boards of dice ---------------------------
+
+  await test("AB a bag empties as it is drawn, survives a reload, and refills", async (page) => {
+    await open(page, "", { fresh: true });
+    const path = await createList(page, "Bag", [
+      { label: "One", weight: 1 },
+      { label: "Two", weight: 1 },
+      { label: "Three", weight: 1 },
+    ], "list");
+    await page.evaluate(`
+      const { state } = window.orangey;
+      const node = state.library.find(${JSON.stringify(path)});
+      state.library.save(node.path, { ...node.randomizer, withoutReplacement: true });
+      await state.library.flush();
+      state.setFeel({ motion: "instant" });
+    `);
+
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".bag-count") && document.querySelector(".bag-count").textContent === "3 of 3 left"`);
+
+    // Three draws, three different answers: that is the whole point of a bag.
+    const seen = [];
+    for (let n = 0; n < 3; n++) {
+      const left = 2 - n;
+      await page.click(".roll-button");
+      await page.waitForFunction(`document.querySelector(".bag-count").textContent === "${left} of 3 left"`);
+      seen.push(await page.evaluate(`return document.querySelector(".result-value").textContent`));
+    }
+    assert.equal(new Set(seen).size, 3, `the same outcome came up twice: ${seen.join(", ")}`);
+    await page.waitForFunction(`document.querySelector(".bag-count").textContent === "0 of 3 left"`);
+
+    // The fourth press has nothing left to draw and says so.
+    await page.click(".roll-button");
+    await page.waitForFunction(`/bag is empty/i.test(document.querySelector(".result-value").textContent)`);
+
+    // The bag is per device, so it is still empty after a reload.
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".bag-count").textContent === "0 of 3 left"`);
+
+    await page.click(".refill-bag");
+    await page.waitForFunction(`document.querySelector(".bag-count").textContent === "3 of 3 left"`);
+    await page.click(".roll-button");
+    await page.waitForFunction(`document.querySelector(".bag-count").textContent === "2 of 3 left"`);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
   // ---- report --------------------------------------------------------------
 
   await browser.close();

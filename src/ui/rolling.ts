@@ -22,6 +22,8 @@ import type { WheelView } from "./components/wheel.ts";
 import type { DiceTray } from "./components/dice.ts";
 import type { CoinView } from "./components/coin.ts";
 import { rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
+import { bagDrawn, bagTake } from "./bag.ts";
+import { withoutDrawn } from "../core/weighted.ts";
 import { summarize } from "./mascot/events.ts";
 import { state } from "./state.ts";
 
@@ -37,6 +39,8 @@ export interface RollerOptions {
   live: boolean;
   onStart?: (willAnimate: boolean) => void;
   onEnd?: () => void;
+  /** Told after an outcome has been taken out of the bag, so a view can redraw. */
+  onBagChange?: () => void;
 }
 
 export interface Roller {
@@ -71,8 +75,15 @@ export function createRoller(opts: RollerOptions): Roller {
       return;
     }
     const randomizer = opts.randomizer();
+    // Bag mode: the roll is made against what is still in the bag, and the
+    // list as a whole is left alone — `withoutDrawn` only marks, so every
+    // index, colour and chain target still points where it did.
+    const bag = randomizer.type === "list" && randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
+    const rollable = bag && randomizer.type === "list"
+      ? { ...randomizer, items: withoutDrawn(randomizer.items, bag) }
+      : randomizer;
 
-    const problem = whyCannotRoll(randomizer);
+    const problem = whyCannotRoll(randomizer, bag ?? undefined);
     if (problem) {
       opts.result.clear(problem);
       if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
@@ -81,7 +92,7 @@ export function createRoller(opts: RollerOptions): Roller {
 
     let outcome: Outcome;
     try {
-      outcome = rollRandomizer(randomizer, state.source());
+      outcome = rollRandomizer(rollable, state.source());
     } catch (e) {
       const reason = (e as Error).message;
       opts.result.clear(reason);
@@ -111,6 +122,12 @@ export function createRoller(opts: RollerOptions): Roller {
     }
 
     if (willAnimate) opts.result.show(outcome);
+    // Out of the bag at the landing, never at the start: a skipped roll still
+    // lands, so it still takes, and a roll that never arrived never did.
+    if (bag && randomizer.type === "list" && outcome.itemIndex !== undefined) {
+      bagTake(randomizer.id, randomizer.items[outcome.itemIndex].id);
+      opts.onBagChange?.();
+    }
     if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
     rolling = false;
     opts.onEnd?.();

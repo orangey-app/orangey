@@ -47,6 +47,20 @@ describe("reading a file someone exported from a spreadsheet", () => {
     assert.deepEqual(rows[3], ["Two\nlines", "10"]);
   });
 
+  test("a d100 range column becomes weights", () => {
+    const text = ["d100,Encounter", "01-65,Goblins", "66–85,Merchant", "86-99,Wolves", "00,Dragon"].join("\n");
+    const r = importAll(text);
+    assert.deepEqual(r.items.map((i) => i.label), ["Goblins", "Merchant", "Wolves", "Dragon"]);
+    // The width of the range is the weight; a lone number is that one roll.
+    assert.deepEqual(r.items.map((i) => i.weight), [65, 20, 14, 1], renderReport(r.report));
+    assert.ok(r.report.some((l) => l.text.includes("roll ranges")), renderReport(r.report));
+
+    // A plain weight column is untouched by any of this.
+    const plain = importAll(["Encounter,Weight", "Goblins,65", "Merchant,20"].join("\n"));
+    assert.deepEqual(plain.items.map((i) => i.weight), [65, 20]);
+    assert.ok(!plain.report.some((l) => l.text.includes("roll ranges")));
+  });
+
   test("loose number parsing accepts what spreadsheets emit", () => {
     const cases: [string, number | null][] = [
       ["50", 50],

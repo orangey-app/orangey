@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { ParseError, parse, tryParse } from "../../src/core/dice/grammar.ts";
 import { rollDice } from "../../src/core/dice/evaluate.ts";
 import { formatResult, speakResult } from "../../src/core/dice/format.ts";
+import { longestOutcome, rollRandomizer } from "../../src/ui/roll.ts";
+import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 
 describe("dice notation", () => {
@@ -26,6 +28,25 @@ describe("dice notation", () => {
     for (const [input, expected] of cases) {
       assert.equal(parse(input).normalized, expected, `for ${input}`);
     }
+  });
+
+  test("dice written into an outcome are rolled with it", () => {
+    const list = {
+      ...emptyRandomizer("list", "Wolves"),
+      items: [makeItem("{2d4} wolves", 1, { description: "{nonsense} and {1d6} more" })],
+    } as ListRandomizer;
+
+    const outcome = rollRandomizer(list, new SeededSource("inline"));
+    const n = Number.parseInt(outcome.text, 10);
+    assert.ok(Number.isInteger(n) && n >= 2 && n <= 8, `"${outcome.text}" is not 2d4`);
+    assert.match(outcome.text, /^\d+ wolves$/);
+    assert.match(outcome.detail ?? "", /2d4 \[/, outcome.detail);
+    // Braces around something that is not dice are left exactly as typed.
+    assert.match(outcome.detail ?? "", /\{nonsense\}/, outcome.detail);
+    assert.doesNotMatch(outcome.detail ?? "", /\{1d6\}/, "the description's dice were not rolled");
+
+    // The reserved width uses the largest each expression can reach.
+    assert.equal(longestOutcome(list), "8 wolves");
   });
 
   test("parse errors point at the offending character", () => {

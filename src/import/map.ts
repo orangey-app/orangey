@@ -8,7 +8,7 @@
 
 import { makeItem, type ListItem } from "../model/randomizer.ts";
 import { isHex } from "../core/color.ts";
-import { parseNumberLoose } from "./detect.ts";
+import { parseNumberLoose, parseRollRange } from "./detect.ts";
 
 export interface Mapping {
   label: number;
@@ -57,6 +57,19 @@ export function buildItems(rows: string[][], hasHeader: boolean, mapping: Mappin
   let missingDescriptions = 0;
   let defaultedWeights = 0;
 
+  /**
+   * A published encounter table gives a d100 range per row — `01-65` — and
+   * the width of that range IS the weight. One cell that reads as a range
+   * makes the column a range column; in one, a lone number such as `99` or
+   * `00` means that single roll, so its weight is 1 rather than 99.
+   */
+  const isRangeColumn =
+    mapping.weight !== null &&
+    body.some((row) => {
+      const raw = (row[mapping.weight as number] ?? "").trim();
+      return raw !== "" && parseRollRange(raw) !== null;
+    });
+
   body.forEach((row, i) => {
     const label = (row[mapping.label] ?? "").trim();
     if (label === "") {
@@ -69,6 +82,16 @@ export function buildItems(rows: string[][], hasHeader: boolean, mapping: Mappin
       const raw = (row[mapping.weight] ?? "").trim();
       if (raw === "") {
         defaultedWeights++;
+      } else if (isRangeColumn) {
+        const span = parseRollRange(raw);
+        if (span !== null) {
+          weight = span;
+        } else if (parseNumberLoose(raw) !== null) {
+          weight = 1;
+        } else {
+          badWeights.push(`row ${rowNumber(i)} "${raw}"`);
+          return;
+        }
       } else {
         const n = parseNumberLoose(raw);
         if (n === null || n < 0) {
@@ -112,6 +135,9 @@ export function buildItems(rows: string[][], hasHeader: boolean, mapping: Mappin
   const total = items.reduce((a, it) => a + it.weight, 0);
   if (items.length) {
     report.push({ level: "ok", text: `Weights valid (total ${round(total)})` });
+  }
+  if (isRangeColumn && items.length) {
+    report.push({ level: "ok", text: "Weights read from roll ranges (for example 01–65 gives 65)" });
   }
   if (defaultedWeights) {
     report.push({ level: "warn", text: `${plural(defaultedWeights, "entry", "entries")} had no weight — using 1` });

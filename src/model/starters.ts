@@ -35,7 +35,7 @@ export function starters(): Starter[] {
       randomizer: list("Forest Encounters", "Daytime, levels 1–4", [
         ["Goblin patrol", 50, "Three goblins, one with a horn"],
         ["Merchant", 20, "Friendly, overpriced"],
-        ["Wolf pack", 20, "2d4 wolves, hungry"],
+        ["Wolf pack", 20, "{2d4} wolves, hungry"],
         ["Nothing", 9],
         ["Young green dragon", 1, "Run."],
       ]),

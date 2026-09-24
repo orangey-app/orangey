@@ -9,6 +9,7 @@ import {
   pickWeightedIndex,
   rollableIndices,
   totalWeight,
+  withoutDrawn,
 } from "../../src/core/weighted.ts";
 
 /** Chi-square goodness of fit against a uniform expectation. */
@@ -119,5 +120,33 @@ describe("weighted selection", () => {
     const pool = Array.from({ length: 8 }, (_, i) => ({ weight: i + 1 }));
     assert.equal(new Set(drawWithoutReplacement(pool, 8, rng)).size, 8, "a bag draw never repeats itself");
     assert.throws(() => drawWithoutReplacement(pool, 9, rng), NotRollableError);
+  });
+
+  test("a bag empties one outcome at a time, and the list keeps its order", () => {
+    const items = [
+      { id: "a", weight: 1, label: "A" },
+      { id: "b", weight: 2, label: "B" },
+      { id: "c", weight: 3, label: "C" },
+    ];
+
+    // Marked, not removed: an outcome's index is its identity to the wheel,
+    // to the colour assignment and to anything pointing at it.
+    const afterB = withoutDrawn(items, new Set(["b"]));
+    assert.deepEqual(afterB.map((i) => i.id), ["a", "b", "c"], "the order moved");
+    assert.deepEqual(afterB.map((i) => i.disabled === true), [false, true, false]);
+    assert.deepEqual(afterB.map((i) => i.weight), [1, 2, 3], "a drawn outcome lost its weight");
+    assert.equal(items[1].disabled, undefined, "the original list was modified");
+
+    // Three draws give three different outcomes; the fourth has nothing left.
+    const rng = new SeededSource("bag");
+    const drawn = new Set<string>();
+    for (let n = 0; n < 3; n++) {
+      const live = withoutDrawn(items, drawn);
+      const picked = live[pickWeightedIndex(live, rng)];
+      assert.ok(!drawn.has(picked.id), `${picked.id} came up twice`);
+      drawn.add(picked.id);
+    }
+    assert.equal(drawn.size, 3);
+    assert.throws(() => pickWeightedIndex(withoutDrawn(items, drawn), rng), NotRollableError);
   });
 });

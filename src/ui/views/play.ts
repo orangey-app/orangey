@@ -7,7 +7,7 @@
  * home, so that a stray press cannot swap out what the table is rolling.
  */
 
-import { emptyRandomizer, newId, type Randomizer, type Rollable } from "../../model/randomizer.ts";
+import { emptyRandomizer, newId, type ListItem, type Randomizer, type Rollable } from "../../model/randomizer.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
 import { button, h, isTyping, setChildren } from "../dom.ts";
@@ -20,12 +20,13 @@ import { createRecentRolls } from "../components/recent.ts";
 import { createChainRow } from "../components/chain.ts";
 import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
+import { bagDrawn, bagLoad, bagRefill } from "../bag.ts";
 import { openLinkDialog } from "../components/linkdialog.ts";
 import { isPresenting, setPresenting } from "../presenting.ts";
 import { effectiveFeel } from "../feel.ts";
 import { navigate, type LinkParams } from "../router.ts";
 import type { View } from "../view.ts";
-import { displayPercents, isRollable } from "../../core/weighted.ts";
+import { displayPercents, isRollable, withoutDrawn } from "../../core/weighted.ts";
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
 
@@ -62,7 +63,7 @@ export function createPlayView(
     if (randomizer.type === "list") {
       if (randomizer.view === "wheel") {
         wheel = createWheel({
-          items: () => (randomizer.type === "list" ? randomizer.items : []),
+          items: () => inPlay(),
           id: () => randomizer.id,
           onActivate: () => void doRoll(),
         });
@@ -77,11 +78,22 @@ export function createPlayView(
     }
   }
 
+  /**
+   * The outcomes as they stand for the next roll: in bag mode, the ones
+   * already drawn are marked disabled rather than removed, so indices,
+   * colours and chain targets all still line up.
+   */
+  function inPlay(): ListItem[] {
+    if (randomizer.type !== "list") return [];
+    if (!randomizer.withoutReplacement) return randomizer.items;
+    return withoutDrawn(randomizer.items, bagDrawn(randomizer.id));
+  }
+
   function renderOutcomeList(): HTMLElement {
-    const r = randomizer as Extract<Randomizer, { type: "list" }>;
-    const percents = displayPercents(r.items);
+    const items = inPlay();
+    const percents = displayPercents(items);
     return h("ul", { class: "outcome-list" },
-      ...r.items.map((item, i) =>
+      ...items.map((item, i) =>
         h("li", { class: item.disabled ? "disabled muted" : "" },
           h("span", { text: item.label }),
           h("span", { class: "faint", text: ` ${percents[i].toFixed(1)}%` }),
@@ -109,9 +121,20 @@ export function createPlayView(
     onEnd: () => {
       rollButton.textContent = "Roll";
     },
+    // The count changes at the landing; the wheel does not. Taking the
+    // winning slice off the wheel the instant it wins would make it vanish
+    // from under the pointer, so the wheel catches up on the next roll.
+    onBagChange: () => {
+      updateBagLine();
+      if (randomizer.type === "list" && randomizer.view === "list") buildStage();
+    },
   });
 
-  const doRoll = (): Promise<void> => roller.roll();
+  const doRoll = (): Promise<void> => {
+    // The wheel drops what was drawn last time here, not when it was drawn.
+    wheel?.refresh();
+    return roller.roll();
+  };
 
   const skip = (): void => roller.skip();
 
@@ -180,6 +203,18 @@ export function createPlayView(
     reserveResult();
     result.clear("Ready");
     buildStage();
+    updateBagLine();
+    // The bag is read from the app database, so it arrives a moment later;
+    // until then the wheel simply shows everything, which is also what it
+    // shows for a randomizer that does not use a bag at all.
+    if (next.type === "list" && next.withoutReplacement) {
+      void bagLoad(next.id).then(() => {
+        if (randomizer.id !== next.id) return;
+        updateBagLine();
+        wheel?.refresh();
+        if (next.view === "list") buildStage();
+      });
+    }
     // Nothing the old randomizer opened has anything to do with this one.
     chain.reset();
   }
@@ -220,7 +255,34 @@ export function createPlayView(
   // Orangey's place: the corner of the result panel, where he can react to
   // the number without ever sitting on the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
-  const playCard = h("div", { class: "card play-card" }, header, stage, result.el, rollButton);
+  /**
+   * How much is left in the bag, and the way to put it all back.
+   *
+   * Only shown for a list that draws without putting back; for anything else
+   * the row is hidden, so the card's height does not change under it.
+   */
+  const bagCount = h("span", { class: "faint bag-count" });
+  const refillButton = button("Refill", () => {
+    bagRefill(randomizer.id);
+    result.clear();
+    wheel?.refresh();
+    if (randomizer.type === "list" && randomizer.view === "list") buildStage();
+    updateBagLine();
+  }, { class: "ghost refill-bag" });
+  const bagLine = h("div", { class: "row tight bag-line" }, bagCount, refillButton);
+
+  function updateBagLine(): void {
+    const on = randomizer.type === "list" && randomizer.withoutReplacement === true;
+    bagLine.hidden = !on;
+    if (!on || randomizer.type !== "list") return;
+    const drawn = bagDrawn(randomizer.id);
+    const total = randomizer.items.filter(isRollable).length;
+    const left = withoutDrawn(randomizer.items, drawn).filter(isRollable).length;
+    bagCount.textContent = `${left} of ${total} left`;
+    refillButton.hidden = left === total;
+  }
+
+  const playCard = h("div", { class: "card play-card" }, header, stage, bagLine, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
     playCard,
@@ -251,6 +313,16 @@ export function createPlayView(
 
   reserveResult();
   buildStage();
+  updateBagLine();
+  if (randomizer.type === "list" && randomizer.withoutReplacement) {
+    const opened = randomizer.id;
+    void bagLoad(opened).then(() => {
+      if (randomizer.id !== opened) return;
+      updateBagLine();
+      wheel?.refresh();
+      if (randomizer.type === "list" && randomizer.view === "list") buildStage();
+    });
+  }
   // Settings can change the seed while this view is alive, and the seed line
   // is part of what the panel reserves room for.
   const unsubscribe = state.subscribe(() => {
