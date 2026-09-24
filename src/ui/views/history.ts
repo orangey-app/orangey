@@ -6,6 +6,7 @@
 
 import { askConfirm, button, download, formatWhen, h, setChildren } from "../dom.ts";
 import { appdb, HISTORY_CAP } from "../../storage/appdb.ts";
+import { csvCell } from "../../import/listcsv.ts";
 import { state, type HistoryRow } from "../state.ts";
 import { navigate } from "../router.ts";
 
@@ -28,9 +29,7 @@ export function historyCsv(rows: HistoryRow[]): string {
       e.struck ? "yes" : "",
     ]),
   ];
-  return table
-    .map((r) => r.map((cell) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(","))
-    .join("\n");
+  return table.map((r) => r.map(csvCell).join(",")).join("\n");
 }
 
 export function createHistoryView(): View {

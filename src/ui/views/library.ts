@@ -10,8 +10,9 @@
  * the header menu; import has a single entry point, the wizard.
  */
 
-import { serialize, wrap } from "../../model/file.ts";
-import { emptyRandomizer, isBoard, type BoardRandomizer, type Randomizer, type RandomizerType } from "../../model/randomizer.ts";
+import { serialize, slugify, wrap } from "../../model/file.ts";
+import { emptyRandomizer, isBoard, type BoardRandomizer, type ListRandomizer, type Randomizer, type RandomizerType } from "../../model/randomizer.ts";
+import { listCsv } from "../../import/listcsv.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { basename, parent } from "../../storage/paths.ts";
 import { regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
@@ -252,6 +253,15 @@ export function createLibraryView(): View {
       { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
       { label: "Duplicate", onSelect: async () => { await state.library.duplicate(node.path); render(); } },
       { label: "Export file", onSelect: () => void exportFile(node) },
+      ...(node.randomizer?.type === "list"
+        ? [{
+            label: "Export as CSV",
+            onSelect: () => {
+              const r = node.randomizer as ListRandomizer;
+              download(`${slugify(r.name)}.csv`, `${listCsv(r.items)}\n`, "text/csv");
+            },
+          }]
+        : []),
       ...(node.randomizer && isBoard(node.randomizer)
         ? [{ label: "Export board with its randomizers", onSelect: () => void exportBoardZip(node.randomizer as BoardRandomizer) }]
         : []),
@@ -289,12 +299,30 @@ export function createLibraryView(): View {
     const name = node.randomizer?.name ?? node.name;
     const inside = node.kind === "folder" ? state.library.files(node).length : 0;
     const ok = await askConfirm(`Delete “${name}”?`,
-      node.kind === "folder" && inside ? `The folder and the ${inside} randomizer${inside === 1 ? "" : "s"} in it will be deleted. This cannot be undone.` : "This cannot be undone.",
+      node.kind === "folder"
+        ? `The folder${inside ? ` and the ${inside} randomizer${inside === 1 ? "" : "s"} in it` : ""} will be deleted. This cannot be undone.`
+        : "You can undo this straight afterwards.",
       { confirm: "Delete", danger: true, opener });
     if (!ok) return;
+
+    // A file is read before it goes, so Undo can put exactly it back — same
+    // path, same id, so every board entry and every "goes to" that pointed
+    // at it works again. Its pictures are safe meanwhile: they are swept up
+    // only when an editor closes, against the ids in use at that moment.
+    const backup = node.kind === "file" ? await state.library.backend.read(node.path).catch(() => null) : null;
     await state.library.remove(node.path);
-    state.toast(`Deleted “${name}”`);
     render();
+    if (backup === null) {
+      state.toast(`Deleted “${name}”`);
+      return;
+    }
+    state.toast(`Deleted “${name}”`, "Undo", () => {
+      void (async () => {
+        await state.library.backend.write(node.path, backup);
+        await state.library.refresh();
+        render();
+      })();
+    });
   }
 
   async function exportFile(node: LibraryNode): Promise<void> {

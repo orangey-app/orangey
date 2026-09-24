@@ -452,6 +452,16 @@ async function main() {
       "the deleted randomizer is still in the tree",
     );
     assert.ok(await page.evaluate(`return document.querySelectorAll(".folder-row").length >= 1`), "the folder went with it");
+
+    // Undo brings it back, at the same path and with the same id, so boards
+    // and "goes to" links that pointed at it work again.
+    await page.evaluate(`[...document.querySelectorAll(".toast button")].find((b) => b.textContent === "Undo").click()`);
+    await page.waitForFunction(`window.orangey.state.library.files().length === 1`);
+    const restored = await page.evaluate(`
+      const f = window.orangey.state.library.files()[0];
+      return { path: f.path, name: f.randomizer.name };
+    `);
+    assert.deepEqual(restored, { path: "Target/renamed-by-dialog.orangey.json", name: "Renamed by dialog" });
     assert.deepEqual(page.consoleErrors, []);
   });
 

@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { detect, guessColumns, parseNumberLoose } from "../../src/import/detect.ts";
 import { parseDelimited, delimiterName } from "../../src/import/parse.ts";
 import { buildItems, itemsFromJson, renderReport } from "../../src/import/map.ts";
+import { listCsv } from "../../src/import/listcsv.ts";
+import { makeItem } from "../../src/model/randomizer.ts";
 
 const fixture = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url)), "utf8");
@@ -138,6 +140,26 @@ describe("the import report", () => {
     const empty = importAll(",,,\n,,,\n");
     assert.equal(empty.usable, false);
     assert.ok(renderReport(empty.report).includes("✗"));
+  });
+});
+
+describe("exporting a list", () => {
+  test("a list exported as CSV comes back through the importer unchanged", () => {
+    const items = [
+      makeItem("Goblin patrol", 50, { description: "Three goblins, one with a horn" }),
+      makeItem('He said "run", loudly', 20, { color: "#a33a30" }),
+      makeItem("Wolf pack, hungry", 7.5),
+    ];
+
+    const csv = listCsv(items);
+    assert.match(csv.split("\n")[0], /^label,weight,description,color$/);
+
+    const rows = parseDelimited(csv, ",");
+    const back = buildItems(rows, true, { label: 0, weight: 1, description: 2, color: 3, extrasToMetadata: false });
+    assert.deepEqual(back.items.map((i) => i.label), items.map((i) => i.label), renderReport(back.report));
+    assert.deepEqual(back.items.map((i) => i.weight), [50, 20, 7.5]);
+    assert.deepEqual(back.items.map((i) => i.description), [items[0].description, undefined, undefined]);
+    assert.deepEqual(back.items.map((i) => i.color), [undefined, "#a33a30", undefined]);
   });
 });
 

@@ -4992,6 +4992,9 @@ function rollsInScope(rows              , ids          )               {
                                         
  
 
+/** How often coming back to the tab may re-read a folder library. */
+const RESCAN_DELAY = 30_000;
+
 const DEFAULT_PREFS        = {
   feel: DEFAULT_FEEL,
   seed: null,
@@ -5108,11 +5111,36 @@ class AppState {
     const flushNow = () => void this.library.flush().catch(() => {});
     addEventListener("pagehide", flushNow);
     addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") flushNow();
+      if (document.visibilityState === "hidden") {
+        flushNow();
+        return;
+      }
+      this.#rescanFolder();
     });
 
     this.applyTheme();
     this.emit();
+  }
+
+  /**
+   * A library in a folder can be edited by anything: an editor, a sync
+   * client, another window. Coming back to the tab is the moment to look
+   * again — there is no watcher for a directory handle, and polling a folder
+   * of files for changes nobody may have made is not worth the battery.
+   *
+   * Never while there is something waiting to be written, and never while an
+   * editor is open: the editor holds its own copy and only the node's path,
+   * so a rescan cannot actually disturb it, but having the tree shift under
+   * someone mid-edit is its own kind of surprise.
+   */
+  #lastRescan = 0;
+  #rescanFolder()       {
+    if (this.library.backend.kind !== "fsa" || this.library.hasUnsavedChanges) return;
+    if (location.hash.startsWith("#/edit/")) return;
+    const now = Date.now();
+    if (now - this.#lastRescan < RESCAN_DELAY) return;
+    this.#lastRescan = now;
+    void this.library.refresh().catch(() => {});
   }
 
   applyTheme()       {
@@ -10844,6 +10872,32 @@ function createBoardView(node             , params                              
   };
 }
 
+// ---- src\import\listcsv.ts ---------------------------------------
+/**
+ * A list of outcomes as a spreadsheet.
+ *
+ * The importer has always been able to read a CSV; this is the other
+ * direction, so a table can be taken out to a spreadsheet, edited by
+ * whatever the group already uses, and brought back. The columns are exactly
+ * the ones the import wizard recognises by name, so the round trip needs no
+ * mapping step at all.
+ */
+
+                                                       
+
+/** One cell, quoted only when it has to be. */
+function csvCell(value        )         {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function listCsv(items                     )         {
+  const rows = [
+    ["label", "weight", "description", "color"],
+    ...items.map((i) => [i.label, String(i.weight), i.description ?? "", i.color ?? ""]),
+  ];
+  return rows.map((r) => r.map(csvCell).join(",")).join("\n");
+}
+
 // ---- src\ui\views\library.ts -------------------------------------
 /**
  * The library: the folder tree, search, and everything you can do to a
@@ -10856,6 +10910,7 @@ function createBoardView(node             , params                              
  * (+ New). Storage, export and folder connection are secondary and live in
  * the header menu; import has a single entry point, the wizard.
  */
+
 
 
 
@@ -11099,6 +11154,15 @@ function createLibraryView()       {
       { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
       { label: "Duplicate", onSelect: async () => { await state.library.duplicate(node.path); render(); } },
       { label: "Export file", onSelect: () => void exportFile(node) },
+      ...(node.randomizer?.type === "list"
+        ? [{
+            label: "Export as CSV",
+            onSelect: () => {
+              const r = node.randomizer                  ;
+              download(`${slugify(r.name)}.csv`, `${listCsv(r.items)}\n`, "text/csv");
+            },
+          }]
+        : []),
       ...(node.randomizer && isBoard(node.randomizer)
         ? [{ label: "Export board with its randomizers", onSelect: () => void exportBoardZip(node.randomizer                   ) }]
         : []),
@@ -11136,12 +11200,30 @@ function createLibraryView()       {
     const name = node.randomizer?.name ?? node.name;
     const inside = node.kind === "folder" ? state.library.files(node).length : 0;
     const ok = await askConfirm(`Delete “${name}”?`,
-      node.kind === "folder" && inside ? `The folder and the ${inside} randomizer${inside === 1 ? "" : "s"} in it will be deleted. This cannot be undone.` : "This cannot be undone.",
+      node.kind === "folder"
+        ? `The folder${inside ? ` and the ${inside} randomizer${inside === 1 ? "" : "s"} in it` : ""} will be deleted. This cannot be undone.`
+        : "You can undo this straight afterwards.",
       { confirm: "Delete", danger: true, opener });
     if (!ok) return;
+
+    // A file is read before it goes, so Undo can put exactly it back — same
+    // path, same id, so every board entry and every "goes to" that pointed
+    // at it works again. Its pictures are safe meanwhile: they are swept up
+    // only when an editor closes, against the ids in use at that moment.
+    const backup = node.kind === "file" ? await state.library.backend.read(node.path).catch(() => null) : null;
     await state.library.remove(node.path);
-    state.toast(`Deleted “${name}”`);
     render();
+    if (backup === null) {
+      state.toast(`Deleted “${name}”`);
+      return;
+    }
+    state.toast(`Deleted “${name}”`, "Undo", () => {
+      void (async () => {
+        await state.library.backend.write(node.path, backup);
+        await state.library.refresh();
+        render();
+      })();
+    });
   }
 
   async function exportFile(node             )                {
@@ -13536,6 +13618,7 @@ async function absorbArchive(entries            )                               
 
 
 
+
                                        
 
 /**
@@ -13555,9 +13638,7 @@ function historyCsv(rows              )         {
       e.struck ? "yes" : "",
     ]),
   ];
-  return table
-    .map((r) => r.map((cell) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(","))
-    .join("\n");
+  return table.map((r) => r.map(csvCell).join(",")).join("\n");
 }
 
 function createHistoryView()       {

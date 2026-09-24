@@ -65,6 +65,9 @@ export interface Toast {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/** How often coming back to the tab may re-read a folder library. */
+const RESCAN_DELAY = 30_000;
+
 export const DEFAULT_PREFS: Prefs = {
   feel: DEFAULT_FEEL,
   seed: null,
@@ -181,11 +184,36 @@ class AppState {
     const flushNow = () => void this.library.flush().catch(() => {});
     addEventListener("pagehide", flushNow);
     addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") flushNow();
+      if (document.visibilityState === "hidden") {
+        flushNow();
+        return;
+      }
+      this.#rescanFolder();
     });
 
     this.applyTheme();
     this.emit();
+  }
+
+  /**
+   * A library in a folder can be edited by anything: an editor, a sync
+   * client, another window. Coming back to the tab is the moment to look
+   * again — there is no watcher for a directory handle, and polling a folder
+   * of files for changes nobody may have made is not worth the battery.
+   *
+   * Never while there is something waiting to be written, and never while an
+   * editor is open: the editor holds its own copy and only the node's path,
+   * so a rescan cannot actually disturb it, but having the tree shift under
+   * someone mid-edit is its own kind of surprise.
+   */
+  #lastRescan = 0;
+  #rescanFolder(): void {
+    if (this.library.backend.kind !== "fsa" || this.library.hasUnsavedChanges) return;
+    if (location.hash.startsWith("#/edit/")) return;
+    const now = Date.now();
+    if (now - this.#lastRescan < RESCAN_DELAY) return;
+    this.#lastRescan = now;
+    void this.library.refresh().catch(() => {});
   }
 
   applyTheme(): void {
