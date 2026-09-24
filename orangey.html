@@ -5326,7 +5326,13 @@ const state = new AppState();
                                                     
                                                                                  
                                                            
-                                                      
+     
+                                                                           
+                                                                              
+                                                                            
+                     
+     
+                                                                     
                                            
                                           
                                            
@@ -5385,8 +5391,11 @@ function parseRoute(hash        )        {
       return arg ? { name: "randomizer", path: arg, params } : { name: "play", params };
     case "id":
       return arg ? { name: "byId", id: arg, params } : { name: "play", params };
-    case "edit":
-      return arg ? { name: "edit", path: arg, params } : { name: "library", params };
+    case "edit": {
+      if (!arg) return { name: "library", params };
+      const from = new URLSearchParams(query).get("from");
+      return from ? { name: "edit", path: arg, from, params } : { name: "edit", path: arg, params };
+    }
     case "library":
       return { name: "library", params };
     case "import":
@@ -5401,13 +5410,42 @@ function parseRoute(hash        )        {
 }
 
 /**
- * Where Back goes: an editor returns to the randomizer it edits; anywhere
- * else returns to the one last played, if it is still in the library, and
- * otherwise to the plain play screen. A route, not browser history, so it
- * never bounces between two settings pages or out of the app.
+ * The address of an editor, remembering where it was opened from.
+ *
+ * `from` is itself a whole address and may carry a `from` of its own, so a
+ * board, then a wheel's editor, then a new randomizer's editor unwinds one
+ * step per Back. It is encoded as a single value, which is why it can nest.
+ */
+function editHash(path        , from         )         {
+  const base = `#/edit/${encodeURIComponent(path)}`;
+  return from ? `${base}?from=${encodeURIComponent(from)}` : base;
+}
+
+/**
+ * Where an editor's `from` leads, if it is somewhere Back may go.
+ *
+ * Only a randomizer or another editor, and only one still in the library: the
+ * address arrives in the URL, so it is rebuilt from the parsed route rather
+ * than followed as written. That drops anything else it carries, such as a
+ * `roll=1` that would roll the moment you arrived.
+ */
+function referrer(route       , exists                           )                {
+  if (route.name !== "edit" || !route.from || !route.from.startsWith("#/")) return null;
+  const target = parseRoute(route.from);
+  if (target.name === "randomizer" && exists(target.path)) return `#/r/${encodeURIComponent(target.path)}`;
+  if (target.name === "edit" && exists(target.path)) return editHash(target.path, target.from);
+  return null;
+}
+
+/**
+ * Where Back goes: an editor returns to the screen that opened it when it
+ * knows one, and otherwise to the randomizer it edits; anywhere else returns
+ * to the one last played, if it is still in the library, and otherwise to the
+ * plain play screen. A route, not browser history, so it never bounces
+ * between two settings pages or out of the app.
  */
 function backTarget(route       , lastPath               , exists                           )         {
-  if (route.name === "edit") return `#/r/${encodeURIComponent(route.path)}`;
+  if (route.name === "edit") return referrer(route, exists) ?? `#/r/${encodeURIComponent(route.path)}`;
   if (lastPath && exists(lastPath)) return `#/r/${encodeURIComponent(lastPath)}`;
   return "#/";
 }
@@ -11064,7 +11102,9 @@ function createBoardView(node             , params                              
     await addEntry(picked.randomizer);
     if (picked.fresh) {
       await state.library.flush();
-      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
+      // Back from its editor returns to this board, not to the new
+      // randomizer's own play screen, where there is no Back at all.
+      navigate(editHash(picked.path, `#/r/${encodeURIComponent(node.path)}`));
     }
   }
 
@@ -12181,10 +12221,31 @@ function feelCard(get                  , set                                    
   return card;
 }
 
-function createEditorView(node             )       {
+/**
+ * `from` is the address of the screen that opened this editor, if any; Back
+ * returns there. See `referrer` in router.ts.
+ */
+function createEditorView(node             , from         )       {
   const randomizer = node.randomizer ;
   if (randomizer.type !== "list") return createSimpleEditor(node);
-  return createListEditor(node, randomizer);
+  return createListEditor(node, randomizer, from);
+}
+
+function inLibrary(path        )          {
+  return state.library.find(path)?.randomizer != null;
+}
+
+/**
+ * The editor's own Back, which goes exactly where the top bar's does, so the
+ * two can never disagree. It names the place when that is not simply this
+ * randomizer's play screen: "Back to play" from a new wheel made on a board
+ * would be a promise the button does not keep.
+ */
+function editorBackButton()              {
+  const there = referrer(currentRoute(), inLibrary);
+  const target = there ? parseRoute(there) : null;
+  const name = target && "path" in target ? state.library.find(target.path)?.randomizer?.name : undefined;
+  return button(name ? `← Back to ${name}` : "← Back to play", () => navigate(backTarget(currentRoute(), null, inLibrary)), { class: "ghost" });
 }
 
 function formatWeight(n        )         {
@@ -12193,7 +12254,7 @@ function formatWeight(n        )         {
 
 /* -------------------------------------------------------------------------- */
 
-function createListEditor(node             , initial                )       {
+function createListEditor(node             , initial                , from         )       {
   let model                 = structuredClone(initial);
   let selection = new Set        ();
   let filter = "";
@@ -12272,7 +12333,7 @@ function createListEditor(node             , initial                )       {
     if (draftProblem(model)) return;
     await state.library.flush();
     const path = await state.library.rename(node.path, model.name);
-    if (path !== node.path) navigate(`#/edit/${encodeURIComponent(path)}`, true);
+    if (path !== node.path) navigate(editHash(path, from), true);
   });
 
   const descInput = h("input", { type: "text", value: model.description ?? "", "aria-label": "Description" });
@@ -12580,7 +12641,8 @@ function createListEditor(node             , initial                )       {
     // A randomizer made for this is empty, so it opens where you can fill it in.
     if (picked.fresh) {
       await state.library.flush();
-      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
+      // Back from there returns here, to this editor, not to its play screen.
+      navigate(editHash(picked.path, editHash(node.path, from)));
     }
   }
 
@@ -12803,7 +12865,7 @@ function createListEditor(node             , initial                )       {
 
   const el = h("div", { class: "editor" },
     h("div", { class: "row", style: { marginBottom: "12px" } },
-      button("← Back to play", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
+      editorBackButton(),
       h("div", { class: "spacer" }),
       savedLabel,
     ),
@@ -12988,7 +13050,7 @@ function createSimpleEditor(node             )       {
       h("h1", { text: `Edit ${model.name}` }),
       h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), name),
       fields,
-      button("← Back to play", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
+      editorBackButton(),
     ),
     feel,
   );
@@ -15947,7 +16009,7 @@ function mountApp(root             )             {
           setMain({ el: h("div", { class: "card" }, h("p", { text: "This file was made with a newer Orangey, so it is open for reading only." })) });
           break;
         }
-        setMain(createEditorView(node));
+        setMain(createEditorView(node, route.from));
         break;
       }
       case "library":
