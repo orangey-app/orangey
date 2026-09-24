@@ -873,7 +873,15 @@ body.presenting .result-picture { max-height: 40vh; }
 .cell-name { font-size: 15px; margin: 0 0 6px; }
 .cell-stage { display: grid; place-items: center; min-height: 120px; }
 .cell-remove { position: absolute; top: 6px; right: 6px; padding: 2px 8px; line-height: 1; }
+/* Taking a randomizer off the board is an edit; in play mode there is no ✕ to
+   hit by accident. A chain's ✕ only closes what a roll opened, so it stays. */
+.board:not(.board-editing) .cell-holder > .cell-remove { display: none; }
+.board-editing .cell-holder { cursor: grab; }
 .cell-missing { color: var(--ink-soft); }
+.cell-roll { width: 100%; margin-top: 8px; }
+/* Opened by an outcome's link, not part of the board: dashed, so it reads as
+   something that will go away rather than something that was put there. */
+.board-grid > .chain-link.board-chain { position: relative; margin: 0; padding: 10px; box-shadow: none; border-style: dashed; }
 /* A cell's answer is read from across a table, but there are several of them:
    between the play screen's huge type and the size of the cell it sits in. */
 .cell .result-slot { font-size: clamp(20px, 3.4vw, 34px); min-height: 0; }
@@ -9181,6 +9189,13 @@ function bagRefill(randomizerId        )       {
                 
                                            
                      
+     
+                                                                             
+                                                                            
+                                                                              
+                                                                        
+     
+                                        
                                                                                    
                            
      
@@ -9329,6 +9344,7 @@ function createRoller(opts               )         {
     if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
     rolling = false;
     opts.onEnd?.();
+    opts.onLanded?.(outcome);
     if (opts.live) void state.record(randomizer, outcome);
   }
 
@@ -9366,6 +9382,7 @@ function createRoller(opts               )         {
 
 
 
+                                          
 
 
 
@@ -9380,7 +9397,7 @@ function createRoller(opts               )         {
                                   
  
 
-function createCell(randomizer            , opts                          = {})           {
+function createCell(randomizer            , opts                                                                 = {})           {
   const result = createResultPanel("Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
@@ -9420,6 +9437,7 @@ function createCell(randomizer            , opts                          = {}) 
     feel: feelNow,
     live: true,
     onStart: () => opts.onRoll?.(),
+    onLanded: (outcome) => opts.onLanded?.(outcome),
   });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
@@ -9435,6 +9453,22 @@ function createCell(randomizer            , opts                          = {}) 
     get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },
   };
+}
+
+/**
+ * A Roll button for one cell. Pressing it again while the cell is running
+ * means "get to the answer", which is what the cell's own roll does with a
+ * roll already in flight.
+ */
+function cellRollButton(cell          , className        )              {
+  const roll = button("Roll", () => {
+    const skipping = cell.rolling;
+    const done = cell.roll();
+    if (skipping) return;
+    roll.textContent = "Skip";
+    void done.then(() => { roll.textContent = "Roll"; });
+  }, { class: className });
+  return roll;
 }
 
 /** A cell for a randomizer the board points at but the library no longer has. */
@@ -9546,6 +9580,35 @@ function chainPlacement(count        , focus        )              {
   return Array.from({ length: count }, (_, i) => (i <= at && i > at - CHAIN_FULL_SIZE ? "full" : "icon"));
 }
 
+/**
+ * What a link past the root looks like: the line saying what sent you here,
+ * then its own cell and Roll button — or, when the library no longer has it,
+ * a gap that still says where the outcome meant to send you. The play screen
+ * and a board both draw links with this, so they look the same.
+ */
+function createChainSurface(
+  link           ,
+  sender        ,
+  opts                                            = {},
+)                                             {
+  const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
+  const found = state.library.findById(link.id)?.randomizer ?? null;
+  if (!found) {
+    // The same tone as a board's gap: the outcome still comes up and still
+    // says where it meant to send you.
+    return {
+      cell: null,
+      el: h("div", { class: "chain-link cell cell-missing" },
+        from,
+        h("h3", { class: "cell-name", text: link.name }),
+        h("p", { class: "faint", text: "This randomizer is not in your library any more. Import it again, or take the link off that outcome." }),
+      ),
+    };
+  }
+  const cell = createCell(found, { onLanded: opts.onLanded });
+  return { cell, el: h("div", { class: "chain-link" }, from, cell.el, cellRollButton(cell, "primary chain-roll")) };
+}
+
 /** The play screen, as the chain needs to see it: its root link, and its card. */
                             
                                                                                     
@@ -9596,33 +9659,9 @@ function createChainRow(root           )            {
 
   /** The surface for a link past the root: its own cell, or what is missing. */
   function build(i        )       {
-    const link = links[i];
-    const sender = links[i - 1]?.name ?? "";
-    const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
-    const found = state.library.findById(link.id)?.randomizer ?? null;
-    if (!found) {
-      // The same tone as a board's gap: the outcome still comes up and still
-      // says where it meant to send you.
-      cells[i] = null;
-      holders[i] = h("div", { class: "chain-link cell cell-missing" },
-        from,
-        h("h3", { class: "cell-name", text: link.name }),
-        h("p", { class: "faint", text: "This randomizer is not in your library any more. Import it again, or take the link off that outcome." }),
-      );
-      return;
-    }
-    const cell = createCell(found);
-    cells[i] = cell;
-    const rollThis = button("Roll", () => {
-      // Pressing again while it is running means "get to the answer", which
-      // is what the cell's own roll does with a roll already in flight.
-      const skipping = cell.rolling;
-      const done = cell.roll();
-      if (skipping) return;
-      rollThis.textContent = "Skip";
-      void done.then(() => { rollThis.textContent = "Roll"; });
-    }, { class: "primary chain-roll" });
-    holders[i] = h("div", { class: "chain-link" }, from, cell.el, rollThis);
+    const surface = createChainSurface(links[i], links[i - 1]?.name ?? "");
+    cells[i] = surface.cell;
+    holders[i] = surface.el;
   }
 
   function follow(from        , target                    )       {
@@ -11064,6 +11103,8 @@ async function exportLibraryZip()                {
 
 
 
+                                          
+
 
 
 
@@ -11074,9 +11115,78 @@ function createBoardView(node             , params                              
   const grid = h("div", { class: "board-grid" });
   let cells             = [];
 
+  /**
+   * An outcome's `goesTo`, followed on a board.
+   *
+   * The same rules as the play screen (see chain.ts): the randomizer it points
+   * at opens and waits, rolling a cell again replaces whatever its last answer
+   * had opened, and a chain that would come back round stops and says so. On
+   * a board the opened randomizer is a cell of its own, straight after the one
+   * that sent you there, and is not saved: the board is still what it was.
+   *
+   * Per entry, `links` and `els` run in step; `els[0]` is the entry's own
+   * holder and the rest are the cells its chain opened.
+   */
+  let chains = new Map                                                    ();
+  /** Roll all answers every question afresh, so it follows no links. */
+  let rollingAll = false;
+
+  function landed(entryId        , el             , randomizer            , outcome         )       {
+    const chain = chains.get(entryId);
+    const at = chain ? chain.els.indexOf(el) : -1;
+    // A cell whose chain was closed or rebuilt while it was in the air.
+    if (!chain || at < 0) return;
+    follow(entryId, at, rollingAll && at === 0 ? null : chainTarget(randomizer, outcome));
+  }
+
+  function follow(entryId        , from        , target                                )       {
+    const chain = chains.get(entryId);
+    if (!chain) return;
+    const advance = advanceChain(chain.links, from, target, (id) => state.library.findById(id)?.randomizer ?? null);
+    if (advance.note) state.toast(advance.note);
+    for (const stale of chain.els.slice(from + 1)) stale.remove();
+    chain.els.length = from + 1;
+    chain.links = advance.links;
+    for (let i = from + 1; i < chain.links.length; i++) {
+      const surface = createChainSurface(chain.links[i], chain.links[i - 1].name, {
+        onLanded: (outcome) => surface.cell && landed(entryId, surface.el, surface.cell.randomizer, outcome),
+      });
+      const close = button("✕", () => {
+        const now = chains.get(entryId);
+        const index = now ? now.els.indexOf(surface.el) : -1;
+        if (index > 0) follow(entryId, index - 1, null);
+      }, { class: "ghost cell-remove", "aria-label": `Close ${chain.links[i].name}` });
+      surface.el.prepend(close);
+      surface.el.classList.add("board-chain");
+      chain.els[i - 1].after(surface.el);
+      chain.els.push(surface.el);
+    }
+  }
+
   const heading = h("h1", { class: "board-name", text: board.name });
   const count = h("p", { class: "faint" });
   const addButton = button("Add…", () => void openPicker(), { class: "ghost add-to-board" });
+
+  /**
+   * Changing what is on the board happens in edit mode only.
+   *
+   * A board is played at a table, often on a projector, and one stray click
+   * on a cell's ✕ used to take a randomizer off and save the board at once —
+   * putting it back meant finding it in the library again. Play mode only
+   * plays; Edit board brings out Add…, the ✕s and dragging. A chain's own ✕
+   * is not a change to the board, so it stays. An empty board has nothing to
+   * play, so it opens ready to edit.
+   */
+  let editing = board.entries.length === 0;
+  const editButton = button("Edit board", () => setEditing(!editing), { class: "ghost edit-board" });
+  function setEditing(on         )       {
+    editing = on;
+    editButton.textContent = on ? "Done" : "Edit board";
+    editButton.setAttribute("aria-pressed", String(on));
+    addButton.hidden = !on;
+    el.classList.toggle("board-editing", on);
+    for (const holder of grid.querySelectorAll             (".cell-holder")) holder.draggable = on;
+  }
   const rollAll = button("Roll all", () => void rollEverything(), {
     class: "primary roll-all", style: { width: "100%", minHeight: "52px", fontSize: "17px" },
   });
@@ -11084,7 +11194,11 @@ function createBoardView(node             , params                              
   const exitButton = button("Leave full screen", () => present(false), { class: "leave-presenting" });
   exitButton.hidden = true;
   const presentButton = button("Full screen", () => present(!isPresenting()), { class: "ghost present-button" });
-  const present = (on         )       => setPresenting(on, { exitButton, presentButton });
+  const present = (on         )       => {
+    // A projector shows the table, not the board being rearranged.
+    if (on) setEditing(false);
+    setPresenting(on, { exitButton, presentButton });
+  };
 
   const recent = createRecentRolls({
     ids: () => board.entries.map((e) => e.id),
@@ -11101,11 +11215,18 @@ function createBoardView(node             , params                              
     // Cells are rebuilt whenever the board changes, so their handles are
     // rebound with them rather than tracked.
     cells = [];
+    // Rebuilt cells are fresh answers-to-be, so whatever they had opened goes.
+    chains = new Map();
     setChildren(grid, ...resolved.map(({ entry, randomizer }) => {
       if (!randomizer) return wrap(entry, createMissingCell(entry.name));
-      const cell = createCell(randomizer);
+      let holder                     = null;
+      const cell = createCell(randomizer, { onLanded: (outcome) => holder && landed(entry.id, holder, randomizer, outcome) });
       cells.push(cell);
-      return wrap(entry, cell.el);
+      // A cell of its own to roll: one roll on a board is often the point, and
+      // only a cell's own roll follows an outcome's link.
+      holder = wrap(entry, cell.el, cellRollButton(cell, "ghost cell-roll"));
+      chains.set(entry.id, { links: [{ id: randomizer.id, name: randomizer.name, from: "", found: true }], els: [holder] });
+      return holder;
     }));
     grid.classList.toggle("board-empty", resolved.length === 0);
     count.textContent = resolved.length === 0
@@ -11116,10 +11237,15 @@ function createBoardView(node             , params                              
     recent.refresh();
   }
 
-  function wrap(entry                              , inner             )              {
+  function wrap(entry                              , inner             , roll                     = null)              {
     const remove = button("✕", () => void removeEntry(entry.id), { class: "ghost cell-remove", "aria-label": `Take ${entry.name} off the board` });
-    const holder = h("div", { class: "cell-holder", draggable: "true", "data-entry": entry.id }, remove, inner);
+    const holder = h("div", { class: "cell-holder", "data-entry": entry.id }, remove, inner, roll);
+    holder.draggable = editing;
     holder.addEventListener("dragstart", (e) => {
+      if (!editing) {
+        e.preventDefault();
+        return;
+      }
       (e             ).dataTransfer?.setData("text/orangey-entry", entry.id);
       holder.classList.add("dragging");
     });
@@ -11149,8 +11275,22 @@ function createBoardView(node             , params                              
     await save({ ...board, entries: [...board.entries, { id: r.id, name: r.name }] });
   }
 
+  /**
+   * Take one off, and offer it back. The randomizer itself is untouched — only
+   * the board's reference to it goes — so Undo is a matter of putting the
+   * entry back where it was.
+   */
   async function removeEntry(id        )                {
+    const at = board.entries.findIndex((e) => e.id === id);
+    if (at < 0) return;
+    const removed = board.entries[at];
     await save({ ...board, entries: board.entries.filter((e) => e.id !== id) });
+    state.toast(`Took “${removed.name}” off the board`, "Undo", () => {
+      if (board.entries.some((e) => e.id === removed.id) || board.entries.length >= BOARD_LIMIT) return;
+      const entries = [...board.entries];
+      entries.splice(Math.min(at, entries.length), 0, removed);
+      void save({ ...board, entries });
+    });
   }
 
   /** Drop one entry onto another: the dragged one takes the target's place. */
@@ -11197,7 +11337,12 @@ function createBoardView(node             , params                              
       return;
     }
     rollAll.textContent = "Skip";
-    await Promise.all(cells.map((cell) => cell.roll()));
+    rollingAll = true;
+    try {
+      await Promise.all(cells.map((cell) => cell.roll()));
+    } finally {
+      rollingAll = false;
+    }
     rollAll.textContent = "Roll all";
   }
 
@@ -11246,6 +11391,9 @@ function createBoardView(node             , params                              
       present(false);
       return;
     }
+    // On a cell's own Roll the key belongs to that button: a keyboard user
+    // who tabbed to one cell meant that cell, not the whole board.
+    if ((e.target                      )?.closest?.(".cell-roll, .chain-roll")) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       void rollEverything();
@@ -11264,6 +11412,10 @@ function createBoardView(node             , params                              
     e.preventDefault();
     const dropped = state.library.find(path)?.randomizer;
     if (!dropped) return;
+    if (!editing) {
+      state.toast("Press Edit board to add to it.");
+      return;
+    }
     if (dropped.type === "board") {
       state.toast("A board cannot go on a board.");
       return;
@@ -11275,7 +11427,7 @@ function createBoardView(node             , params                              
     h("div", { class: "row home-bar" },
       button("← Home", () => navigate("#/"), { class: "ghost home-button" }),
       h("span", { class: "spacer" }),
-      addButton, shareButton, presentButton, exitButton,
+      addButton, editButton, shareButton, presentButton, exitButton,
     ),
     h("div", { class: "card board-card" },
       heading,
@@ -11310,6 +11462,7 @@ function createBoardView(node             , params                              
   // A randomizer edited elsewhere, or deleted, changes what a board shows.
   const unsubscribe = state.subscribe(() => renderIfChanged(), ["library", "history"]);
   render();
+  setEditing(editing);
   if (params.present) present(true);
   if (params.roll) requestAnimationFrame(() => void rollEverything());
 

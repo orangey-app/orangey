@@ -1452,6 +1452,29 @@ async function main() {
     await page.waitForFunction(`window.orangey.state.history.length === 3`);
     const after = await page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((el) => el.textContent)`);
     assert.equal(after[1], before, "rolling one cell should not disturb the others");
+
+    // An outcome's link is followed from a cell's own Roll — here a list shown
+    // as a list, which had no way to roll on its own before — and what it
+    // opens sits right after it and waits. Roll all closes it again.
+    await createList(page, "Hoard", [{ label: "Gold", weight: 1 }]);
+    await createList(page, "Ambush", [{ label: "Wolves", weight: 1, goesTo: "Hoard" }], "list");
+    const chained = await createBoard(page, "Chains", ["Ambush"]);
+    await open(page, `#/r/${encodeURIComponent(chained)}`);
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 1`);
+    await page.click(".cell-roll");
+    await page.waitForFunction(`document.querySelector(".board-chain")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".cell-holder").nextElementSibling.querySelector(".cell-name").textContent`), "Hoard");
+    assert.equal(await page.evaluate(`return document.querySelector(".board-chain .result-value").textContent`), "Ready");
+    await page.click(".board-chain .chain-roll");
+    await page.waitForFunction(`document.querySelector(".board-chain .result-value").textContent === "Gold"`);
+    await page.click(".roll-all");
+    await page.waitForFunction(`!document.querySelector(".board-chain")`);
+    const kept = await page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      return JSON.parse(await state.library.backend.read(${JSON.stringify(chained)})).randomizer.entries.length;
+    `);
+    assert.equal(kept, 1, "a chain is not saved onto the board");
     assert.deepEqual(page.consoleErrors, []);
   });
 
@@ -1483,7 +1506,18 @@ async function main() {
     assert.match(text, /Encounters/);
     assert.match(text, /not in your library/);
 
-    // Take it off again.
+    // Take it off again. A board with something on it opens in play mode,
+    // where a stray click cannot take anything off; Edit board brings the ✕s
+    // out, and Undo puts back what one took.
+    const visible = (sel) => page.evaluate(`const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.offsetParent !== null`);
+    assert.equal(await visible(".cell-holder > .cell-remove"), false, "no ✕ in play mode");
+    assert.equal(await visible(".add-to-board"), false, "no Add… in play mode");
+    await page.click(".edit-board");
+    await page.waitForFunction(`document.querySelector(".cell-holder > .cell-remove").offsetParent !== null`);
+    await page.click(".cell-remove");
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 0`);
+    await page.evaluate(`[...document.querySelectorAll(".toast button")].find((b) => b.textContent === "Undo").click()`);
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 1`);
     await page.click(".cell-remove");
     await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 0`);
     assert.deepEqual(page.consoleErrors, []);
@@ -1803,7 +1837,9 @@ async function main() {
     // Dice typed into the picker's search box go straight onto the board,
     // with no editor on the way, and are kept in one folder.
     const typeNotation = async (text) => {
-      await page.waitForFunction(`document.querySelector(".add-to-board")`);
+      await page.waitForFunction(`document.querySelector(".edit-board")`);
+      // Adding is an edit; a board with something on it opens in play mode.
+      if (await page.evaluate(`return document.querySelector(".add-to-board").hidden`)) await page.click(".edit-board");
       await page.click(".add-to-board");
       await page.waitForFunction(`document.querySelector(".picker-dialog[open] input[type=search]")`);
       await page.evaluate(`
