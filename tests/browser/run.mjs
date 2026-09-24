@@ -1606,6 +1606,9 @@ async function main() {
     `);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".wheel-svg")`);
+    // The picture is drawn one refresh after the wheel: its bytes are read
+    // asynchronously, so counting the moment the wheel appears is a race.
+    await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
     // The slice carries a thumbnail, clipped so it cannot spill into its neighbour.
     const drawn = await page.evaluate(`
       const img = document.querySelector(".wheel-rotor image");

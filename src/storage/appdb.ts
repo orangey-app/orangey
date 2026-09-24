@@ -55,18 +55,18 @@ export const HISTORY_CAP = 5000;
 export const HISTORY_IN_MEMORY = 500;
 
 /**
- * One connection, kept open.
+ * One connection per operation, closed when its transaction ends.
  *
- * Every call used to open the database, use it and close it again, so saving
- * a preference or writing a roll to history paid for a full open each time.
- * The handle is dropped on failure, and when another tab wants to upgrade the
- * schema, so a stale one is never reused.
+ * Keeping a single connection open for the life of the page was tried and
+ * withdrawn. Clearing the site's storage while a connection is held — a user
+ * clearing site data, or the browser tests doing it between cases — left
+ * every later IndexedDB open on the origin slow or failing, for the library
+ * database as well as this one, and neither `onversionchange`, `onclose` nor
+ * a retry prevented it. An open costs a few milliseconds; a preference that
+ * silently stops saving costs the user their settings.
  */
-let dbHandle: Promise<IDBDatabase> | null = null;
-
 function openDb(): Promise<IDBDatabase> {
-  if (dbHandle) return dbHandle;
-  dbHandle = new Promise<IDBDatabase>((resolve, reject) => {
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -76,24 +76,41 @@ function openDb(): Promise<IDBDatabase> {
         store.createIndex("at", "at");
       }
     };
-    req.onsuccess = () => {
-      const db = req.result;
-      // Another tab is upgrading: let go, or it waits on us for ever.
-      db.onversionchange = () => {
-        dbHandle = null;
-        db.close();
-      };
-      db.onclose = () => {
-        dbHandle = null;
-      };
-      resolve(db);
-    };
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-  }).catch((e) => {
-    dbHandle = null;
-    throw e;
   });
-  return dbHandle;
+}
+
+/**
+ * Run one transaction on a connection of its own, and close the connection
+ * however the transaction ends. `settle` decides what the caller is waiting
+ * for: a read resolves with its request, a write only when it has committed.
+ */
+function withTransaction<T>(
+  store: string,
+  mode: IDBTransactionMode,
+  body: (s: IDBObjectStore, resolve: (value: T) => void, reject: (reason: unknown) => void, t: IDBTransaction) => void,
+): Promise<T> {
+  return openDb().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        let t: IDBTransaction;
+        try {
+          t = db.transaction(store, mode);
+        } catch (e) {
+          db.close();
+          reject(e);
+          return;
+        }
+        t.addEventListener("complete", () => db.close());
+        t.addEventListener("abort", () => {
+          db.close();
+          reject(t.error ?? new Error("transaction aborted"));
+        });
+        t.addEventListener("error", () => reject(t.error));
+        body(t.objectStore(store), resolve, reject, t);
+      }),
+  );
 }
 
 /**
@@ -103,15 +120,11 @@ function openDb(): Promise<IDBDatabase> {
  * hand and the transaction has nothing left to do.
  */
 function txRead<T>(store: string, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const t = db.transaction(store, "readonly");
-        const req = fn(t.objectStore(store));
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      }),
-  );
+  return withTransaction<T>(store, "readonly", (s, resolve, reject) => {
+    const req = fn(s);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
 /**
@@ -121,16 +134,10 @@ function txRead<T>(store: string, fn: (s: IDBObjectStore) => IDBRequest<T>): Pro
  * telling the app a preference was saved while it could still be rolled back.
  */
 function txWrite(store: string, fn: (s: IDBObjectStore) => void): Promise<void> {
-  return openDb().then(
-    (db) =>
-      new Promise<void>((resolve, reject) => {
-        const t = db.transaction(store, "readwrite");
-        fn(t.objectStore(store));
-        t.oncomplete = () => resolve();
-        t.onerror = () => reject(t.error);
-        t.onabort = () => reject(t.error ?? new Error("transaction aborted"));
-      }),
-  );
+  return withTransaction<void>(store, "readwrite", (s, resolve, _reject, t) => {
+    fn(s);
+    t.addEventListener("complete", () => resolve());
+  });
 }
 
 export const appdb = {
@@ -172,10 +179,8 @@ export const appdb = {
    */
   async history(limit = HISTORY_IN_MEMORY): Promise<HistoryEntry[]> {
     try {
-      const db = await openDb();
-      return await new Promise<HistoryEntry[]>((resolve, reject) => {
-        const t = db.transaction("history", "readonly");
-        const req = t.objectStore("history").index("at").openCursor(null, "prev");
+      return await withTransaction<HistoryEntry[]>("history", "readonly", (s, resolve, reject) => {
+        const req = s.index("at").openCursor(null, "prev");
         const out: HistoryEntry[] = [];
         req.onsuccess = () => {
           const cursor = req.result;
