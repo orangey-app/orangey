@@ -56,8 +56,8 @@ it, it works; every time after that, it works with the network switched off.
 ## What it does
 
 **Dice.** `d20`, `2d6 + 3`, `4d6kh3`, `2d20kh1` for advantage — the notation is
-in [docs/DICE.md](docs/DICE.md). Dropped dice are shown struck through, not
-silently removed. Two styles: plain numbered squares, or wireframe solids — a
+in [docs/DICE.md](docs/DICE.md). Dropped dice are shown faded, not silently
+removed. Two styles: plain numbered squares, or wireframe solids — a
 tetrahedron for a d4, a cube for a d6, an octahedron, a pentagonal
 trapezohedron for the ten-siders, a dodecahedron, an icosahedron — that tumble
 about their own diagonals, change axis at every bounce, and come to rest with

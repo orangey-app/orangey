@@ -1,6 +1,46 @@
 # Changelog
 
-## 0.5.0
+## 0.5.0 — the first release
+
+The first public release of Orangey. Everything below this section was
+development before anything was released; it is kept as history, not as
+releases anyone could have had.
+
+What 0.5.0 is:
+
+- **A randomizer for tabletop games** — dice, coins, numbers and weighted
+  wheels — that runs entirely in the browser, needs no account and no server,
+  and works offline. The whole app is one file, `orangey.html`, or a small
+  static site.
+- **Dice notation for the dice people actually roll**: keep and drop, exploding
+  dice, rerolls, success pools, Fate dice, `adv` and `dis`, and dice written
+  into an outcome's text ("{2d4} wolves"). Wireframe dice tumble and land on
+  the real faces; explosions and rerolls land in throws of their own.
+- **Wheels built from your own tables**, with weights that need not add up to
+  anything, bag mode for drawing without putting back, pictures on outcomes,
+  and an import wizard for spreadsheets and pasted tables (d100 ranges
+  included). Slices are red, yellow and blue in turn.
+- **Chains and boards.** An outcome can send you to another randomizer, which
+  opens and waits for its own roll — on the play screen and on a board. A
+  board puts several randomizers on one screen, each with its own Roll, and
+  changes only in Edit board.
+- **A library that is a folder of files**: plain `.orangey.json`, in the
+  browser's storage or in a real folder on your computer that Dropbox or Git
+  can sync. iPhone and iPad are told how to keep a library safe there.
+- **Links for slides**: a link that opens a wheel, rolls it and fills the
+  screen — either carrying the wheel inside it or pointing at your library.
+- **History** with dates, struck rolls, the dice behind an answer and what a
+  chained roll came from; exports as CSV and text.
+- **Feel and Orangey**: animation you can tune per randomizer, reduced motion
+  respected, a hidden roll for the game master, and a mascot who cheers and
+  winces when you tell him to. Names and answers are set in Arapey, dice in
+  Flamenco; both are built in.
+
+## Before the first release
+
+Development notes, newest first. None of these was released.
+
+### Last round before release
 
 - **A board follows an outcome's link.** Roll a wheel on a board and, if the
   outcome that came up points at another randomizer, that one opens as a
@@ -47,7 +87,7 @@
   storage on Windows. The old 71-colour wheel pool and its curation script are
   gone.
 
-## 0.4.0
+### 0.4.0
 
 - **A wheel can be a bag: draw without putting back.** Turn it on in the
   editor and an outcome that comes up is out until you refill — the play
@@ -100,7 +140,7 @@
   malformed address blanking the page, and top-level fields in a file being
   dropped on re-save.
 
-## Unreleased
+### After 0.3.1
 
 - **Where an outcome sends you is chosen from the library, not a dropdown.**
   "Goes to" opens your library as a tree, with folders to open and a search box
@@ -207,7 +247,7 @@
   by 70 % of its duration, so the last third was a wheel standing still. It is
   still much the sharpest of the three.
 
-## 0.3.1 — 2026-09-10
+### 0.3.1 — 2026-09-10
 
 - **Wheel labels run along the radius, and the pointer is on the right.**
   Labels used to follow the rim, so a slice could only carry as many letters
@@ -233,7 +273,7 @@
   one frame after it opens; about one run in thirty, a test's own press got in
   first and made two rolls.
 
-## 0.3.0 — 2026-09-10
+### 0.3.0 — 2026-09-10
 
 - **The browser suite cannot hang any more.** Every protocol call is capped,
   every test is capped, and on CI each test prints its name before it runs, so
@@ -289,7 +329,7 @@
   once, and the maskable icon is inset so a phone cropping it to a circle
   never clips his sides.
 
-## 0.2.0 — 2026-09-10
+### 0.2.0 — 2026-09-10
 
 - **Orangey on wheels and coins.** A wheel has no maximum, so the game master
   tags outcomes: an Orangey cell on every editor row (and under each coin
@@ -325,7 +365,7 @@
   numbers over the owner's own drawings. Adding a randomizer, a trigger or an
   animation touches one place each. 48 unit tests and 15 browser tests.
 
-## 0.1.0
+### 0.1.0
 
 First release.
 
