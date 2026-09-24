@@ -1,1 +1,4 @@
 * text=auto eol=lf
+# Deliberately CRLF (with one bare LF inside a quoted field): it is what proves
+# CRLF parsing works, so git must never normalise it.
+tests/fixtures/quoted.csv -text
