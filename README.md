@@ -235,3 +235,9 @@ reserved. You may run, fork and redistribute the app with him in it, as he is,
 as its mascot; you may not reuse, alter or redistribute the character on its
 own. A fork that wants a different mascot removes `assets/mascot/` and
 `src/ui/mascot/` and still builds. The full terms are in [LICENSE](LICENSE).
+
+Two fonts are built in, both under the SIL Open Font License 1.1: **Arapey**
+by Eduardo Tunni, for names, headings and answers, and the digits of
+**Flamenco** by LatinoType, for the numbers on dice. The font files and their
+licence texts are in `assets/fonts/`, and the build carries the licences
+into every built file.

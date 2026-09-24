@@ -17,6 +17,9 @@ async function start(): Promise<void> {
   await state.load();
   root.replaceChildren();
   const mascot = mountApp(root);
+  // The dice font is only asked for when the first die lands, which is when a
+  // die's number is measured to centre it. Asking now means it is ready by then.
+  void document.fonts?.load('16px "Orangey Dice"', "0123456789").catch(() => {});
 
   // Restore the last thing that was open, so reopening the tab mid-game does
   // not drop the GM back at a blank screen.

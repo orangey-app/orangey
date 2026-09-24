@@ -376,8 +376,9 @@ export function createDiceTray(): DiceTray {
         slots[i].caption.textContent = faceText(die);
         const fit = fits![i];
         if (fit) {
-          slots[i].value.style.fontSize = `${Math.max(8, Number.isFinite(fitSize) ? fitSize : fit.size).toFixed(1)}px`;
-          slots[i].value.style.transform = `translate(${fit.centre.x.toFixed(1)}px, ${fit.centre.y.toFixed(1)}px)`;
+          const label = slots[i].value;
+          label.style.fontSize = `${Math.max(8, Number.isFinite(fitSize) ? fitSize : fit.size).toFixed(1)}px`;
+          placeOnFace(label, fit.centre);
         }
         if (bounce > 0) {
           slots[i].stage.style.setProperty("--bounce", `${bounce}ms`);
@@ -646,10 +647,50 @@ function draw(die: WireDie): void {
  *    face's inscribed circle, because half a side of a triangle is wider than
  *    a triangle has room for once there are two digits in it.
  */
+/**
+ * Put a die's number on the middle of its face — the middle of the digits
+ * actually drawn, not of the box they sit in.
+ *
+ * The box is as tall as the font, not as the digits: in a font whose 1 and 3
+ * sit lower than its 8, "13" centred as a box hangs below the middle of the
+ * face. The canvas measures the ink itself, so the number is moved by the
+ * difference. If the dice font has not finished loading, the fallback's
+ * shapes are measured now and the number is placed again once it has.
+ */
+let inkContext: CanvasRenderingContext2D | null | undefined;
+function placeOnFace(label: HTMLElement, centre: { x: number; y: number }): void {
+  const ink = inkOffset(label);
+  label.style.transform = `translate(${(centre.x - ink.x).toFixed(1)}px, ${(centre.y - ink.y).toFixed(1)}px)`;
+  if (!ink.fontReady) void document.fonts?.load(ink.font, label.textContent ?? "").then(() => {
+    const again = inkOffset(label);
+    label.style.transform = `translate(${(centre.x - again.x).toFixed(1)}px, ${(centre.y - again.y).toFixed(1)}px)`;
+  }, () => {});
+}
+
+function inkOffset(label: HTMLElement): { x: number; y: number; font: string; fontReady: boolean } {
+  if (inkContext === undefined) inkContext = document.createElement("canvas").getContext("2d");
+  const text = label.textContent ?? "";
+  const style = getComputedStyle(label);
+  const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const fontReady = document.fonts?.check(font, text) ?? true;
+  if (!inkContext || !text) return { x: 0, y: 0, font, fontReady };
+  inkContext.font = font;
+  const m = inkContext.measureText(text);
+  // With line-height 1 the baseline sits (ascent - descent) / 2 below the
+  // middle of the box; the ink's middle is measured from that baseline.
+  const baseline = (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
+  const y = baseline + (m.actualBoundingBoxDescent - m.actualBoundingBoxAscent) / 2;
+  const x = (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2 - m.width / 2;
+  return { x, y, font, fontReady };
+}
+
 function fitValueToFace(die: WireDie, label: HTMLElement): { size: number; centre: { x: number; y: number } } | null {
   const face = die.solid.faces[die.faceIndex];
   if (!face || face.length < 3) return null;
-  const orientation = quatMultiply(VIEW_TILT, die.q);
+  // The resting pose, not the current one: the number sits on the face the
+  // die comes to rest on, and with dice landing in throws this is worked out
+  // before every die in the tray has been turned to rest.
+  const orientation = quatMultiply(VIEW_TILT, die.rest);
   const points = face.map((i) => {
     const p = project(rotateVec(orientation, die.solid.vertices[i]), die.radius);
     return { x: p.x, y: p.y };

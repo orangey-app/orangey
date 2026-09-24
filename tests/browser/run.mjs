@@ -90,6 +90,9 @@ const open = async (page, hash = "", { fresh = false } = {}) => {
     // lands after the wipe instead.
     await page.waitForFunction("window.orangey");
     await settle(page);
+    // When the wipe happened, so a test that still finds rows can say whether
+    // they were written before it (the wipe did not take) or after (a late write).
+    page.wipedAt = Date.now();
     await page.clearStorage(server.origin);
   }
   // noseed: the starter randomizers would otherwise appear in every fresh
@@ -117,11 +120,14 @@ async function main() {
 
   await test("the app loads, renders and makes no network requests after load", async (page) => {
     await open(page, "", { fresh: true });
-    const before = page.requests.length;
+    // data: URLs are not the network — the embedded fonts arrive as those —
+    // so they are left out of both counts, not only the second.
+    const network = () => page.requests.filter((u) => !u.startsWith("data:"));
+    const before = network().length;
     await page.click(".quickbar button");
     await new Promise((r) => setTimeout(r, 600));
-    const after = page.requests.filter((u) => !u.startsWith("data:")).length;
-    assert.equal(after, before, `new requests: ${page.requests.slice(before).join(", ")}`);
+    const after = network().length;
+    assert.equal(after, before, `new requests: ${network().slice(before).join(", ")}`);
     assert.deepEqual(page.consoleErrors, []);
   });
 
@@ -770,6 +776,35 @@ async function main() {
     // Instant mode draws the solid at rest with its value, without animating.
     const value = await page.evaluate(`return Number(document.querySelector(".die-value").textContent)`);
     assert.ok(value >= 1 && value <= 20, `got ${value}`);
+    // …and the number sits on the face it came to rest on, square in the
+    // middle of the die. Placing it from the pose the die started in put it
+    // off to one side whenever nothing animated (a slip in the dice-waves change).
+    const offset = await page.evaluate(`
+      const [x, y] = (document.querySelector(".die-value").style.transform.match(/-?[0-9.]+/g) ?? ["NaN", "NaN"]).map(Number);
+      return Math.hypot(x, y);
+    `);
+    // A few pixels either way are the digits' own ink being centred; being
+    // placed from the wrong pose put it 25 px off.
+    assert.ok(offset < 8, `the number sits ${offset.toFixed(1)} px from the middle of the die`);
+
+    // The two embedded fonts load, and each goes where it belongs: the dice
+    // numbers and the dice total in Flamenco, the wordmark in Arapey.
+    const type = await page.evaluate(`
+      await document.fonts.ready;
+      const family = (sel) => getComputedStyle(document.querySelector(sel)).fontFamily;
+      return {
+        textLoaded: document.fonts.check('16px "Orangey Text"'),
+        diceLoaded: document.fonts.check('16px "Orangey Dice"', "0123456789"),
+        dieValue: family(".die-value"),
+        total: family(".result-panel.is-dice .result-value"),
+        brand: family(".brand"),
+      };
+    `);
+    assert.equal(type.textLoaded, true, "Arapey did not load");
+    assert.equal(type.diceLoaded, true, "Flamenco did not load");
+    assert.match(type.dieValue, /^"?Orangey Dice/);
+    assert.match(type.total, /^"?Orangey Dice/);
+    assert.match(type.brand, /^"?Orangey Text/);
   });
 
   await test("J drag-and-drop and the wizard report agree with the fixture", async (page) => {
@@ -2079,7 +2114,14 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".hidden-box")`);
 
     const rows = () => page.evaluate(`return window.orangey.state.history.length`);
-    assert.equal(await rows(), 0);
+    // Diagnostic for a leak seen only on Windows: name what is there and when
+    // it was written, relative to the wipe this test started with.
+    const leaked = await page.evaluate(`return window.orangey.state.history.map((h) => ({ name: h.randomizerName, result: h.resultText, at: h.at }))`);
+    assert.equal(leaked.length, 0, [
+      `${leaked.length} history row(s) before the first roll; storage was wiped at ${new Date(page.wipedAt).toISOString()}`,
+      ...leaked.map((r) => `  "${r.name}" → "${r.result}" at ${new Date(r.at).toISOString()} (${r.at < page.wipedAt ? "BEFORE" : "AFTER"} the wipe by ${Math.abs(r.at - page.wipedAt)} ms)`),
+      `  library files at start: ${JSON.stringify(await page.evaluate(`return window.orangey.state.library.files().map((f) => f.path)`))}`,
+    ].join("\n"));
 
     await page.click(".hidden-box");
     await page.click(".roll-button");

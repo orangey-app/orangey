@@ -14,7 +14,7 @@
  * always safe and the wheel can never disagree with the announcement.
  */
 
-import { assignColors, toCandidate, type ColorCandidate } from "../../core/palette-assign.ts";
+import { assignWheelColours } from "../../core/palette-assign.ts";
 import { isRollable } from "../../core/weighted.ts";
 import { labelFor } from "../../core/color.ts";
 import {
@@ -30,7 +30,6 @@ import {
 } from "../../core/wheel-geometry.ts";
 import { CryptoSource } from "../../core/rng.ts";
 import type { ListItem } from "../../model/randomizer.ts";
-import { SEGMENT_POOL } from "../styles/palette.ts";
 import { easeSpin, motionScale, overshootFraction, settleForSpin, wheelDuration, type FeelSettings } from "../feel.ts";
 import { h, s, setChildren } from "../dom.ts";
 import { imageUrl, imageUrlSync } from "../../storage/images.ts";
@@ -39,8 +38,6 @@ export const LABEL_LIMIT = 48;
 export const TICKER_LIMIT = 200;
 /** The disc at the centre; labels stop short of it. */
 const HUB_RADIUS = 16;
-
-const POOL: ColorCandidate[] = SEGMENT_POOL.map((c) => toCandidate(c.hex));
 
 /** Weight of the wheel's labels; the same value is in .wheel-label in app.css. */
 const WHEEL_LABEL_WEIGHT = 600;
@@ -110,13 +107,7 @@ export function createWheel(opts: WheelOptions): WheelView {
 
   function computeColors(): void {
     const items = opts.items();
-    const result = assignColors({
-      fixed: items.map((i) => i.color ?? null),
-      id: opts.id(),
-      pool: POOL,
-      cyclic: true,
-    });
-    colorByIndex = result.colors;
+    colorByIndex = assignWheelColours(items.map((i) => i.color ?? null)).colors;
   }
 
   /**
@@ -229,7 +220,9 @@ export function createWheel(opts: WheelOptions): WheelView {
     const pointer = s("path", {
       class: "wheel-pointer",
       d: `M ${size - 2} ${cy - 10} L ${size - 2} ${cy + 10} L ${cx + pointerTip} ${cy} Z`,
-      fill: "var(--accent)",
+      // Ink, not the orange accent: the wheel's yellow is close enough to the
+      // accent that a pointer resting on a yellow slice all but disappeared.
+      fill: "var(--ink)",
       stroke: "var(--bg-raised)",
       "stroke-width": "1.5",
     });

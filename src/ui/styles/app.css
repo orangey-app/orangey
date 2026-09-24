@@ -262,7 +262,8 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
   background: var(--bg-raised); border: 2px solid var(--border-strong);
   font-variant-numeric: tabular-nums;
 }
-.die.dropped { opacity: 0.45; text-decoration: line-through; border-style: dashed; }
+/* Faded and dashed, not struck through: a line through Flamenco's 2 reads as a Z. */
+.die.dropped { opacity: 0.45; border-style: dashed; }
 .die.max { border-color: var(--ok); color: var(--ok); }
 .die.min { border-color: var(--error); color: var(--error); }
 .die.rolling {
@@ -308,7 +309,6 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 }
 .die-slot.dropped { opacity: 0.55; }
 .die-slot.dropped .die-value,
-.die-slot.dropped .die-caption { text-decoration: line-through; }
 .die-slot.max .die-value { color: var(--ok); }
 .die-slot.min .die-value { color: var(--error); }
 
@@ -818,3 +818,18 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 /* The one-time Add to Home Screen notice on an iPhone or iPad in a tab. */
 .home-screen-notice { margin: 8px var(--gap) 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); }
 .home-screen-notice p { margin: 0 0 8px; }
+
+/* ---- type ------------------------------------------------------------------
+   Arapey for what is read as a name or an answer, Flamenco for the numbers on
+   dice. Buttons, tables, settings and wheel labels stay in the system font:
+   small, dense or on strong colour, they read better there. Neither font has
+   a bold, and a browser-thickened one looked heavy, so none is faked. */
+h1, h2, h3, .brand, .board-name, .cell-name,
+.result-panel:not(.is-dice) .result-value {
+  font-family: var(--font-text);
+  font-synthesis: none;
+}
+.die, .die-value, .die-caption, .result-panel.is-dice .result-value {
+  font-family: var(--font-dice);
+  font-synthesis: none;
+}

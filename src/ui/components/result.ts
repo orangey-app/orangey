@@ -79,6 +79,9 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
   return {
     el,
     show(outcome, { announce = true } = {}) {
+      // A dice total is set in the dice's own numerals; a wheel's answer is not,
+      // even when it holds a number ("3 wolves").
+      el.classList.toggle("is-dice", outcome.kind === "dice");
       el.classList.remove("is-pending");
       value.textContent = outcome.text;
       value.classList.toggle("is-max", outcome.isMaximum === true);

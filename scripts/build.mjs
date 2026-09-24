@@ -22,8 +22,24 @@ const dist = join(root, "dist");
 const single = process.argv.includes("--single");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
-const css = ["src/ui/styles/tokens.css", "src/ui/styles/app.css"]
-  .map((f) => readFileSync(join(root, f), "utf8"))
+/**
+ * The two fonts, embedded as data: URLs so the app shows them offline and the
+ * single file stays one file. The OFL asks for its notice to travel with the
+ * font, so each licence goes in, in full, as a comment beside its face.
+ * See assets/fonts/README.md for what each file is and how it was made.
+ */
+const fontFace = (family, file, licence, extra = "") => {
+  const data = readFileSync(join(root, "assets/fonts", file)).toString("base64");
+  const notice = readFileSync(join(root, "assets/fonts", licence), "utf8").trim();
+  return `/* ${family}: ${file}\n\n${notice}\n*/\n@font-face { font-family: "${family}"; src: url(data:font/woff;base64,${data}) format("woff"); font-display: block;${extra} }`;
+};
+const fonts = [
+  fontFace("Orangey Text", "arapey-regular.woff", "OFL-Arapey.txt"),
+  // Digits only: whatever else a dice total says ("3 successes") falls back.
+  fontFace("Orangey Dice", "flamenco-digits.woff", "OFL-Flamenco.txt", " unicode-range: U+0030-0039, U+002B, U+0021;"),
+].join("\n");
+
+const css = [fonts, ...["src/ui/styles/tokens.css", "src/ui/styles/app.css"].map((f) => readFileSync(join(root, f), "utf8"))]
   .join("\n");
 
 const js = bundle(join(root, "src/main.ts"), { root });

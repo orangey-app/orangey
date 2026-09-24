@@ -39,6 +39,10 @@
   --pad: 16px;
 
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  /* Names, headings and answers (Arapey), and the numbers on dice (Flamenco,
+     digits only). Both are embedded by the build; see assets/fonts. */
+  --font-text: "Orangey Text", Georgia, "Times New Roman", serif;
+  --font-dice: "Orangey Dice", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
