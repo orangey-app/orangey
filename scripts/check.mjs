@@ -9,8 +9,8 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleProgram } from "./bundle.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -68,7 +68,10 @@ if (program) {
 const TIMING = /(\d+)\s*ms/;
 for (const file of sources) {
   const rel = relative(root, file);
-  if (rel.endsWith("ui/feel.ts")) continue;
+  // Compare with forward slashes: `relative` uses the platform separator, and
+  // on Windows a backslash path would never match, quietly turning off the
+  // one exemption this rule has.
+  if (rel.split(sep).join("/").endsWith("ui/feel.ts")) continue;
   const text = readFileSync(file, "utf8");
   text.split("\n").forEach((line, i) => {
     if (!TIMING.test(line)) return;
@@ -79,7 +82,9 @@ for (const file of sources) {
 }
 
 // 4. The palette passes its own curation rules.
-const { curate } = await import(join(root, "src/ui/styles/palette.ts"));
+// Through a file:// URL, not a path: Node's ESM loader rejects a Windows
+// absolute path, reading "C:" as an unknown protocol.
+const { curate } = await import(pathToFileURL(join(root, "src/ui/styles/palette.ts")).href);
 const { problems: paletteProblems } = curate();
 for (const problem of paletteProblems) problems.push(`palette: ${problem}`);
 

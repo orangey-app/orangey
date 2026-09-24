@@ -8,12 +8,13 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const target = join(root, "src/ui/styles/palette.ts");
-const { PALETTE } = await import(target);
-const { hexToOklab, chroma, deltaE, labelFor } = await import(join(root, "src/core/color.ts"));
+// file:// URLs, not paths: a Windows absolute path is not a valid ESM specifier.
+const { PALETTE } = await import(pathToFileURL(target).href);
+const { hexToOklab, chroma, deltaE, labelFor } = await import(pathToFileURL(join(root, "src/core/color.ts")).href);
 
 const candidates = PALETTE.map((c) => ({ ...c, lab: hexToOklab(c.hex), ch: chroma(hexToOklab(c.hex)) }))
   .filter((c) => c.ch >= 0.025 && labelFor(c.hex).nudges <= 6 && c.lab.L >= 0.28 && c.lab.L <= 0.78);

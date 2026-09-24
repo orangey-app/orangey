@@ -8,14 +8,64 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 
-const CHROME = process.env.CHROME_PATH ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+/**
+ * Which browser to drive.
+ *
+ * `CHROME_PATH` wins, because a machine may have several and CI pins one.
+ * Failing that, look where each platform installs it: this is the only thing
+ * in the repository that needs a binary from outside it, and a hard-coded
+ * path means the suite runs on exactly one machine. Looked up on first use
+ * rather than at import, so merely importing this module cannot throw.
+ */
+function chromeCandidates() {
+  const home = homedir();
+  if (process.platform === "win32") {
+    const program = process.env.ProgramFiles ?? "C:\\Program Files";
+    const program86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+    const local = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
+    return [
+      join(program, "Google", "Chrome", "Application", "chrome.exe"),
+      join(program86, "Google", "Chrome", "Application", "chrome.exe"),
+      join(local, "Google", "Chrome", "Application", "chrome.exe"),
+    ];
+  }
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      join(home, "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ];
+  }
+  return [
+    "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+  ];
+}
+
+let chromePath = null;
+
+function chrome() {
+  if (chromePath) return chromePath;
+  if (process.env.CHROME_PATH) return (chromePath = process.env.CHROME_PATH);
+  const candidates = chromeCandidates();
+  const found = candidates.find((path) => existsSync(path));
+  if (!found) {
+    throw new Error(
+      `no Chrome found. Set CHROME_PATH to the browser to drive. Looked in:\n  ${candidates.join("\n  ")}`,
+    );
+  }
+  return (chromePath = found);
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -71,7 +121,7 @@ export async function serve(dir) {
 
 export async function launch({ profileDir } = {}) {
   const userDataDir = profileDir ?? mkdtempSync(join(tmpdir(), "orangey-"));
-  const child = spawn(CHROME, [
+  const child = spawn(chrome(), [
     "--headless=new",
     "--remote-debugging-port=0",
     `--user-data-dir=${userDataDir}`,
