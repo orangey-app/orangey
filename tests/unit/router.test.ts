@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { backTarget, isLinkableBase, parseRoute, slideLink, wheelLink } from "../../src/ui/router.ts";
+import { backTarget, editHash, isLinkableBase, parseRoute, slideLink, wheelLink } from "../../src/ui/router.ts";
 
 describe("routes", () => {
   test("every route shape parses", () => {
@@ -113,5 +113,22 @@ describe("back", () => {
     assert.equal(backTarget(settings, "a.orangey.json", () => false), "#/", "a deleted randomizer is not a place to go back to");
     assert.equal(backTarget(settings, null, () => true), "#/");
     assert.equal(backTarget(parseRoute("#/history"), "d/e.orangey.json", (p) => p === "d/e.orangey.json"), "#/r/d%2Fe.orangey.json");
+
+    // An editor opened from a board goes back to the board, and one opened
+    // from another editor goes back into that editor, which remembers where
+    // it came from in turn.
+    const board = "#/r/Boards%2Ftonight.orangey.json";
+    const fromBoard = editHash("dice/d6.orangey.json", board);
+    assert.equal(backTarget(parseRoute(fromBoard), "x.orangey.json", () => true), board);
+    const wheel = editHash("forest.orangey.json", board);
+    const nested = parseRoute(editHash("wolves.orangey.json", wheel));
+    assert.equal(backTarget(nested, null, () => true), wheel);
+    assert.equal(backTarget(parseRoute(wheel), null, () => true), board, "and that editor still knows its own way back");
+    // Somewhere deleted, somewhere Back may not go, or extra parameters on
+    // the way: the address arrives in the URL, so none of it is followed.
+    assert.equal(backTarget(parseRoute(fromBoard), null, (p) => p !== "Boards/tonight.orangey.json"), "#/r/dice%2Fd6.orangey.json");
+    assert.equal(backTarget(parseRoute(editHash("a.orangey.json", "#/settings")), null, () => true), "#/r/a.orangey.json");
+    assert.equal(backTarget(parseRoute(editHash("a.orangey.json", "https://example.test/#/r/b")), null, () => true), "#/r/a.orangey.json");
+    assert.equal(backTarget(parseRoute(editHash("a.orangey.json", `${board}?roll=1`)), null, () => true), board);
   });
 });

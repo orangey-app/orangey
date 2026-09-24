@@ -19,7 +19,7 @@ import { createCell, createMissingCell, type CellView } from "../components/cell
 import { createRecentRolls } from "../components/recent.ts";
 import { pickRandomizer } from "../components/picker.ts";
 import { exportBoardZip } from "../storage-actions.ts";
-import { appBase, navigate, slideLink } from "../router.ts";
+import { appBase, editHash, navigate, slideLink } from "../router.ts";
 import type { View } from "../view.ts";
 
 export function createBoardView(node: LibraryNode, params: { roll?: boolean; present?: boolean } = {}): View {
@@ -133,7 +133,9 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     await addEntry(picked.randomizer);
     if (picked.fresh) {
       await state.library.flush();
-      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
+      // Back from its editor returns to this board, not to the new
+      // randomizer's own play screen, where there is no Back at all.
+      navigate(editHash(picked.path, `#/r/${encodeURIComponent(node.path)}`));
     }
   }
 

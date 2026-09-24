@@ -14,7 +14,13 @@ export type Route =
   | { name: "byId"; id: string; params: LinkParams }
   /** A randomizer carried inside the link itself; `payload` is the `w` value. */
   | { name: "linked"; payload: string; params: LinkParams }
-  | { name: "edit"; path: string; params: LinkParams }
+  /**
+   * `from` is the address of the screen that opened this editor, when that
+   * matters for getting back: a randomizer made from a board's picker or from
+   * a wheel's "where does this send you?" would otherwise strand you on its
+   * own play screen.
+   */
+  | { name: "edit"; path: string; from?: string; params: LinkParams }
   | { name: "library"; params: LinkParams }
   | { name: "import"; params: LinkParams }
   | { name: "history"; params: LinkParams }
@@ -73,8 +79,11 @@ export function parseRoute(hash: string): Route {
       return arg ? { name: "randomizer", path: arg, params } : { name: "play", params };
     case "id":
       return arg ? { name: "byId", id: arg, params } : { name: "play", params };
-    case "edit":
-      return arg ? { name: "edit", path: arg, params } : { name: "library", params };
+    case "edit": {
+      if (!arg) return { name: "library", params };
+      const from = new URLSearchParams(query).get("from");
+      return from ? { name: "edit", path: arg, from, params } : { name: "edit", path: arg, params };
+    }
     case "library":
       return { name: "library", params };
     case "import":
@@ -89,13 +98,42 @@ export function parseRoute(hash: string): Route {
 }
 
 /**
- * Where Back goes: an editor returns to the randomizer it edits; anywhere
- * else returns to the one last played, if it is still in the library, and
- * otherwise to the plain play screen. A route, not browser history, so it
- * never bounces between two settings pages or out of the app.
+ * The address of an editor, remembering where it was opened from.
+ *
+ * `from` is itself a whole address and may carry a `from` of its own, so a
+ * board, then a wheel's editor, then a new randomizer's editor unwinds one
+ * step per Back. It is encoded as a single value, which is why it can nest.
+ */
+export function editHash(path: string, from?: string): string {
+  const base = `#/edit/${encodeURIComponent(path)}`;
+  return from ? `${base}?from=${encodeURIComponent(from)}` : base;
+}
+
+/**
+ * Where an editor's `from` leads, if it is somewhere Back may go.
+ *
+ * Only a randomizer or another editor, and only one still in the library: the
+ * address arrives in the URL, so it is rebuilt from the parsed route rather
+ * than followed as written. That drops anything else it carries, such as a
+ * `roll=1` that would roll the moment you arrived.
+ */
+export function referrer(route: Route, exists: (path: string) => boolean): string | null {
+  if (route.name !== "edit" || !route.from || !route.from.startsWith("#/")) return null;
+  const target = parseRoute(route.from);
+  if (target.name === "randomizer" && exists(target.path)) return `#/r/${encodeURIComponent(target.path)}`;
+  if (target.name === "edit" && exists(target.path)) return editHash(target.path, target.from);
+  return null;
+}
+
+/**
+ * Where Back goes: an editor returns to the screen that opened it when it
+ * knows one, and otherwise to the randomizer it edits; anywhere else returns
+ * to the one last played, if it is still in the library, and otherwise to the
+ * plain play screen. A route, not browser history, so it never bounces
+ * between two settings pages or out of the app.
  */
 export function backTarget(route: Route, lastPath: string | null, exists: (path: string) => boolean): string {
-  if (route.name === "edit") return `#/r/${encodeURIComponent(route.path)}`;
+  if (route.name === "edit") return referrer(route, exists) ?? `#/r/${encodeURIComponent(route.path)}`;
   if (lastPath && exists(lastPath)) return `#/r/${encodeURIComponent(lastPath)}`;
   return "#/";
 }

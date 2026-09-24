@@ -25,7 +25,7 @@ import { usedImageIds } from "../storage-actions.ts";
 import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
 import { createResultPanel } from "../components/result.ts";
-import { navigate } from "../router.ts";
+import { backTarget, currentRoute, editHash, navigate, parseRoute, referrer } from "../router.ts";
 import { effectiveFeel, normalizeOverride, type FeelOverride } from "../feel.ts";
 import { coinControls, diceControls, sectionFor, wheelControls } from "../components/feelpanel.ts";
 
@@ -73,10 +73,31 @@ function feelCard(get: () => Randomizer, set: (feel: FeelOverride | undefined) =
   return card;
 }
 
-export function createEditorView(node: LibraryNode): View {
+/**
+ * `from` is the address of the screen that opened this editor, if any; Back
+ * returns there. See `referrer` in router.ts.
+ */
+export function createEditorView(node: LibraryNode, from?: string): View {
   const randomizer = node.randomizer!;
   if (randomizer.type !== "list") return createSimpleEditor(node);
-  return createListEditor(node, randomizer);
+  return createListEditor(node, randomizer, from);
+}
+
+function inLibrary(path: string): boolean {
+  return state.library.find(path)?.randomizer != null;
+}
+
+/**
+ * The editor's own Back, which goes exactly where the top bar's does, so the
+ * two can never disagree. It names the place when that is not simply this
+ * randomizer's play screen: "Back to play" from a new wheel made on a board
+ * would be a promise the button does not keep.
+ */
+function editorBackButton(): HTMLElement {
+  const there = referrer(currentRoute(), inLibrary);
+  const target = there ? parseRoute(there) : null;
+  const name = target && "path" in target ? state.library.find(target.path)?.randomizer?.name : undefined;
+  return button(name ? `← Back to ${name}` : "← Back to play", () => navigate(backTarget(currentRoute(), null, inLibrary)), { class: "ghost" });
 }
 
 function formatWeight(n: number): string {
@@ -85,7 +106,7 @@ function formatWeight(n: number): string {
 
 /* -------------------------------------------------------------------------- */
 
-function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
+function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: string): View {
   let model: ListRandomizer = structuredClone(initial);
   let selection = new Set<string>();
   let filter = "";
@@ -164,7 +185,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     if (draftProblem(model)) return;
     await state.library.flush();
     const path = await state.library.rename(node.path, model.name);
-    if (path !== node.path) navigate(`#/edit/${encodeURIComponent(path)}`, true);
+    if (path !== node.path) navigate(editHash(path, from), true);
   });
 
   const descInput = h("input", { type: "text", value: model.description ?? "", "aria-label": "Description" });
@@ -472,7 +493,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
     // A randomizer made for this is empty, so it opens where you can fill it in.
     if (picked.fresh) {
       await state.library.flush();
-      navigate(`#/edit/${encodeURIComponent(picked.path)}`);
+      // Back from there returns here, to this editor, not to its play screen.
+      navigate(editHash(picked.path, editHash(node.path, from)));
     }
   }
 
@@ -695,7 +717,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer): View {
 
   const el = h("div", { class: "editor" },
     h("div", { class: "row", style: { marginBottom: "12px" } },
-      button("← Back to play", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
+      editorBackButton(),
       h("div", { class: "spacer" }),
       savedLabel,
     ),
@@ -880,7 +902,7 @@ function createSimpleEditor(node: LibraryNode): View {
       h("h1", { text: `Edit ${model.name}` }),
       h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), name),
       fields,
-      button("← Back to play", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
+      editorBackButton(),
     ),
     feel,
   );

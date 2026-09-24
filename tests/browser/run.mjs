@@ -1793,6 +1793,12 @@ async function main() {
       return JSON.parse(await state.library.backend.read(${JSON.stringify(path)})).randomizer.entries.map((e) => e.name);
     `);
     assert.deepEqual(entries, ["Weather"]);
+    // Back from that editor returns to the board rather than stranding you
+    // on the new wheel's play screen, which has no Back of its own.
+    await page.waitForFunction(`!document.querySelector(".topbar .back").hidden`);
+    await page.click(".topbar .back");
+    await page.waitForFunction(`location.hash === ${JSON.stringify(`#/r/${encodeURIComponent(path)}`)}`);
+    await page.waitForFunction(`window.orangey.state.prefs.lastPath === ${JSON.stringify(path)}`);
     assert.deepEqual(page.consoleErrors, []);
   });
 

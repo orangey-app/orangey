@@ -146,7 +146,7 @@ export function mountApp(root: HTMLElement): MascotHost {
           setMain({ el: h("div", { class: "card" }, h("p", { text: "This file was made with a newer Orangey, so it is open for reading only." })) });
           break;
         }
-        setMain(createEditorView(node));
+        setMain(createEditorView(node, route.from));
         break;
       }
       case "library":
