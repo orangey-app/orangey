@@ -4,7 +4,7 @@
  */
 
 import { CryptoSource, SeededSource, type RandomSource } from "../core/rng.ts";
-import { appdb, HISTORY_CAP, HISTORY_IN_MEMORY, type HistoryEntry, type Prefs } from "../storage/appdb.ts";
+import { appdb, HISTORY_CAP, HISTORY_IN_MEMORY, type HistoryEntry, type Prefs, type RollOrigin } from "../storage/appdb.ts";
 import { LibraryService, type LibraryBackend } from "../storage/library.ts";
 import { MemoryBackend } from "../storage/memory.ts";
 import { openOpfs, reopenFolder } from "../storage/fsdir.ts";
@@ -35,6 +35,18 @@ export interface HistoryRow extends HistoryEntry {
  */
 export function rollOwnerId(row: HistoryRow): string | null {
   return row.repeat?.kind === "randomizer" ? row.repeat.id : row.randomizerId;
+}
+
+/**
+ * What a row says beyond its headline: the dice rolled inside the outcome,
+ * and the roll that sent you here. Each is its own line, and either may be
+ * missing — a row written before 0.5 has neither.
+ */
+export function rollDetails(row: HistoryRow): { parts: string | null; from: string | null } {
+  return {
+    parts: row.parts?.length ? row.parts.join(" · ") : null,
+    from: row.from ? `from ${row.from.randomizerName} → ${row.from.label}` : null,
+  };
 }
 
 /** The rows belonging to these randomizers; no ids at all means all of them. */
@@ -283,7 +295,7 @@ class AppState {
     emitMascotEvent(this.events, event);
   }
 
-  async record(randomizer: Randomizer, outcome: Outcome): Promise<void> {
+  async record(randomizer: Randomizer, outcome: Outcome, from?: RollOrigin): Promise<void> {
     this.lastOutcome = { outcome, randomizer };
     const entry: HistoryRow = {
       id: newId(),
@@ -298,6 +310,8 @@ class AppState {
         randomizer.type === "dice"
           ? { kind: "dice", expression: randomizer.expression }
           : { kind: "randomizer", id: randomizer.id },
+      ...(outcome.rolled?.length ? { parts: outcome.rolled } : {}),
+      ...(from ? { from } : {}),
     };
     this.history = [entry, ...this.history].slice(0, HISTORY_IN_MEMORY);
     this.emit("history", "outcome");

@@ -62,6 +62,9 @@ describe("dice notation", () => {
     assert.ok(Number.isInteger(n) && n >= 2 && n <= 8, `"${outcome.text}" is not 2d4`);
     assert.match(outcome.text, /^\d+ wolves$/);
     assert.match(outcome.detail ?? "", /2d4 \[/, outcome.detail);
+    // Kept apart from the description and the odds, for history to keep.
+    assert.equal(outcome.rolled?.length, 2, "both the 2d4 and the 1d6");
+    assert.match(outcome.rolled?.[0] ?? "", /^2d4 \[\d, \d\] = \d$/);
     // Braces around something that is not dice are left exactly as typed.
     assert.match(outcome.detail ?? "", /\{nonsense\}/, outcome.detail);
     assert.doesNotMatch(outcome.detail ?? "", /\{1d6\}/, "the description's dice were not rolled");

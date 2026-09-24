@@ -22,6 +22,19 @@ export interface HistoryEntry {
   seed?: string;
   /** Enough to repeat the roll: an expression, or the randomizer id. */
   repeat?: { kind: "dice"; expression: string } | { kind: "randomizer"; id: string };
+  /** Dice rolled inside the outcome's text, e.g. "2d4 [1, 2] = 3". */
+  parts?: string[];
+  /**
+   * The roll that sent you here, when an outcome's link opened this
+   * randomizer. Names rather than an id: they are what the row says, and they
+   * outlive either randomizer being renamed or deleted.
+   */
+  from?: RollOrigin;
+}
+
+export interface RollOrigin {
+  randomizerName: string;
+  label: string;
 }
 
 export interface Prefs {

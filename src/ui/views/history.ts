@@ -7,7 +7,8 @@
 import { askConfirm, button, download, formatWhen, h, setChildren } from "../dom.ts";
 import { appdb, HISTORY_CAP } from "../../storage/appdb.ts";
 import { csvCell } from "../../import/listcsv.ts";
-import { state, type HistoryRow } from "../state.ts";
+import { rollDetails, state, type HistoryRow } from "../state.ts";
+import { rollDetailLines } from "../components/recent.ts";
 import { navigate } from "../router.ts";
 
 import type { View } from "../view.ts";
@@ -16,18 +17,26 @@ import type { View } from "../view.ts";
  * The history as a spreadsheet. A struck roll is exported like any other,
  * with the column saying it was struck: the log of a session is only complete
  * if what the table set aside is in it too.
+ *
+ * `details` and `from` came later and are appended, never inserted: a sheet
+ * that reads these columns by position keeps working.
  */
 export function historyCsv(rows: HistoryRow[]): string {
   const table = [
-    ["time", "randomizer", "type", "result", "seed", "struck"],
-    ...rows.map((e) => [
-      new Date(e.at).toISOString(),
-      e.randomizerName,
-      e.type,
-      e.resultText,
-      e.seed ?? "",
-      e.struck ? "yes" : "",
-    ]),
+    ["time", "randomizer", "type", "result", "seed", "struck", "details", "from"],
+    ...rows.map((e) => {
+      const more = rollDetails(e);
+      return [
+        new Date(e.at).toISOString(),
+        e.randomizerName,
+        e.type,
+        e.resultText,
+        e.seed ?? "",
+        e.struck ? "yes" : "",
+        more.parts ?? "",
+        e.from ? `${e.from.randomizerName} → ${e.from.label}` : "",
+      ];
+    }),
   ];
   return table.map((r) => r.map(csvCell).join(",")).join("\n");
 }
@@ -58,6 +67,7 @@ export function createHistoryView(): View {
             " ",
             h("span", { class: "detail", text: entry.resultText }),
             entry.seed ? h("span", { class: "faint", text: ` · seed ${entry.seed}` }) : null,
+            ...rollDetailLines(entry),
           ),
           button("Repeat", () => {
             if (entry.repeat?.kind === "randomizer") {
@@ -71,7 +81,8 @@ export function createHistoryView(): View {
           }, { class: "ghost" }),
           button(entry.struck ? "Unstrike" : "Strike", () => void state.setStruck(entry.id, !entry.struck), { class: "ghost" }),
           button("Copy", () => {
-            void navigator.clipboard?.writeText(`${entry.randomizerName}: ${entry.resultText}`);
+            const { parts } = rollDetails(entry);
+            void navigator.clipboard?.writeText(`${entry.randomizerName}: ${entry.resultText}${parts ? ` (${parts})` : ""}`);
             state.toast("Copied");
           }, { class: "ghost" }),
           button("Remove", () => void state.removeHistory(entry.id), { class: "ghost danger" }),
@@ -100,7 +111,10 @@ export function createHistoryView(): View {
 
   async function exportText(): Promise<void> {
     const text = (await allRows())
-      .map((e) => `${formatWhen(e.at)}  ${e.randomizerName}  →  ${e.resultText}`)
+      .map((e) => {
+        const { parts, from } = rollDetails(e);
+        return `${formatWhen(e.at)}  ${e.randomizerName}  →  ${e.resultText}${parts ? `  (${parts})` : ""}${from ? `  [${from}]` : ""}`;
+      })
       .join("\n");
     download("orangey-history.txt", `${text}\n`, "text/plain");
   }

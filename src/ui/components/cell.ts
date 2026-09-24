@@ -8,7 +8,7 @@
  */
 
 import type { Randomizer, Rollable } from "../../model/randomizer.ts";
-import { h } from "../dom.ts";
+import { button, h } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "./wheel.ts";
 import { createDiceTray } from "./dice.ts";
@@ -16,6 +16,8 @@ import { createCoin } from "./coin.ts";
 import { createResultPanel } from "./result.ts";
 import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
+import type { Outcome } from "../roll.ts";
+import type { RollOrigin } from "../../storage/appdb.ts";
 import { bagDrawn, bagLoad } from "../bag.ts";
 import { withoutDrawn } from "../../core/weighted.ts";
 import { effectiveFeel } from "../feel.ts";
@@ -30,7 +32,10 @@ export interface CellView {
   readonly randomizer: Randomizer;
 }
 
-export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void } = {}): CellView {
+export function createCell(
+  randomizer: Randomizer,
+  opts: { onRoll?: () => void; onLanded?: (outcome: Outcome) => void; from?: RollOrigin } = {},
+): CellView {
   const result = createResultPanel("Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
@@ -70,6 +75,8 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
     feel: feelNow,
     live: true,
     onStart: () => opts.onRoll?.(),
+    onLanded: (outcome) => opts.onLanded?.(outcome),
+    from: opts.from,
   });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
@@ -85,6 +92,22 @@ export function createCell(randomizer: Randomizer, opts: { onRoll?: () => void }
     get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },
   };
+}
+
+/**
+ * A Roll button for one cell. Pressing it again while the cell is running
+ * means "get to the answer", which is what the cell's own roll does with a
+ * roll already in flight.
+ */
+export function cellRollButton(cell: CellView, className: string): HTMLElement {
+  const roll = button("Roll", () => {
+    const skipping = cell.rolling;
+    const done = cell.roll();
+    if (skipping) return;
+    roll.textContent = "Skip";
+    void done.then(() => { roll.textContent = "Roll"; });
+  }, { class: className });
+  return roll;
 }
 
 /** A cell for a randomizer the board points at but the library no longer has. */

@@ -66,11 +66,20 @@ describe("a struck roll", () => {
   });
 
   test("is exported like any other, with the column saying it was struck", () => {
-    const csv = historyCsv([{ ...forest, struck: true }, { ...damage, randomizerName: "Damage, heavy" }]);
-    const [header, struckRow, plainRow] = csv.split("\n");
-    assert.equal(header, "time,randomizer,type,result,seed,struck");
-    assert.equal(struckRow.endsWith(",yes"), true, "a struck roll says so in the last column");
-    assert.equal(plainRow.endsWith(","), true, "an ordinary roll leaves it empty");
+    const chained = roll("h5", {
+      randomizerName: "Wolves",
+      resultText: "3 wolves",
+      parts: ["2d4 [1, 2] = 3"],
+      from: { randomizerName: "Forest Encounters", label: "Wolf pack" },
+    });
+    const csv = historyCsv([{ ...forest, struck: true }, { ...damage, randomizerName: "Damage, heavy" }, chained]);
+    const [header, struckRow, plainRow, chainedRow] = csv.split("\n");
+    // details and from came later, so they are appended: every column a
+    // sheet already reads by position stays where it was.
+    assert.equal(header, "time,randomizer,type,result,seed,struck,details,from");
+    assert.equal(struckRow.endsWith(",yes,,"), true, "a struck roll says so in the struck column");
+    assert.equal(plainRow.endsWith(",,,"), true, "an ordinary roll leaves it empty");
     assert.match(plainRow, /"Damage, heavy"/, "a name with a comma is still quoted");
+    assert.equal(chainedRow.endsWith(',,"2d4 [1, 2] = 3",Forest Encounters → Wolf pack'), true, chainedRow);
   });
 });

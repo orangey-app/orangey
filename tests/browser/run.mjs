@@ -1587,6 +1587,13 @@ async function main() {
       await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName)`),
       ["Hoard", "Encounters"],
     );
+    // …but the second says what sent you there, and the first says nothing.
+    assert.deepEqual(
+      await page.evaluate(`return window.orangey.state.history.map((h) => h.from ?? null)`),
+      [{ randomizerName: "Encounters", label: "The dragon's hoard" }, null],
+    );
+    await open(page, "#/history");
+    await page.waitForFunction(`[...document.querySelectorAll(".history-list .roll-from")].some((e) => e.textContent === "from Encounters → The dragon's hoard")`);
 
     // The randomizer an outcome points at is deleted: the outcome still comes
     // up, and says what is missing rather than quietly doing nothing.

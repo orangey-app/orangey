@@ -20,10 +20,10 @@
  */
 
 import type { Randomizer } from "../../model/randomizer.ts";
-import { button, h, setChildren } from "../dom.ts";
+import { h, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import type { Outcome } from "../roll.ts";
-import { createCell, type CellView } from "./cell.ts";
+import { cellRollButton, createCell, type CellView } from "./cell.ts";
 
 /** How many randomizers in a chain keep their full size. The rest are icons. */
 export const CHAIN_FULL_SIZE = 2;
@@ -98,6 +98,36 @@ export function chainPlacement(count: number, focus: number): ChainSlot[] {
   return Array.from({ length: count }, (_, i) => (i <= at && i > at - CHAIN_FULL_SIZE ? "full" : "icon"));
 }
 
+/**
+ * What a link past the root looks like: the line saying what sent you here,
+ * then its own cell and Roll button — or, when the library no longer has it,
+ * a gap that still says where the outcome meant to send you. The play screen
+ * and a board both draw links with this, so they look the same.
+ */
+export function createChainSurface(
+  link: ChainLink,
+  sender: string,
+  opts: { onLanded?: (outcome: Outcome) => void } = {},
+): { el: HTMLElement; cell: CellView | null } {
+  const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
+  const found = state.library.findById(link.id)?.randomizer ?? null;
+  if (!found) {
+    // The same tone as a board's gap: the outcome still comes up and still
+    // says where it meant to send you.
+    return {
+      cell: null,
+      el: h("div", { class: "chain-link cell cell-missing" },
+        from,
+        h("h3", { class: "cell-name", text: link.name }),
+        h("p", { class: "faint", text: "This randomizer is not in your library any more. Import it again, or take the link off that outcome." }),
+      ),
+    };
+  }
+  // Its history row says what sent you here, so the two rolls read as one.
+  const cell = createCell(found, { onLanded: opts.onLanded, from: { randomizerName: sender, label: link.from } });
+  return { cell, el: h("div", { class: "chain-link" }, from, cell.el, cellRollButton(cell, "primary chain-roll")) };
+}
+
 /** The play screen, as the chain needs to see it: its root link, and its card. */
 export interface ChainRoot {
   /** The open randomizer's identity, asked for afresh because it can be swapped. */
@@ -148,33 +178,9 @@ export function createChainRow(root: ChainRoot): ChainView {
 
   /** The surface for a link past the root: its own cell, or what is missing. */
   function build(i: number): void {
-    const link = links[i];
-    const sender = links[i - 1]?.name ?? "";
-    const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
-    const found = state.library.findById(link.id)?.randomizer ?? null;
-    if (!found) {
-      // The same tone as a board's gap: the outcome still comes up and still
-      // says where it meant to send you.
-      cells[i] = null;
-      holders[i] = h("div", { class: "chain-link cell cell-missing" },
-        from,
-        h("h3", { class: "cell-name", text: link.name }),
-        h("p", { class: "faint", text: "This randomizer is not in your library any more. Import it again, or take the link off that outcome." }),
-      );
-      return;
-    }
-    const cell = createCell(found);
-    cells[i] = cell;
-    const rollThis = button("Roll", () => {
-      // Pressing again while it is running means "get to the answer", which
-      // is what the cell's own roll does with a roll already in flight.
-      const skipping = cell.rolling;
-      const done = cell.roll();
-      if (skipping) return;
-      rollThis.textContent = "Skip";
-      void done.then(() => { rollThis.textContent = "Roll"; });
-    }, { class: "primary chain-roll" });
-    holders[i] = h("div", { class: "chain-link" }, from, cell.el, rollThis);
+    const surface = createChainSurface(links[i], links[i - 1]?.name ?? "");
+    cells[i] = surface.cell;
+    holders[i] = surface.el;
   }
 
   function follow(from: number, target: ChainTarget | null): void {

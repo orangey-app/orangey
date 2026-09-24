@@ -516,6 +516,10 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .history-list .what { flex: 1; min-width: 0; }
 .history-list .what .name { font-weight: 600; }
 .history-list .what .detail { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+/* The dice behind an answer and the roll that led to it: under the headline,
+   quieter than it, one line each. */
+.history-list .what .roll-note { display: block; font-size: 12px; color: var(--ink-faint); }
+.history-list .what .roll-parts { font-family: var(--mono); }
 
 /* Full-screen result, for a link clicked from a slide or a projector.
    The chrome is hidden here rather than with the hidden attribute, which the

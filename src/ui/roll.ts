@@ -39,6 +39,12 @@ export interface Outcome {
   reaction?: OutcomeReaction;
   /** For a multiple draw: every outcome that came up, in list order positions. */
   indices?: number[];
+  /**
+   * Dice written into the outcome's text, as rolled: "2d4 [1, 2] = 3". Kept
+   * apart from `detail`, which also carries the description and the odds, so
+   * history can keep the dice behind "3 wolves" without the rest.
+   */
+  rolled?: string[];
 }
 
 export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
@@ -135,6 +141,7 @@ function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
     itemIndex: index,
     image: item.image,
     reaction: item.reaction,
+    ...(rolled.length ? { rolled } : {}),
   };
 }
 
@@ -169,6 +176,7 @@ export function rollListMany(r: ListRandomizer, n: number, rng: RandomSource, dr
     seed: rng.seed,
     // Deliberately no itemIndex, image or reaction: see above.
     indices,
+    ...(rolled.length ? { rolled } : {}),
   };
 }
 

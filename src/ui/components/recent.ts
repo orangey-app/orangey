@@ -9,7 +9,7 @@
  */
 
 import { askConfirm, button, formatTime, h, setChildren } from "../dom.ts";
-import { rollsInScope, state } from "../state.ts";
+import { rollDetails, rollsInScope, state, type HistoryRow } from "../state.ts";
 import { navigate } from "../router.ts";
 
 export interface RecentRollsOptions {
@@ -27,6 +27,18 @@ export interface RecentRollsView {
 }
 
 export const RECENT_ROLLS_LIMIT = 8;
+
+/**
+ * The faint lines under a row's result, for this panel and the History view
+ * alike: "3 wolves" stays the headline and the dice behind the 3 sit beneath.
+ */
+export function rollDetailLines(row: HistoryRow): HTMLElement[] {
+  const { parts, from } = rollDetails(row);
+  return [
+    parts ? h("span", { class: "roll-note roll-parts", text: parts }) : null,
+    from ? h("span", { class: "roll-note roll-from", text: from }) : null,
+  ].filter((el): el is HTMLSpanElement => el !== null);
+}
 
 /**
  * What Clear is about to take, named. An empty scope is the whole history.
@@ -73,6 +85,7 @@ export function createRecentRolls(opts: RecentRollsOptions): RecentRollsView {
             h("span", { class: "name", text: row.randomizerName }),
             " ",
             h("span", { class: "detail", text: row.resultText }),
+            ...rollDetailLines(row),
           ),
           button(row.struck ? "Unstrike" : "Strike", () => void state.setStruck(row.id, !row.struck), { class: "ghost" }),
         ),

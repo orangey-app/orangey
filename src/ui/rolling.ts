@@ -26,6 +26,7 @@ import { bagDrawn, bagTake } from "./bag.ts";
 import { withoutDrawn } from "../core/weighted.ts";
 import { summarize } from "./mascot/events.ts";
 import { state } from "./state.ts";
+import type { RollOrigin } from "../storage/appdb.ts";
 
 export interface RollerOptions {
   randomizer: () => Rollable;
@@ -39,6 +40,15 @@ export interface RollerOptions {
   live: boolean;
   onStart?: (willAnimate: boolean) => void;
   onEnd?: () => void;
+  /**
+   * Told the outcome at the landing, with the answer on screen. A board uses
+   * it to follow an outcome's link from the cell that actually rolled — the
+   * same randomizer can be on a board twice, once as an entry and once opened
+   * by a chain, so "the last roll of this randomizer" cannot say which.
+   */
+  onLanded?: (outcome: Outcome) => void;
+  /** The roll whose outcome opened this randomizer, for its history row. */
+  from?: RollOrigin;
   /** Told after an outcome has been taken out of the bag, so a view can redraw. */
   onBagChange?: () => void;
   /**
@@ -187,7 +197,8 @@ export function createRoller(opts: RollerOptions): Roller {
     if (opts.live) state.tell({ type: "roll:land", source: randomizer.type, summary: summarize(outcome) });
     rolling = false;
     opts.onEnd?.();
-    if (opts.live) void state.record(randomizer, outcome);
+    opts.onLanded?.(outcome);
+    if (opts.live) void state.record(randomizer, outcome, opts.from);
   }
 
   return {
