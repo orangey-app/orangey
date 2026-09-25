@@ -24,6 +24,14 @@ export type RandomizerType = (typeof RANDOMIZER_TYPES)[number];
 export const BOARD_LIMIT = 12;
 
 /**
+ * How many outcomes a wheel may offer to choose from. One is no choice at
+ * all, and past a dozen the cards stop being something to choose between at
+ * a glance and become a list to read.
+ */
+export const OFFER_MIN = 2;
+export const OFFER_MAX = 12;
+
+/**
  * What Orangey does when a particular outcome comes up. Wheels and coins have
  * no natural top or bottom the way dice do, so the game master tags outcomes
  * instead: the file says what he does ("cheer", "wince"), never which
@@ -86,6 +94,13 @@ export interface ListRandomizer extends RandomizerBase {
    * means the picture; files only carry it when someone chose otherwise.
    */
   slices?: SliceContent;
+  /**
+   * Make a choice: a roll draws this many different outcomes and the player
+   * picks one, and the pick is the outcome. "Here are three hooks, take one"
+   * is a mechanic a single landing cannot express. Left out, a roll lands on
+   * one outcome as it always has.
+   */
+  offer?: number;
 }
 
 export interface DiceRandomizer extends RandomizerBase {
@@ -197,6 +212,7 @@ export function validateRandomizer(v: unknown, check = new Check(), path = "rand
       if (o.view !== undefined) check.oneOf(`${path}.view`, o.view, ["wheel", "list"] as const);
       if (o.withoutReplacement !== undefined) check.boolean(`${path}.withoutReplacement`, o.withoutReplacement);
       if (o.slices !== undefined) check.oneOf(`${path}.slices`, o.slices, SLICE_CONTENTS);
+      if (o.offer !== undefined) check.number(`${path}.offer`, o.offer, { min: OFFER_MIN, max: OFFER_MAX, integer: true });
       if (check.array(`${path}.items`, o.items, 1)) {
         (o.items as unknown[]).forEach((it, i) => validateItem(it, check, `${path}.items[${i}]`));
       }

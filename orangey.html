@@ -589,6 +589,73 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .result-value.is-max { color: var(--ok); }
 .result-value.is-min { color: var(--error); }
 
+/* Make a choice: the offered outcomes as cards under the answer's slot. Every
+   card is the same height — two lines, clipped — and the row holds invisible
+   stand-ins from the moment the randomizer opens, so neither the cards
+   arriving nor a longer label moves anything. */
+.offer-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin: 4px 0 2px;
+}
+.offer-cards[hidden] { display: none; }
+.offer-card {
+  position: relative;
+  height: calc(2 * 1.2em + 18px);
+  padding: 9px 8px 9px 22px;
+  font-size: 15px;
+  line-height: 1.2;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+.offer-card.placeholder { visibility: hidden; }
+.offer-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+}
+.offer-key { position: absolute; left: 7px; top: 6px; font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+button.offer-card:not([aria-disabled="true"]):hover { border-color: var(--accent); background: var(--accent-soft); }
+.offer-card.face-down {
+  background: repeating-linear-gradient(135deg, var(--accent-soft) 0 6px, var(--bg-raised) 6px 12px);
+  opacity: 1;
+}
+.offer-card.chosen { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); font-weight: 650; }
+.offer-card.not-chosen { opacity: 0.35; }
+.offer-cards.flipping .offer-card:not(.placeholder) {
+  /* The duration comes from feel.ts (OFFER_FLIP_MS), scaled by the motion
+     setting; instant leaves this class off altogether. */
+  animation: offer-in var(--offer-flip, 260ms) cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * var(--offer-flip, 260ms) / 3);
+}
+@keyframes offer-in {
+  from { transform: rotateY(90deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.cell .offer-card { font-size: 13px; }
+.cell .offer-cards { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+
+/* The quick wheel: a box of lines on the home screen, behind its own button
+   in the preset row so the play card stays where a phone's thumb expects it. */
+.quick-wheel[hidden] { display: none; }
+/* The interface's own type rather than the mono of other text boxes: these
+   are the options as the table will read them. 16px, or iOS zooms on focus. */
+.quick-options { width: 100%; min-height: 6.5em; box-sizing: border-box; font-family: inherit; font-size: 16px; }
+.quick-wheel-foot { margin-top: 6px; }
+input.quick-offer, input.offer-input { width: 56px; }
+.quick-too-long[hidden] { display: none; }
+.quick-wheel-toggle[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
 .quickbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
 .quickbar button { min-width: 54px; font-variant-numeric: tabular-nums; }
 /* The same row, holding the way home instead of the presets, so opening a
@@ -906,7 +973,11 @@ body.presenting .topbar,
 body.presenting .side,
 body.presenting .tabbar,
 body.presenting .quickbar,
-body.presenting .play > .card ~ .card,
+body.presenting .quick-wheel,
+/* Everything after the play card, not after the first card: on the home
+   screen the quick wheel's card comes first, and would take the play card
+   with it. */
+body.presenting .play > .play-card ~ .card,
 body.presenting .present-button,
 body.presenting .link-button,
 body.presenting .edit-link {
@@ -959,6 +1030,8 @@ body.presenting .result-slot.small { font-size: clamp(30px, 7vw, 96px); }
 body.presenting .result-panel.two-lines .result-slot { font-size: min(clamp(36px, 8vw, 112px), 17vh); }
 body.presenting .result-panel.two-lines .result-slot.small { font-size: min(clamp(28px, 6vw, 84px), 15vh); }
 body.presenting .result-detail { font-size: clamp(13px, 1.5vw, 20px); }
+/* Cards read from across the room, like the answer they stand in for. */
+body.presenting .offer-card { font-size: clamp(15px, 1.8vw, 24px); }
 body.presenting .roll-button { min-height: 60px; font-size: 20px; flex: none; }
 body.presenting .leave-presenting {
   position: fixed;
@@ -1229,7 +1302,7 @@ h1, h2, h3, .brand, .board-name, .cell-name,
 <noscript>Orangey needs JavaScript: everything it does runs in your browser, and there is no server to do it instead.</noscript>
 <script type="module">
 
-// ---- src\ui\dom.ts -----------------------------------------------
+// ---- src/ui/dom.ts -----------------------------------------------
 /**
  * A very small DOM helper.
  *
@@ -1614,7 +1687,7 @@ function askFolder(
   });
 }
 
-// ---- src\core\rng.ts ---------------------------------------------
+// ---- src/core/rng.ts ---------------------------------------------
 /**
  * Random sources.
  *
@@ -1792,7 +1865,7 @@ function sourceFor(seed                           )               {
   return seed ? new SeededSource(seed) : new CryptoSource();
 }
 
-// ---- src\storage\appdb.ts ----------------------------------------
+// ---- src/storage/appdb.ts ----------------------------------------
 /**
  * Application storage: preferences, history, recents and favourites.
  *
@@ -1817,7 +1890,10 @@ function sourceFor(seed                           )               {
                 
                                                                         
                                                                                      
-                                                                      
+     
+                                                                             
+                                                         
+     
                    
      
                                                                     
@@ -2086,7 +2162,7 @@ const appdb = {
   },
 };
 
-// ---- src\model\validate.ts ---------------------------------------
+// ---- src/model/validate.ts ---------------------------------------
 /**
  * A very small validation helper.
  *
@@ -2198,7 +2274,7 @@ class Check {
   }
 }
 
-// ---- src\core\weighted.ts ----------------------------------------
+// ---- src/core/weighted.ts ----------------------------------------
 /**
  * Weighted selection over a list of outcomes.
  *
@@ -2365,7 +2441,7 @@ function drawWithoutReplacement(
   return out;
 }
 
-// ---- src\core\color.ts -------------------------------------------
+// ---- src/core/color.ts -------------------------------------------
 /**
  * Colour maths: sRGB <-> OKLab, perceptual distance, WCAG contrast, and a
  * deuteranopia simulation. Everything the palette work in C8 needs, in one
@@ -2527,7 +2603,7 @@ function mix(aHex        , bHex        , t        )         {
   return rgbToHex(oklabToRgb({ L: a.L + (b.L - a.L) * t, a: a.a + (b.a - a.a) * t, b: a.b + (b.b - a.b) * t }));
 }
 
-// ---- src\core\wheel-geometry.ts ----------------------------------
+// ---- src/core/wheel-geometry.ts ----------------------------------
 /**
  * Wheel geometry: weights in, arcs out (plan C4).
  *
@@ -2814,7 +2890,7 @@ function tickerWindow(liveCount        , position        , size = 80, tail = 3) 
   return { start, end, local: position - start };
 }
 
-// ---- src\model\randomizer.ts -------------------------------------
+// ---- src/model/randomizer.ts -------------------------------------
 /**
  * The randomizer types (plan C2).
  *
@@ -2839,6 +2915,14 @@ const RANDOMIZER_TYPES = [...ROLLABLE_TYPES, "board"]         ;
  * small to read across the table, which is what a board is for.
  */
 const BOARD_LIMIT = 12;
+
+/**
+ * How many outcomes a wheel may offer to choose from. One is no choice at
+ * all, and past a dozen the cards stop being something to choose between at
+ * a glance and become a list to read.
+ */
+const OFFER_MIN = 2;
+const OFFER_MAX = 12;
 
 /**
  * What Orangey does when a particular outcome comes up. Wheels and coins have
@@ -2903,6 +2987,13 @@ const OUTCOME_REACTIONS = ["cheer", "wince"]         ;
                                                                          
      
                         
+     
+                                                                            
+                                                                             
+                                                                             
+                                  
+     
+                 
  
 
                                                         
@@ -3014,6 +3105,7 @@ function validateRandomizer(v         , check = new Check(), path = "randomizer"
       if (o.view !== undefined) check.oneOf(`${path}.view`, o.view, ["wheel", "list"]         );
       if (o.withoutReplacement !== undefined) check.boolean(`${path}.withoutReplacement`, o.withoutReplacement);
       if (o.slices !== undefined) check.oneOf(`${path}.slices`, o.slices, SLICE_CONTENTS);
+      if (o.offer !== undefined) check.number(`${path}.offer`, o.offer, { min: OFFER_MIN, max: OFFER_MAX, integer: true });
       if (check.array(`${path}.items`, o.items, 1)) {
         (o.items             ).forEach((it, i) => validateItem(it, check, `${path}.items[${i}]`));
       }
@@ -3102,7 +3194,7 @@ function validateItem(v         , check       , path        )       {
   }
 }
 
-// ---- src\model\file.ts -------------------------------------------
+// ---- src/model/file.ts -------------------------------------------
 /**
  * The .orangey.json file format (plan C3, decision D10).
  *
@@ -3134,6 +3226,9 @@ const RANDOMIZER_KEY_ORDER = [
   "id", "type", "name", "description", "tags", "view", "withoutReplacement", "slices",
   "expression", "faces", "faceReactions", "min", "max", "integer", "inclusiveMax", "count", "unique",
   "feel", "created", "modified", "items", "entries",
+  // Appended, never inserted (P10): files written before a key existed keep
+  // their exact bytes when saved again.
+  "offer",
 ];
 const ITEM_KEY_ORDER = ["id", "label", "weight", "disabled", "description", "color", "reaction", "image", "goesTo", "metadata", "imageData"];
 
@@ -3258,7 +3353,7 @@ function fileNameFor(name        , taken                    = [])         {
   return candidate;
 }
 
-// ---- src\storage\paths.ts ----------------------------------------
+// ---- src/storage/paths.ts ----------------------------------------
 /** Library paths: "/"-separated, no leading slash, folders have no trailing slash. */
 
 const ROOT = "";
@@ -3300,7 +3395,7 @@ function naturalCompare(a        , b        )         {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-// ---- src\storage\library.ts --------------------------------------
+// ---- src/storage/library.ts --------------------------------------
 /**
  * The library: a folder tree of .orangey.json files (plan C5, decision D11).
  *
@@ -3803,7 +3898,7 @@ class LibraryService {
   }
 }
 
-// ---- src\storage\memory.ts ---------------------------------------
+// ---- src/storage/memory.ts ---------------------------------------
 /**
  * An in-memory library backend.
  *
@@ -3912,7 +4007,7 @@ class MemoryBackend                           {
   }
 }
 
-// ---- src\storage\fsdir.ts ----------------------------------------
+// ---- src/storage/fsdir.ts ----------------------------------------
 /**
  * A library backend over any FileSystemDirectoryHandle.
  *
@@ -4204,7 +4299,7 @@ async function rememberedFolderName()                         {
   return handle?.name ?? null;
 }
 
-// ---- src\storage\idb.ts ------------------------------------------
+// ---- src/storage/idb.ts ------------------------------------------
 /**
  * A library backend on IndexedDB.
  *
@@ -4420,7 +4515,7 @@ class IndexedDbBackend                           {
   }
 }
 
-// ---- src\storage\zip.ts ------------------------------------------
+// ---- src/storage/zip.ts ------------------------------------------
 /**
  * A minimal ZIP writer and reader for library export/import (plan C5).
  *
@@ -4642,7 +4737,7 @@ async function readZip(bytes            )                      {
   return entries;
 }
 
-// ---- src\storage\images.ts ---------------------------------------
+// ---- src/storage/images.ts ---------------------------------------
 /**
  * The image store: the pictures an outcome can carry.
  *
@@ -4900,7 +4995,7 @@ async function pruneImages(usedIds             )                  {
   return gone;
 }
 
-// ---- src\ui\feel.ts ----------------------------------------------
+// ---- src/ui/feel.ts ----------------------------------------------
 /**
  * How the app feels when it rolls (plan C10, decision D22).
  *
@@ -4958,6 +5053,21 @@ const MASCOT_LINK_FAIL_HOLD_MS = 3200;
  * lands immediately, which is the case this exists for.
  */
 const MASCOT_ANTICIPATE_MIN_MS = 120;
+
+/**
+ * How long the cards of an offer take to turn face up, one after another.
+ * Not a Feel setting — nothing about a choice is worth tuning — so it is a
+ * constant, scaled by the motion level like everything else: instant shows
+ * them at once. Kept short: the table is waiting to read them, not to watch.
+ */
+const OFFER_FLIP_MS = 260;
+
+/**
+ * How long typing in the quick wheel pauses before the address is rewritten.
+ * The wheel itself follows every keystroke; only the link waits, because
+ * compressing it on every letter is wasted work and the address bar flickers.
+ */
+const QUICK_DEBOUNCE_MS = 300;
 
 const LIMITS = {
   wheelDuration: [400, 8000],
@@ -5363,7 +5473,7 @@ function vibrate(feel              , pattern                   )       {
   }
 }
 
-// ---- src\model\starters.ts ---------------------------------------
+// ---- src/model/starters.ts ---------------------------------------
 /**
  * What a brand-new library starts with.
  *
@@ -5434,7 +5544,7 @@ function starters()            {
   ];
 }
 
-// ---- src\model\settings-file.ts ----------------------------------
+// ---- src/model/settings-file.ts ----------------------------------
 /**
  * The `.orangey-settings.json` file: the settings worth carrying to another
  * device, and nothing that belongs to this browser alone.
@@ -5576,7 +5686,7 @@ function normalizeColours(raw         )                 {
   return out;
 }
 
-// ---- src\ui\mascot\events.ts -------------------------------------
+// ---- src/ui/mascot/events.ts -------------------------------------
 /**
  * What the app tells the mascot.
  *
@@ -5638,7 +5748,7 @@ function onMascotEvent(target             , handler                             
   return () => target.removeEventListener(MASCOT_EVENT, listener);
 }
 
-// ---- src\ui\state.ts ---------------------------------------------
+// ---- src/ui/state.ts ---------------------------------------------
 /**
  * Application state: preferences, the open library, history, and the toast
  * queue. Views subscribe to changes; nothing here touches the DOM.
@@ -5967,6 +6077,10 @@ class AppState {
 
   async record(randomizer            , outcome         , from             )                {
     this.lastOutcome = { outcome, randomizer };
+    // What a row says beyond its headline: the dice inside the outcome and,
+    // for a pick, what it was picked from. Both ride in `parts`, the row's
+    // existing details line, rather than in a field of their own.
+    const parts = [...(outcome.rolled ?? []), ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : [])];
     const entry             = {
       id: newId(),
       at: Date.now(),
@@ -5980,7 +6094,7 @@ class AppState {
         randomizer.type === "dice"
           ? { kind: "dice", expression: randomizer.expression }
           : { kind: "randomizer", id: randomizer.id },
-      ...(outcome.rolled?.length ? { parts: outcome.rolled } : {}),
+      ...(parts.length ? { parts } : {}),
       ...(from ? { from } : {}),
     };
     this.history = [entry, ...this.history].slice(0, HISTORY_IN_MEMORY);
@@ -6066,7 +6180,7 @@ class AppState {
 
 const state = new AppState();
 
-// ---- src\ui\router.ts --------------------------------------------
+// ---- src/ui/router.ts --------------------------------------------
 /**
  * Hash routing.
  *
@@ -6081,8 +6195,13 @@ const state = new AppState();
                                         
                                                             
                                                     
-                                                                                 
-                                                           
+     
+                                                                             
+                                                                             
+                                                                            
+                                                          
+     
+                                                                         
      
                                                                            
                                                                               
@@ -6141,8 +6260,10 @@ function parseRoute(hash        )        {
     case "roll": {
       // The payload is base64url, which URLSearchParams leaves alone, but a
       // deck program may have escaped it on the way in.
-      const w = new URLSearchParams(query).get("w") ?? "";
-      return w ? { name: "linked", payload: w, params } : { name: "play", params };
+      const search = new URLSearchParams(query);
+      const w = search.get("w") ?? "";
+      if (!w) return { name: "play", params };
+      return search.get("quick") === "1" ? { name: "linked", payload: w, params, quick: true } : { name: "linked", payload: w, params };
     }
     case "r":
       return arg ? { name: "randomizer", path: arg, params } : { name: "play", params };
@@ -6269,7 +6390,189 @@ function currentRoute()        {
   return parseRoute(location.hash);
 }
 
-// ---- src\core\dice\grammar.ts ------------------------------------
+// ---- src/import/quick.ts -----------------------------------------
+/**
+ * A wheel typed at the table, one option per line.
+ *
+ * The quick wheel on the play screen is a textarea, and this is how its text
+ * becomes outcomes and back. Pure and DOM-free (P13), so it is tested under
+ * `node --test` like the importer it sits beside.
+ *
+ * A line is an option. A trailing ` | 3` or ` x3` weighs it: the first takes
+ * any number, since "| 0.5" is a reasonable thing to write; the second only a
+ * whole one, since "x0.5" is not how anyone writes a count. The weight is
+ * read only when something is left over for a label, so a line that is just
+ * "x3" is an option called "x3". A leading bullet is dropped, because lists
+ * pasted from notes arrive with them.
+ */
+
+
+
+/** The longest label a file may hold; a longer line is cut to it. */
+const QUICK_LABEL_MAX = 200;
+
+const QUICK_BULLET = /^[-*•]\s+/;
+const QUICK_PIPE_WEIGHT = /^(.*\S)\s+\|\s*(\d+(?:\.\d+)?|\.\d+)$/;
+const QUICK_TIMES_WEIGHT = /^(.*\S)\s+[x×X](\d+)$/;
+
+function parseQuickOptions(text        )             {
+  const items             = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim().replace(QUICK_BULLET, "").trim();
+    if (!line) continue;
+    let label = line;
+    let weight = 1;
+    const pipe = line.match(QUICK_PIPE_WEIGHT);
+    const times = pipe ? null : line.match(QUICK_TIMES_WEIGHT);
+    if (pipe) {
+      label = pipe[1];
+      weight = Number(pipe[2]);
+    } else if (times && Number(times[2]) > 0) {
+      label = times[1];
+      weight = Number(times[2]);
+    }
+    items.push(makeItem(label.slice(0, QUICK_LABEL_MAX), weight));
+  }
+  return items;
+}
+
+/**
+ * The text that gives these outcomes back: what the textarea shows when a
+ * quick wheel is reopened from its address. Weights other than 1 come back
+ * as ` | n`, whichever way they were typed; bullets and blank lines do not
+ * come back, because the address never held them.
+ */
+function quickText(items                     )         {
+  return items.map((i) => (i.weight === 1 ? i.label : `${i.label} | ${i.weight}`)).join("\n");
+}
+
+// ---- src/model/link.ts -------------------------------------------
+/**
+ * A whole randomizer inside a link.
+ *
+ * A library link (`#/id/…`) is short and follows your edits, but it only works
+ * on a device where that library is stored. This is the other kind: the wheel
+ * itself — name, outcomes, weights, colours, Orangey's tags and the
+ * randomizer's own animation settings — compressed into the address, so a deck
+ * rolls it on anyone's machine with nothing installed and nothing shared in
+ * advance.
+ *
+ * Two properties are worth knowing. The payload sits after the `#`, and
+ * browsers never send a fragment to the server, so even the hosted copy never
+ * sees anyone's encounter tables. And it is frozen: a deck made today rolls
+ * the same wheel in a year, whatever has happened to the library since.
+ *
+ * What is deliberately left out: `created` and `modified`, which mean nothing
+ * to a stranger, and the outcomes' ids, which are library bookkeeping and
+ * would be the largest thing in the payload. They are made afresh on the way
+ * in.
+ */
+
+
+
+
+
+/** `1` deflated, `0` stored: the first character says which. */
+const DEFLATED = "1";
+const STORED = "0";
+
+/**
+ * Past this many characters a link is long enough to be worth warning about:
+ * every browser and both deck programs take it, but it is unwieldy to handle.
+ */
+const LINK_SOFT_LIMIT = 2000;
+
+/**
+ * And past this one Orangey will not offer it at all. Browsers go further,
+ * but a link this long has stopped being something you can paste about.
+ */
+const LINK_HARD_LIMIT = 8000;
+
+const linkEncoder = new TextEncoder();
+const linkDecoder = new TextDecoder();
+
+/** Plain base64 with the three characters a URL would mangle swapped out. */
+function toBase64Url(bytes            )         {
+  return base64FromBytes(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(text        )             {
+  const padded = text.replace(/-/g, "+").replace(/_/g, "/");
+  return bytesFromBase64(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+}
+
+/** The randomizer as it travels: no timestamps, no outcome ids. */
+function packRandomizer(r            )                          {
+  const packed                          = { ...r };
+  delete packed.created;
+  delete packed.modified;
+  if (r.type === "list") {
+    packed.items = r.items.map((item) => {
+      // No pictures, ever. The bytes are not in the link and inlining them
+      // would make an address nobody can paste, so a wheel opened from a link
+      // simply has none — and the id of a picture in someone else's library
+      // would mean nothing here anyway.
+      const { id: _id, image: _image, imageData: _imageData, ...rest } = item;
+      return rest;
+    });
+  }
+  for (const key of Object.keys(packed)) if (packed[key] === undefined) delete packed[key];
+  return packed;
+}
+
+/** And back: timestamps and outcome ids made afresh, then validated. */
+function unpackRandomizer(raw         )             {
+  const check = new Check();
+  if (!check.object("link", raw)) throw new ValidationError(check.issues);
+  const o = { ...(raw                           ) };
+  const now = nowIso();
+  o.created ??= now;
+  o.modified ??= now;
+  if (Array.isArray(o.items)) {
+    o.items = (o.items                       ).map((item) =>
+      typeof item === "object" && item !== null ? { id: newId(), ...item } : item,
+    );
+  }
+  if (!validateRandomizer(o, check, "link")) throw new ValidationError(check.issues);
+  return o                         ;
+}
+
+/** The value that goes after `w=`. */
+async function encodeRandomizer(r            )                  {
+  const json = JSON.stringify(packRandomizer(r));
+  const raw = linkEncoder.encode(json);
+  const { data, method } = await deflate(raw);
+  return (method === 8 ? DEFLATED : STORED) + toBase64Url(data);
+}
+
+/**
+ * Read one back. Throws a ValidationError naming what is wrong, so a damaged
+ * link can be explained rather than merely failing.
+ */
+async function decodeRandomizer(payload        )                      {
+  const fail = (message        )        => {
+    throw new ValidationError([{ path: "link", message }]);
+  };
+  if (!payload) fail("there is nothing after w=");
+  const marker = payload[0];
+  if (marker !== DEFLATED && marker !== STORED) fail("this link was made by a newer Orangey");
+  let json        ;
+  try {
+    const bytes = fromBase64Url(payload.slice(1));
+    json = linkDecoder.decode(await inflate(bytes, marker === DEFLATED ? 8 : 0));
+  } catch {
+    return fail("the link is damaged: it did not survive being copied");
+  }
+  let parsed         ;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return fail("the link is damaged: what it holds is not a randomizer");
+  }
+  return unpackRandomizer(parsed);
+}
+
+// ---- src/core/dice/grammar.ts ------------------------------------
 /**
  * Dice notation (docs/DICE.md is the normative description).
  *
@@ -6580,7 +6883,7 @@ function tryParse(input        )                                                
   }
 }
 
-// ---- src\core\palette-assign.ts ----------------------------------
+// ---- src/core/palette-assign.ts ----------------------------------
 /**
  * Assigning colours to outcomes (plan C8.3).
  *
@@ -6719,7 +7022,7 @@ function findClashes(colors          , cyclic         , t = DEFAULT_THRESHOLDS, 
   return out;
 }
 
-// ---- src\ui\components\wheel.ts ----------------------------------
+// ---- src/ui/components/wheel.ts ----------------------------------
 /**
  * The wheel.
  *
@@ -7119,7 +7422,7 @@ function createWheel(opts              )            {
   };
 }
 
-// ---- src\core\polyhedra.ts ---------------------------------------
+// ---- src/core/polyhedra.ts ---------------------------------------
 /**
  * Polyhedra and orientation maths for the wireframe dice.
  *
@@ -7720,7 +8023,7 @@ function project(v      , radius        , distanceFromCamera = 4)            {
   return { x: v[0] * k + 0, y: -v[1] * k + 0, z };
 }
 
-// ---- src\ui\components\dice.ts -----------------------------------
+// ---- src/ui/components/dice.ts -----------------------------------
 /**
  * The dice tray and the coin.
  *
@@ -8443,7 +8746,7 @@ function readColours()                                  {
   };
 }
 
-// ---- src\ui\components\coin.ts -----------------------------------
+// ---- src/ui/components/coin.ts -----------------------------------
 /**
  * The coin.
  *
@@ -8526,7 +8829,7 @@ function createCoin()           {
   };
 }
 
-// ---- src\ui\components\result.ts ---------------------------------
+// ---- src/ui/components/result.ts ---------------------------------
 /**
  * The result panel: the largest thing on the screen, and the only place a
  * result is ever announced.
@@ -8559,7 +8862,25 @@ function createCoin()           {
                                                                           
                              
      
+                                                                            
+     
+                                                                              
+                                                                           
+                        
+     
                                                             
+                                                                                       
+                          
+ 
+
+                               
+                               
+                 
+                     
+                                                                    
+                 
+                                                                                                     
+                  
  
 
 /** Beyond this many characters the result drops to the smaller type size. */
@@ -8585,7 +8906,37 @@ function createResultPanel(placeholder = "Ready")              {
   // picture, the name is what gets written down.
   const picture = h("img", { class: "result-picture", alt: "" });
   picture.hidden = true;
-  const el = h("div", { class: "result-panel" }, picture, slot, detail, meta, live);
+  // The cards of an offer. The row is laid out from the moment a randomizer
+  // that offers is opened, with invisible stand-ins for every card, so the
+  // panel is already as tall as it will be when the cards arrive.
+  const cards = h("div", { class: "offer-cards", role: "group", "aria-label": "Choose one" });
+  cards.hidden = true;
+  let slots = 0;
+  const el = h("div", { class: "result-panel" }, picture, slot, cards, detail, meta, live);
+
+  /** The empty row: one invisible card per slot, holding the height. */
+  function resetCards()       {
+    setChildren(cards, ...Array.from({ length: slots }, () => standIn()));
+  }
+  const standIn = () => h("span", { class: "offer-card placeholder", "aria-hidden": "true" }, h("span", { class: "offer-text", text: "\u00a0" }));
+
+  // Arrow keys walk the row; the digits 1 to 9 pick. On the play screen the
+  // digits also work from anywhere, which the view handles; here they work
+  // wherever this panel is, a board cell included, once focus is on a card.
+  cards.addEventListener("keydown", (e) => {
+    const all = [...cards.querySelectorAll                   ("button.offer-card")];
+    const at = all.indexOf(document.activeElement                     );
+    if (at < 0) return;
+    const key = (e                 ).key;
+    const step = key === "ArrowRight" || key === "ArrowDown" ? 1 : key === "ArrowLeft" || key === "ArrowUp" ? -1 : 0;
+    if (step) {
+      e.preventDefault();
+      all[(at + step + all.length) % all.length].focus();
+    } else if (/^[1-9]$/.test(key) && Number(key) <= all.length) {
+      e.preventDefault();
+      all[Number(key) - 1].click();
+    }
+  });
 
   function showPicture(id                    , alt        )       {
     if (!id) {
@@ -8619,10 +8970,14 @@ function createResultPanel(placeholder = "Ready")              {
       detail.textContent = outcome.detail ?? "";
       meta.textContent = outcome.seed ? `seed ${outcome.seed}` : "";
       showPicture(outcome.image, outcome.text);
+      // A pick keeps its cards on show, faded around the one taken; any
+      // other answer empties the row.
+      if (!outcome.offered) resetCards();
       if (announce) live.textContent = outcome.speak;
     },
     pending(text = "Rolling…") {
       el.classList.add("is-pending");
+      resetCards();
       showPicture(undefined, "");
       value.textContent = text;
       value.classList.remove("is-max", "is-min");
@@ -8632,6 +8987,7 @@ function createResultPanel(placeholder = "Ready")              {
     },
     clear(text = placeholder) {
       el.classList.remove("is-pending");
+      resetCards();
       showPicture(undefined, "");
       value.textContent = text;
       value.classList.remove("is-max", "is-min");
@@ -8639,7 +8995,14 @@ function createResultPanel(placeholder = "Ready")              {
       detail.textContent = "";
       meta.textContent = "";
     },
-    reserve(longest, { seed = false } = {}) {
+    reserve(longest, { seed = false, offer = 0 } = {}) {
+      // Only when the count changes: this runs again whenever settings or
+      // history change, and an offer on the table must not be swept away.
+      if (offer !== slots) {
+        slots = offer;
+        cards.hidden = slots === 0;
+        resetCards();
+      }
       const lines = resultLines(longest);
       slot.classList.toggle("small", resultIsSmall(longest));
       el.style.setProperty("--result-lines", String(lines));
@@ -8651,10 +9014,54 @@ function createResultPanel(placeholder = "Ready")              {
     announce(text) {
       live.textContent = text;
     },
+    offer(texts, { onPick, prompt, faceDown = false, flipMs, focus = false }) {
+      el.classList.add("is-pending");
+      showPicture(undefined, "");
+      value.textContent = prompt;
+      value.classList.remove("is-max", "is-min");
+      value.removeAttribute("title");
+      detail.textContent = "";
+      meta.textContent = "";
+      cards.hidden = false;
+      cards.classList.toggle("flipping", flipMs > 0 && !faceDown);
+      cards.style.setProperty("--offer-flip", `${flipMs}ms`);
+      const made = texts.map((text, i) => {
+        const card = h("button", {
+          type: "button",
+          class: faceDown ? "offer-card face-down" : "offer-card",
+          style: `--i: ${i}`,
+          ...(faceDown ? { disabled: true, "aria-label": `Card ${i + 1}, face down` } : { title: text }),
+        },
+          h("span", { class: "offer-key", "aria-hidden": "true", text: i < 9 ? String(i + 1) : "" }),
+          h("span", { class: "offer-text", text: faceDown ? "" : text }),
+        );
+        card.addEventListener("click", () => {
+          if (card.getAttribute("aria-disabled") === "true") return;
+          onPick(i);
+        });
+        return card;
+      });
+      setChildren(cards, ...made, ...Array.from({ length: Math.max(0, slots - made.length) }, () => standIn()));
+      // Said once the cards can be read, like any answer (P15).
+      live.textContent = faceDown ? "" : `Choose one: ${texts.join(", ")}.`;
+      if (focus && !faceDown) made[0]?.focus({ preventScroll: true });
+    },
+    chose(at) {
+      const all = [...cards.querySelectorAll                   ("button.offer-card")];
+      // A digit can pick a card other than the focused one; the keyboard
+      // follows the pick, or the focus ring would sit on a card not taken.
+      if (all.includes(document.activeElement                     )) all[at]?.focus({ preventScroll: true });
+      all.forEach((card, i) => {
+        card.classList.add(i === at ? "chosen" : "not-chosen");
+        // aria-disabled rather than disabled: the card keeps the keyboard's
+        // focus, which a disabled button would drop onto the page.
+        card.setAttribute("aria-disabled", "true");
+      });
+    },
   };
 }
 
-// ---- src\ui\components\recent.ts ---------------------------------
+// ---- src/ui/components/recent.ts ---------------------------------
 /**
  * The Recent rolls panel: the last few rolls, wherever the table can see them.
  *
@@ -8764,7 +9171,7 @@ function createRecentRolls(opts                    )                  {
   return { el, refresh };
 }
 
-// ---- src\core\coin.ts --------------------------------------------
+// ---- src/core/coin.ts --------------------------------------------
 const DEFAULT_FACES                   = ["Heads", "Tails"];
 
 function flip(faces                  , rng              )             {
@@ -8772,7 +9179,7 @@ function flip(faces                  , rng              )             {
   return { side, face: faces[side], faces, seed: rng.seed };
 }
 
-// ---- src\core\dice\evaluate.ts -----------------------------------
+// ---- src/core/dice/evaluate.ts -----------------------------------
 /**
  * Evaluate a parsed dice expression against a RandomSource.
  *
@@ -9056,7 +9463,7 @@ function rollDice(input        , rng              )             {
   return evaluate(parse(input), rng, input);
 }
 
-// ---- src\core\dice\format.ts -------------------------------------
+// ---- src/core/dice/format.ts -------------------------------------
 /** Turning a RollResult into the strings the UI and screen readers use. */
 
                                                             
@@ -9120,7 +9527,7 @@ function totalText(r            )         {
   return String(r.total);
 }
 
-// ---- src\core\number.ts ------------------------------------------
+// ---- src/core/number.ts ------------------------------------------
 class NumberSpecError extends Error {}
 
 function validateSpec(spec            )                {
@@ -9203,7 +9610,7 @@ function formatNumbers(r              )         {
   return r.values.map(fmt).join(", ");
 }
 
-// ---- src\ui\roll.ts ----------------------------------------------
+// ---- src/ui/roll.ts ----------------------------------------------
 /**
  * Rolling any randomizer, in one place.
  *
@@ -9251,6 +9658,12 @@ function formatNumbers(r              )         {
                                                                   
      
                     
+     
+                                                                          
+                                                                             
+                      
+     
+                     
  
 
 function rollRandomizer(r            , rng              )          {
@@ -9328,7 +9741,17 @@ function expandInlineDice(text        , rng              , rolled          )    
 }
 
 function rollList(r                , rng              )          {
-  const index = pickWeightedIndex(r.items, rng);
+  return listOutcome(r, pickWeightedIndex(r.items, rng), rng);
+}
+
+/**
+ * One outcome of a list, as the table sees it, once the pick is made.
+ *
+ * Shared by a single roll and an offer, so a card in an offer says exactly
+ * what the same outcome would have said had it been rolled on its own. The
+ * pick is the caller's; the only draws here are the dice in the text.
+ */
+function listOutcome(r                , index        , rng              )          {
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
@@ -9383,6 +9806,45 @@ function rollListMany(r                , n        , rng              , drawn    
     // Deliberately no itemIndex, image or reaction: see above.
     indices,
     ...(rolled.length ? { rolled } : {}),
+  };
+}
+
+/**
+ * Make a choice: draw `m` different outcomes for the player to pick from.
+ *
+ * Weighted and without putting back, from what is in play — the caller hands
+ * over the list with drawn (bag) outcomes already marked, exactly as it would
+ * for a single roll, so indices stay those of the original list. Fewer come
+ * back when fewer can come up. A path of its own (P12): no existing roll
+ * draws any differently for it.
+ *
+ * All the picks happen first and the dice written into the offered texts
+ * after them, in the order drawn, which is the order a single roll uses too.
+ */
+function offerFromList(r                , m        , rng              )            {
+  const wanted = Math.max(1, Math.trunc(m));
+  const indices = drawWithoutReplacement(r.items, Math.min(wanted, rollableIndices(r.items).length), rng);
+  return indices.map((index) => listOutcome(r, index, rng));
+}
+
+/**
+ * The outcome a player picked from an offer, ready to land: its own text,
+ * picture and reaction, and a detail line that says what else was offered.
+ */
+function chosenFromOffer(name        , offer                    , at        )          {
+  const chosen = offer[at];
+  const labels = offer.map((o) => o.text);
+  const note = labels.length > 1 ? `chosen from ${labels.join(", ")}` : "the only one that could come up";
+  // A single roll's detail ends with the outcome's odds, which say nothing
+  // about a pick; the dice and the description before them still apply.
+  const detail = chosen.detail ?? "";
+  const cut = detail.lastIndexOf(" · ");
+  const kept = cut < 0 ? "" : detail.slice(0, cut);
+  return {
+    ...chosen,
+    detail: [kept, note].filter(Boolean).join(" · "),
+    speak: `${name}: ${chosen.text}, ${note}.`,
+    ...(labels.length > 1 ? { offered: labels } : {}),
   };
 }
 
@@ -9455,7 +9917,7 @@ function longestOutcome(r            )         {
   }
 }
 
-// ---- src\ui\bag.ts -----------------------------------------------
+// ---- src/ui/bag.ts -----------------------------------------------
 /**
  * Bag mode: which outcomes have already been drawn.
  *
@@ -9517,7 +9979,7 @@ function bagRefill(randomizerId        )       {
   if (isPersistent(randomizerId)) void appdb.set(bagKey(randomizerId), []);
 }
 
-// ---- src\ui\rolling.ts -------------------------------------------
+// ---- src/ui/rolling.ts -------------------------------------------
 /**
  * One roll, from the press to the landing.
  *
@@ -9536,7 +9998,7 @@ function bagRefill(randomizerId        )       {
 
                                               
 
-                                                       
+                                                                       
                                                           
                                                        
                                                      
@@ -9583,6 +10045,13 @@ function bagRefill(randomizerId        )       {
                        
                                                   
                       
+                                                         
+                          
+     
+                                                                          
+                                                                           
+     
+                             
  
 
                          
@@ -9591,14 +10060,53 @@ function bagRefill(randomizerId        )       {
                             
                                                  
                             
-                                                                      
+                                                                                           
                   
+                                                            
+                             
+                                                                               
+                                  
  
 
 function createRoller(opts               )         {
   let rolling = false;
-  /** A hidden roll that has happened but has not been shown yet. */
-  let held                                                                                     = null;
+  /**
+   * A hidden roll that has happened but has not been shown yet: one outcome,
+   * or the cards of an offer, face down.
+   */
+  let held 
+                                                                                                    
+                                                                                                            
+           = null;
+  /**
+   * Cards on the table. The draw is done (P8: decided before anything moves);
+   * nothing lands, is announced as an answer, or is recorded until a pick.
+   */
+  let offered                                                                                              = null;
+
+  /** How long the cards take to turn over for this roll's feel. */
+  const flipMs = () => OFFER_FLIP_MS * motionScale(opts.feel().motion);
+
+  function lay(outcomes           , faceDown         )       {
+    opts.result.offer(outcomes.map((o) => o.text), {
+      onPick: (at) => void pick(at),
+      prompt: faceDown ? "Rolled. Press Reveal." : "Choose one",
+      faceDown,
+      flipMs: flipMs(),
+      focus: !faceDown && (opts.focusOffer?.() ?? false),
+    });
+  }
+
+  async function pick(at        )                {
+    if (!offered || !offered.outcomes[at]) return;
+    const { outcomes, randomizer, bag } = offered;
+    offered = null;
+    opts.result.chose(at);
+    // Once, through the ordinary landing: the answer, the announcement, the
+    // mascot and the history row, as for any roll. The wheel stayed still
+    // while the cards were out and now simply shows the pick.
+    await land(randomizer, chosenFromOffer(randomizer.name, outcomes, at), bag, false);
+  }
 
   function skip()       {
     opts.wheel()?.skip();
@@ -9622,11 +10130,19 @@ function createRoller(opts               )         {
       skip();
       return;
     }
+    // Cards are out: the next thing that happens is a pick, not a roll.
+    if (offered) return;
     // A second press after a hidden roll means "show the table".
     if (held) {
-      const { outcome, randomizer: what, bag } = held;
+      const was = held;
       held = null;
-      await land(what, outcome, bag, false);
+      if (was.offer) {
+        offered = { outcomes: was.offer, randomizer: was.randomizer, bag: was.bag };
+        lay(was.offer, false);
+        opts.onChoosing?.();
+        return;
+      }
+      await land(was.randomizer, was.outcome, was.bag, false);
       return;
     }
     const randomizer = opts.randomizer();
@@ -9642,6 +10158,43 @@ function createRoller(opts               )         {
     if (problem) {
       opts.result.clear(problem);
       if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
+      return;
+    }
+
+    // Make a choice: several outcomes drawn at once, and the player picks.
+    // A wheel that offers is not spun and is not rolled several at a time.
+    if (rollable.type === "list" && randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2) {
+      let outcomes           ;
+      try {
+        outcomes = offerFromList(rollable, randomizer.offer, state.source());
+      } catch (e) {
+        const reason = (e         ).message;
+        opts.result.clear(reason);
+        if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason });
+        return;
+      }
+      // One left in play is no choice: it lands like any roll, and says why.
+      if (outcomes.length > 1) {
+        if (opts.hidden?.()) {
+          held = { offer: outcomes, randomizer, bag };
+          lay(outcomes, true);
+          opts.onHeld?.();
+          return;
+        }
+        offered = { outcomes, randomizer, bag };
+        lay(outcomes, false);
+        opts.onChoosing?.();
+        return;
+      }
+      const only = chosenFromOffer(randomizer.name, outcomes, 0);
+      if (opts.hidden?.()) {
+        held = { outcome: only, randomizer, bag };
+        opts.result.pending("Rolled. Press Reveal.");
+        opts.onHeld?.();
+        return;
+      }
+      rolling = true;
+      await land(randomizer, only, bag, true);
       return;
     }
 
@@ -9730,13 +10283,18 @@ function createRoller(opts               )         {
     get holding() {
       return held !== null;
     },
+    get choosing() {
+      return offered !== null;
+    },
+    pick,
     discard() {
       held = null;
+      offered = null;
     },
   };
 }
 
-// ---- src\ui\components\cell.ts -----------------------------------
+// ---- src/ui/components/cell.ts -----------------------------------
 /**
  * One randomizer on a board: its own wheel, dice or coin, its own result, and
  * its own Feel settings, in a cell small enough that several fit on a screen.
@@ -9798,7 +10356,8 @@ function createCell(
   } else if (randomizer.type === "coin") {
     stage.append(coin.el);
   }
-  result.reserve(longestOutcome(randomizer));
+  const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
+  result.reserve(longestOutcome(randomizer), { offer });
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
@@ -9817,6 +10376,9 @@ function createCell(
     onStart: () => opts.onRoll?.(),
     onLanded: (outcome) => opts.onLanded?.(outcome),
     from: opts.from,
+    // Several cells can offer at once after Roll all; the keyboard goes to a
+    // cell's cards only when it was already in that cell.
+    focusOffer: () => el.contains(document.activeElement) || (el.parentElement?.contains(document.activeElement) ?? false),
   });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
@@ -9858,7 +10420,7 @@ function createMissingCell(name        )              {
   );
 }
 
-// ---- src\ui\components\chain.ts ----------------------------------
+// ---- src/ui/components/chain.ts ----------------------------------
 /**
  * A chain of randomizers: an outcome that sends you to another one.
  *
@@ -10125,133 +10687,7 @@ function createChainRow(root           )            {
   };
 }
 
-// ---- src\model\link.ts -------------------------------------------
-/**
- * A whole randomizer inside a link.
- *
- * A library link (`#/id/…`) is short and follows your edits, but it only works
- * on a device where that library is stored. This is the other kind: the wheel
- * itself — name, outcomes, weights, colours, Orangey's tags and the
- * randomizer's own animation settings — compressed into the address, so a deck
- * rolls it on anyone's machine with nothing installed and nothing shared in
- * advance.
- *
- * Two properties are worth knowing. The payload sits after the `#`, and
- * browsers never send a fragment to the server, so even the hosted copy never
- * sees anyone's encounter tables. And it is frozen: a deck made today rolls
- * the same wheel in a year, whatever has happened to the library since.
- *
- * What is deliberately left out: `created` and `modified`, which mean nothing
- * to a stranger, and the outcomes' ids, which are library bookkeeping and
- * would be the largest thing in the payload. They are made afresh on the way
- * in.
- */
-
-
-
-
-
-/** `1` deflated, `0` stored: the first character says which. */
-const DEFLATED = "1";
-const STORED = "0";
-
-/**
- * Past this many characters a link is long enough to be worth warning about:
- * every browser and both deck programs take it, but it is unwieldy to handle.
- */
-const LINK_SOFT_LIMIT = 2000;
-
-/**
- * And past this one Orangey will not offer it at all. Browsers go further,
- * but a link this long has stopped being something you can paste about.
- */
-const LINK_HARD_LIMIT = 8000;
-
-const linkEncoder = new TextEncoder();
-const linkDecoder = new TextDecoder();
-
-/** Plain base64 with the three characters a URL would mangle swapped out. */
-function toBase64Url(bytes            )         {
-  return base64FromBytes(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function fromBase64Url(text        )             {
-  const padded = text.replace(/-/g, "+").replace(/_/g, "/");
-  return bytesFromBase64(padded + "=".repeat((4 - (padded.length % 4)) % 4));
-}
-
-/** The randomizer as it travels: no timestamps, no outcome ids. */
-function packRandomizer(r            )                          {
-  const packed                          = { ...r };
-  delete packed.created;
-  delete packed.modified;
-  if (r.type === "list") {
-    packed.items = r.items.map((item) => {
-      // No pictures, ever. The bytes are not in the link and inlining them
-      // would make an address nobody can paste, so a wheel opened from a link
-      // simply has none — and the id of a picture in someone else's library
-      // would mean nothing here anyway.
-      const { id: _id, image: _image, imageData: _imageData, ...rest } = item;
-      return rest;
-    });
-  }
-  for (const key of Object.keys(packed)) if (packed[key] === undefined) delete packed[key];
-  return packed;
-}
-
-/** And back: timestamps and outcome ids made afresh, then validated. */
-function unpackRandomizer(raw         )             {
-  const check = new Check();
-  if (!check.object("link", raw)) throw new ValidationError(check.issues);
-  const o = { ...(raw                           ) };
-  const now = nowIso();
-  o.created ??= now;
-  o.modified ??= now;
-  if (Array.isArray(o.items)) {
-    o.items = (o.items                       ).map((item) =>
-      typeof item === "object" && item !== null ? { id: newId(), ...item } : item,
-    );
-  }
-  if (!validateRandomizer(o, check, "link")) throw new ValidationError(check.issues);
-  return o                         ;
-}
-
-/** The value that goes after `w=`. */
-async function encodeRandomizer(r            )                  {
-  const json = JSON.stringify(packRandomizer(r));
-  const raw = linkEncoder.encode(json);
-  const { data, method } = await deflate(raw);
-  return (method === 8 ? DEFLATED : STORED) + toBase64Url(data);
-}
-
-/**
- * Read one back. Throws a ValidationError naming what is wrong, so a damaged
- * link can be explained rather than merely failing.
- */
-async function decodeRandomizer(payload        )                      {
-  const fail = (message        )        => {
-    throw new ValidationError([{ path: "link", message }]);
-  };
-  if (!payload) fail("there is nothing after w=");
-  const marker = payload[0];
-  if (marker !== DEFLATED && marker !== STORED) fail("this link was made by a newer Orangey");
-  let json        ;
-  try {
-    const bytes = fromBase64Url(payload.slice(1));
-    json = linkDecoder.decode(await inflate(bytes, marker === DEFLATED ? 8 : 0));
-  } catch {
-    return fail("the link is damaged: it did not survive being copied");
-  }
-  let parsed         ;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    return fail("the link is damaged: what it holds is not a randomizer");
-  }
-  return unpackRandomizer(parsed);
-}
-
-// ---- src\ui\components\linkdialog.ts -----------------------------
+// ---- src/ui/components/linkdialog.ts -----------------------------
 /**
  * The dialog that hands over a link for a slide.
  *
@@ -10372,7 +10808,7 @@ async function openLinkDialog(randomizer            , node                    ) 
   field.select();
 }
 
-// ---- src\ui\presenting.ts ----------------------------------------
+// ---- src/ui/presenting.ts ----------------------------------------
 /**
  * Full screen: one randomizer, or one board, filling the display.
  *
@@ -10442,7 +10878,7 @@ function setPresenting(on         , controls                    )       {
   }
 }
 
-// ---- src\ui\views\play.ts ----------------------------------------
+// ---- src/ui/views/play.ts ----------------------------------------
 /**
  * The play surface: the screen a GM keeps open during a game.
  *
@@ -10451,6 +10887,8 @@ function setPresenting(on         , controls                    )       {
  * screen; with a randomizer open from the library they are replaced by a way
  * home, so that a stray press cannot swap out what the table is rolling.
  */
+
+
 
 
                                                             
@@ -10478,15 +10916,18 @@ const PRESETS = [4, 6, 8, 10, 12, 20, 100];
 /**
  * @param node     a randomizer from the library, or null
  * @param linked   a randomizer that arrived inside a link, when there is one
+ * @param quick    the link is a quick wheel being typed at this table, not a
+ *                 wheel someone sent: open the home screen with its text back
  */
 function createPlayView(
   node                    ,
   params             = { roll: false, present: false },
   linked                    = null,
+  quick = false,
 )       {
   let randomizer             = node?.randomizer ?? linked ?? adHocDice("d20");
   /** Opened from the library or from a link: either way, one fixed randomizer. */
-  const fixed = node !== null || linked !== null;
+  const fixed = node !== null || (linked !== null && !quick);
 
   const result = createResultPanel(fixed ? "Ready" : "Pick something to roll");
   const stage = h("div", { class: "stage" });
@@ -10527,8 +10968,11 @@ function createPlayView(
   }
 
   function updateHeaderControls()       {
-    countField.hidden = randomizer.type !== "list";
-    if (randomizer.type !== "list") countInput.value = "1";
+    // A wheel that offers a choice is not also rolled six at a time: the two
+    // answer different questions, and together they answer neither.
+    const many = randomizer.type === "list" && !offerSize(randomizer);
+    countField.hidden = !many;
+    if (!many) countInput.value = "1";
   }
 
   let wheel                                        = null;
@@ -10602,9 +11046,17 @@ function createPlayView(
     // is what `roller.roll()` reads as "skip".
     onStart: (willAnimate         ) => {
       rollButton.textContent = willAnimate ? "Skip" : "Roll";
+      rollButton.disabled = false;
     },
     onEnd: () => {
       rollButton.textContent = "Roll";
+      rollButton.disabled = false;
+      // The quick wheel changed while this roll was spinning; redraw it now
+      // rather than under the pointer.
+      if (wheelStale) {
+        wheelStale = false;
+        wheel?.refresh();
+      }
     },
     // The count changes at the landing; the wheel does not. Taking the
     // winning slice off the wheel the instant it wins would make it vanish
@@ -10618,6 +11070,13 @@ function createPlayView(
     onHeld: () => {
       rollButton.textContent = "Reveal";
     },
+    // Cards are out: the next press is on a card, so the button says so and
+    // stays out of the way until one is taken.
+    onChoosing: () => {
+      rollButton.textContent = "Choose one";
+      rollButton.disabled = true;
+    },
+    focusOffer: () => true,
   });
 
   const doRoll = ()                => {
@@ -10627,6 +11086,188 @@ function createPlayView(
   };
 
   const skip = ()       => roller.skip();
+
+  // ---- quick wheel ---------------------------------------------------------
+
+  /**
+   * A wheel typed at the table: one option per line, rolled at once, kept
+   * only if saved.
+   *
+   * It is a randomizer in the address like any wheel sent in a link, so a
+   * phone that locks between rolls comes back to it, and Link and Save work
+   * as they do for any other wheel. The address is rewritten in place, which
+   * does not fire `hashchange`, so the screen is not rebuilt under the typing.
+   * A preset or a dice expression replaces it outright: the text goes, and
+   * the address returns to the plain play screen.
+   */
+  let quickModel                        = quick && linked?.type === "list" ? linked : null;
+  let destroyed = false;
+  let addressTimer                                           ;
+  /** Encoding is asynchronous; only the newest one may write the address. */
+  let addressTurn = 0;
+  let wheelFrame = 0;
+  /** The quick wheel changed during a spin and is redrawn when it lands. */
+  let wheelStale = false;
+
+  const quickArea = h("textarea", {
+    class: "quick-options",
+    rows: "4",
+    placeholder: "Goblins\nBandits | 2\nNothing x3",
+    "aria-label": "Quick wheel: one option per line",
+    spellcheck: "false",
+  });
+  const quickOffer = h("input", {
+    type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "quick-offer",
+    "aria-label": "Offer this many to choose from", placeholder: "–",
+  });
+  const quickTooLong = h("p", {
+    class: "warning quick-too-long",
+    text: "This wheel is too long for a link. It still rolls, but the address keeps the last version that fitted, so save it to keep it.",
+  });
+  quickTooLong.hidden = true;
+  const quickCard = h("div", { class: "card quick-wheel" },
+    quickArea,
+    h("div", { class: "row tight quick-wheel-foot" },
+      h("label", { class: "row tight quick-offer-field faint" }, "Offer", quickOffer, "to choose from"),
+      h("span", { class: "spacer" }),
+      h("span", { class: "faint quick-hint", text: "“| 3” or “x3” weighs a line" }),
+    ),
+    quickTooLong,
+  );
+  quickCard.hidden = true;
+  const quickToggle = button("Quick wheel", () => setQuickOpen(quickCard.hidden === true), {
+    class: "quick-wheel-toggle", "aria-expanded": "false",
+  });
+
+  function setQuickOpen(open         )       {
+    quickCard.hidden = !open;
+    quickToggle.setAttribute("aria-expanded", String(open));
+    if (open) quickArea.focus({ preventScroll: true });
+  }
+
+  /** The offer typed beside the options, when it is one a file may hold. */
+  function quickOfferValue()                     {
+    const raw = quickOffer.value.trim();
+    const n = Number(raw);
+    const ok = raw !== "" && Number.isInteger(n) && n >= OFFER_MIN && n <= OFFER_MAX;
+    if (raw !== "" && !ok) quickOffer.setAttribute("aria-invalid", "true");
+    else quickOffer.removeAttribute("aria-invalid");
+    return ok ? n : undefined;
+  }
+
+  function onQuickInput()       {
+    const items = parseQuickOptions(quickArea.value);
+    if (items.length === 0) {
+      // Nothing typed is nothing to roll: back to the die the screen starts with.
+      if (quickModel) {
+        quickModel = null;
+        setRandomizer(adHocDice("d20"));
+      }
+      scheduleAddress();
+      return;
+    }
+    const now = nowIso();
+    const next                 = {
+      id: quickModel?.id ?? newId(),
+      type: "list",
+      name: "Quick wheel",
+      view: "wheel",
+      created: quickModel?.created ?? now,
+      modified: now,
+      items,
+    };
+    const offer = quickOfferValue();
+    if (offer !== undefined) next.offer = offer;
+    const onStage = quickModel !== null;
+    quickModel = next;
+    if (onStage) updateQuickInPlace(next);
+    else setRandomizer(next);
+    scheduleAddress();
+  }
+
+  /**
+   * The wheel follows the typing without the screen being rebuilt: the same
+   * stage, the same result, a redraw at most once a frame.
+   */
+  function updateQuickInPlace(next                )       {
+    randomizer = next;
+    // A roll held back or an offer on the table was drawn from the old
+    // options; what it would land on is no longer on the wheel.
+    if (roller.holding || roller.choosing) {
+      roller.discard();
+      result.clear("Ready");
+      rollButton.textContent = "Roll";
+      rollButton.disabled = false;
+    }
+    subtitle.textContent = describeType(next);
+    reserveResult();
+    updateHeaderControls();
+    if (roller.rolling) {
+      wheelStale = true;
+      return;
+    }
+    cancelAnimationFrame(wheelFrame);
+    wheelFrame = requestAnimationFrame(() => wheel?.refresh());
+  }
+
+  /** Throw the quick wheel away, as pressing a preset does. */
+  function leaveQuick()       {
+    if (!quickModel && !quickArea.value && !quickOffer.value) return;
+    quickModel = null;
+    quickArea.value = "";
+    quickOffer.value = "";
+    quickOffer.removeAttribute("aria-invalid");
+    quickTooLong.hidden = true;
+    setQuickOpen(false);
+    void writeAddress();
+  }
+
+  function scheduleAddress()       {
+    clearTimeout(addressTimer);
+    addressTimer = setTimeout(() => void writeAddress(), QUICK_DEBOUNCE_MS);
+  }
+
+  /** Save what is typed into the address now, if the wait has not already. */
+  const keepAddress = ()       => {
+    if (addressTimer !== undefined) void writeAddress();
+  };
+
+  async function writeAddress()                {
+    clearTimeout(addressTimer);
+    addressTimer = undefined;
+    const turn = ++addressTurn;
+    // Only the play screen's own address is this view's to rewrite; a press
+    // that has already taken the reader elsewhere wins.
+    const here = currentRoute();
+    if (destroyed || !(here.name === "play" || (here.name === "linked" && here.quick === true))) return;
+    const model = quickModel;
+    if (!model) {
+      quickTooLong.hidden = true;
+      if (here.name !== "play") history.replaceState(null, "", "#/");
+      return;
+    }
+    let payload        ;
+    try {
+      payload = await encodeRandomizer(model);
+    } catch {
+      return;
+    }
+    if (turn !== addressTurn || destroyed) return;
+    // Past the limit a link stops being something to paste about; the wheel
+    // keeps rolling from memory, and the address keeps what last fitted.
+    const tooLong = wheelLink(appBase(), payload).length > LINK_HARD_LIMIT;
+    quickTooLong.hidden = !tooLong;
+    if (!tooLong) history.replaceState(null, "", `#/roll?w=${payload}&quick=1`);
+  }
+
+  quickArea.addEventListener("input", onQuickInput);
+  quickOffer.addEventListener("input", onQuickInput);
+  quickArea.addEventListener("blur", keepAddress);
+  quickOffer.addEventListener("blur", keepAddress);
+  // A phone locks between rolls: whatever was typed last goes into the
+  // address before the page is put away.
+  window.addEventListener("pagehide", keepAddress);
+  document.addEventListener("visibilitychange", keepAddress);
 
   // ---- quick bar -----------------------------------------------------------
 
@@ -10655,6 +11296,7 @@ function createPlayView(
     e.preventDefault();
     const parsed = tryParse(expression.value.trim());
     if (!parsed.ok) return;
+    leaveQuick();
     setRandomizer(adHocDice(parsed.expression.normalized));
     void doRoll();
   });
@@ -10662,18 +11304,22 @@ function createPlayView(
   const quickbar = h("div", { class: "quickbar" },
     ...PRESETS.map((sides) =>
       button(`d${sides}`, () => {
+        leaveQuick();
         setRandomizer(adHocDice(`d${sides}`));
         void doRoll();
       }, { class: "preset" }),
     ),
     button("Coin", () => {
+      leaveQuick();
       setRandomizer(emptyRandomizer("coin", "Coin"));
       void doRoll();
     }),
     button("1–100", () => {
+      leaveQuick();
       setRandomizer(emptyRandomizer("number", "Number"));
       void doRoll();
     }),
+    quickToggle,
     expression,
     expressionError,
   );
@@ -10690,7 +11336,10 @@ function createPlayView(
     title.textContent = next.type === "dice" ? (next                          ).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
     editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    linkButton.hidden = !fixed && next !== quickModel;
     roller.discard();
+    rollButton.textContent = "Roll";
+    rollButton.disabled = false;
     reserveResult();
     result.clear("Ready");
     buildStage();
@@ -10716,7 +11365,7 @@ function createPlayView(
     const one = longestOutcome(randomizer);
     const n = randomizer.type === "list" ? rollCount() : 1;
     const longest = n > 1 ? Array.from({ length: n }, () => one).join(", ") : one;
-    result.reserve(longest, { seed: state.prefs.seed !== null });
+    result.reserve(longest, { seed: state.prefs.seed !== null, offer: offerSize(randomizer) });
   }
 
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer                          ).expression : randomizer.name });
@@ -10727,7 +11376,7 @@ function createPlayView(
   // A wheel that arrived in a link is nobody's until it is saved. The button
   // is one more quiet item in this row rather than anything that interrupts a
   // game: it is not offered at all in full screen, where the row is hidden.
-  const saveAdHoc = button(linked ? "Save to my library" : "Save to library", async () => {
+  const saveAdHoc = button(linked && !quick ? "Save to my library" : "Save to library", async () => {
     // Keep the identity it came with when nothing here already has it, so a
     // slide link by id finds this copy afterwards.
     const taken = state.library.findById(randomizer.id) !== null;
@@ -10824,6 +11473,7 @@ function createPlayView(
   const playCard = h("div", { class: "card play-card" }, header, stage, bagLine, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
+    fixed ? null : quickCard,
     playCard,
     ...(fixed ? [] : [shortcuts]),
     recent.el,
@@ -10856,6 +11506,14 @@ function createPlayView(
   buildStage();
   updateBagLine();
   updateHeaderControls();
+  // Reopened from its address: the text comes back, normalised, and the card
+  // is open so the table can go on typing.
+  if (quickModel) {
+    quickArea.value = quickText(quickModel.items);
+    quickOffer.value = quickModel.offer !== undefined ? String(quickModel.offer) : "";
+    quickCard.hidden = false;
+    quickToggle.setAttribute("aria-expanded", "true");
+  }
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
     const opened = randomizer.id;
     void bagLoad(opened).then(() => {
@@ -10881,7 +11539,9 @@ function createPlayView(
   const present = (on         )       => setPresenting(on, { exitButton, presentButton });
 
   const linkButton = button("Link…", () => void openLinkDialog(randomizer, node), { class: "ghost link-button" });
-  linkButton.hidden = !fixed;
+  // A quick wheel is shareable the moment it exists. The link carries the
+  // wheel, not the textarea: whoever opens it gets a wheel to roll.
+  linkButton.hidden = !fixed && randomizer !== quickModel;
 
   // Switch animation off for now without touching the settings — after the
   // fortieth roll of the evening nobody wants to watch the wheel.
@@ -10907,6 +11567,16 @@ function createPlayView(
       return;
     }
     if (typing) return;
+    // Cards on the table: a digit takes that card, and a card's own Enter or
+    // Space belongs to the card rather than to the Roll behind it.
+    if (roller.choosing) {
+      if (/^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        void roller.pick(Number(e.key) - 1);
+        return;
+      }
+      if ((e.target                      )?.closest?.(".offer-card")) return;
+    }
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       // A chain is rolled from its newest end: that is the randomizer the
@@ -10920,6 +11590,14 @@ function createPlayView(
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
+      // An offer nobody picked, like a hidden roll nobody revealed, goes with
+      // the screen; the quick wheel's address is only this screen's to write.
+      roller.discard();
+      destroyed = true;
+      clearTimeout(addressTimer);
+      cancelAnimationFrame(wheelFrame);
+      window.removeEventListener("pagehide", keepAddress);
+      document.removeEventListener("visibilitychange", keepAddress);
       // The full-screen class belongs to the app, which clears it before each
       // render: a view being torn down must not undo what the view replacing
       // it has already set up.
@@ -10927,6 +11605,11 @@ function createPlayView(
       unsubscribe();
     },
   };
+}
+
+/** How many outcomes a roll of this offers to choose from; 0 when it lands on one. */
+function offerSize(r            )         {
+  return r.type === "list" && r.offer !== undefined && r.offer >= OFFER_MIN ? r.offer : 0;
 }
 
 function describeType(r            )         {
@@ -10944,7 +11627,7 @@ function describeType(r            )         {
   }
 }
 
-// ---- src\ui\components\picker.ts ---------------------------------
+// ---- src/ui/components/picker.ts ---------------------------------
 /**
  * Choosing a randomizer from the library.
  *
@@ -11203,7 +11886,7 @@ function pickRandomizer(opts               )                                   {
   });
 }
 
-// ---- src\ui\storage-actions.ts -----------------------------------
+// ---- src/ui/storage-actions.ts -----------------------------------
 /**
  * The things you can do to where the library is kept.
  *
@@ -11464,7 +12147,7 @@ async function exportLibraryZip()                {
   );
 }
 
-// ---- src\ui\views\board.ts ---------------------------------------
+// ---- src/ui/views/board.ts ---------------------------------------
 /**
  * A board: several randomizers on one screen.
  *
@@ -11774,7 +12457,7 @@ function createBoardView(node             , params                              
     }
     // On a cell's own Roll the key belongs to that button: a keyboard user
     // who tabbed to one cell meant that cell, not the whole board.
-    if ((e.target                      )?.closest?.(".cell-roll, .chain-roll")) return;
+    if ((e.target                      )?.closest?.(".cell-roll, .chain-roll, .offer-card")) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       void rollEverything();
@@ -11857,7 +12540,7 @@ function createBoardView(node             , params                              
   };
 }
 
-// ---- src\import\listcsv.ts ---------------------------------------
+// ---- src/import/listcsv.ts ---------------------------------------
 /**
  * A list of outcomes as a spreadsheet.
  *
@@ -11883,7 +12566,7 @@ function listCsv(items                     )         {
   return rows.map((r) => r.map(csvCell).join(",")).join("\n");
 }
 
-// ---- src\ui\views\library.ts -------------------------------------
+// ---- src/ui/views/library.ts -------------------------------------
 /**
  * The library: the folder tree, search, and everything you can do to a
  * randomizer that is not editing its contents.
@@ -12296,7 +12979,7 @@ function glyphFor(node             )         {
   }
 }
 
-// ---- src\model\draft.ts ------------------------------------------
+// ---- src/model/draft.ts ------------------------------------------
 /**
  * Is this draft one the app could read back?
  *
@@ -12344,7 +13027,7 @@ function draftProblem(model            )                {
   return null;
 }
 
-// ---- src\ui\styles\palette.ts ------------------------------------
+// ---- src/ui/styles/palette.ts ------------------------------------
 /**
  * The Orangey colour palette: the 157 distinct colours of the dictionary
  * (two of the 159 share a hex with another and are folded in), imported with
@@ -12522,7 +13205,7 @@ const PALETTE                 = [
 ];
 // --- palette:end
 
-// ---- src\ui\components\swatch.ts ---------------------------------
+// ---- src/ui/components/swatch.ts ---------------------------------
 /**
  * The colour cell: a grid of named palette swatches, a free hex field, and a
  * way back to the automatic colour (plan C8.2).
@@ -12691,7 +13374,7 @@ function openSwatchPicker(anchor             , opts                     )       
   (grid.querySelector("button")                      )?.focus();
 }
 
-// ---- src\ui\components\reaction.ts -------------------------------
+// ---- src/ui/components/reaction.ts -------------------------------
 /**
  * The control that tags an outcome for Orangey.
  *
@@ -12743,7 +13426,7 @@ function reactionControl(opts                        )                    {
   return el;
 }
 
-// ---- src\ui\components\picture.ts --------------------------------
+// ---- src/ui/components/picture.ts --------------------------------
 /**
  * The picture an outcome can carry.
  *
@@ -12859,7 +13542,7 @@ function pictureCell(opts                    )              {
   return holder;
 }
 
-// ---- src\ui\components\feelpanel.ts ------------------------------
+// ---- src/ui/components/feelpanel.ts ------------------------------
 /**
  * The controls for one section of the Feel settings — wheel, dice or coin.
  *
@@ -12948,7 +13631,7 @@ function sectionFor(type        )                                               
   return type === "list" ? "wheel" : type === "dice" ? "dice" : type === "coin" ? "coin" : null;
 }
 
-// ---- src\ui\views\editor.ts --------------------------------------
+// ---- src/ui/views/editor.ts --------------------------------------
 /**
  * The editor, and inside it the outcome table (plan C9).
  *
@@ -13155,6 +13838,25 @@ function createListEditor(node             , initial                , from      
     saveNow(bagToggle);
   });
   const bagField = h("label", { class: "row tight" }, bagToggle, "Draw without putting back");
+
+  // Make a choice. Empty is off. What is typed is kept in the draft even when
+  // it is out of range, so it can be finished; `draftProblem` holds the file
+  // at its last good state meanwhile, as for any other field.
+  const offerInput = h("input", {
+    type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "offer-input",
+    value: model.offer !== undefined ? String(model.offer) : "", placeholder: "–",
+    "aria-label": "Offer this many outcomes to choose from",
+  });
+  offerInput.addEventListener("input", () => {
+    const raw = offerInput.value.trim();
+    model = { ...model, offer: raw === "" ? undefined : Number(raw) };
+    if (raw === "") delete (model                      ).offer;
+    // Cards drawn for the old number would not fit the row the new one lays out.
+    previewRoller.discard();
+    result.clear("Try it");
+    save(offerInput);
+  });
+  const offerField = h("label", { class: "row tight offer-field" }, "Offer", offerInput, "to choose from");
 
   const viewToggle = h("div", { class: "segmented", role: "group", "aria-label": "How this looks when rolled" });
   const renderViewToggle = () => {
@@ -13658,7 +14360,11 @@ function createListEditor(node             , initial                , from      
   async function rollNow()                {
     // The labels change as they are typed, so the preview re-reserves its
     // height on every try rather than once at the start.
-    result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null });
+    const offer = model.offer !== undefined && Number.isInteger(model.offer) && model.offer >= OFFER_MIN && model.offer <= OFFER_MAX ? model.offer : 0;
+    result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null, offer });
+    // Trying it again while cards are out deals a fresh hand: this is a
+    // preview, and nothing it draws is kept.
+    if (previewRoller.choosing) previewRoller.discard();
     await previewRoller.roll();
   }
 
@@ -13703,7 +14409,7 @@ function createListEditor(node             , initial                , from      
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, slicesField, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, offerField, slicesField, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),
@@ -13895,7 +14601,7 @@ function createSimpleEditor(node             )       {
   };
 }
 
-// ---- src\import\parse.ts -----------------------------------------
+// ---- src/import/parse.ts -----------------------------------------
 /**
  * Delimited-text parsing (plan C7).
  *
@@ -13990,7 +14696,7 @@ function looksLikeJson(text        )          {
   return t.startsWith("{") || t.startsWith("[");
 }
 
-// ---- src\import\detect.ts ----------------------------------------
+// ---- src/import/detect.ts ----------------------------------------
 /**
  * Guessing the shape of pasted or dropped data (plan C7).
  *
@@ -14161,7 +14867,7 @@ function guessColumns(rows            , hasHeader         )              {
   };
 }
 
-// ---- src\import\map.ts -------------------------------------------
+// ---- src/import/map.ts -------------------------------------------
 /**
  * Turning detected rows into outcomes, with a report the user reads before
  * anything is created (plan C7).
@@ -14407,7 +15113,7 @@ function itemsFromJson(text        )               {
   return { items, report, usable: items.length > 0 };
 }
 
-// ---- src\ui\views\importer.ts ------------------------------------
+// ---- src/ui/views/importer.ts ------------------------------------
 /**
  * The import wizard (plan C7).
  *
@@ -14873,7 +15579,7 @@ async function absorbArchive(entries            )                               
   return files;
 }
 
-// ---- src\ui\views\history.ts -------------------------------------
+// ---- src/ui/views/history.ts -------------------------------------
 /**
  * History (plan C7/L). Append-only: a roll cannot honestly be un-rolled, so
  * there is "remove entry" and no undo (decision D13). A roll that the table
@@ -15026,7 +15732,7 @@ function createHistoryView()       {
   return { el, destroy: () => unsubscribe() };
 }
 
-// ---- src\ui\mascot\parts.ts --------------------------------------
+// ---- src/ui/mascot/parts.ts --------------------------------------
 /**
  * Orangey's anatomy, as the owner drew it.
  *
@@ -15274,7 +15980,7 @@ function bodyPathFrom(points                                        )         {
   return `${d} ${x0.toFixed(2)},${y0.toFixed(2)}Z`;
 }
 
-// ---- src\ui\mascot\springs.ts ------------------------------------
+// ---- src/ui/mascot/springs.ts ------------------------------------
 /**
  * The springs under Orangey, and the field that bends his outline.
  *
@@ -15361,7 +16067,7 @@ function mascotField(x        , y        , m           , gain        )          
   ];
 }
 
-// ---- src\ui\mascot\model.ts --------------------------------------
+// ---- src/ui/mascot/model.ts --------------------------------------
 /**
  * Orangey's motion, as numbers.
  *
@@ -15642,7 +16348,7 @@ class MascotModel {
 const MASCOT_FEET_X = 96;
 const MASCOT_FEET_Y = MASCOT_BASE_Y;
 
-// ---- src\ui\mascot\view.ts ---------------------------------------
+// ---- src/ui/mascot/view.ts ---------------------------------------
 /**
  * Draws a MascotFrame into the SVG. Nothing here decides anything; it writes
  * attributes. Ten-odd setAttribute calls per frame on one small SVG.
@@ -15721,7 +16427,7 @@ class MascotView {
   }
 }
 
-// ---- src\ui\mascot\ticker.ts -------------------------------------
+// ---- src/ui/mascot/ticker.ts -------------------------------------
 /**
  * One requestAnimationFrame loop for every running mascot.
  *
@@ -15787,7 +16493,7 @@ class MascotTickerImpl {
 
 const mascotTicker = new MascotTickerImpl();
 
-// ---- src\ui\mascot\mascot.ts -------------------------------------
+// ---- src/ui/mascot/mascot.ts -------------------------------------
 /**
  * One Orangey: a model, a view, and a place on the shared ticker.
  *
@@ -15892,7 +16598,7 @@ function createMascot(opts                = {})         {
   return mascot;
 }
 
-// ---- src\ui\mascot\reactions.ts ----------------------------------
+// ---- src/ui/mascot/reactions.ts ----------------------------------
 /**
  * What Orangey does about what happens — as a table.
  *
@@ -15962,7 +16668,7 @@ function mayInterrupt(held                       , next                )        
   return held === null || next.salience >= held.salience;
 }
 
-// ---- src\ui\mascot\states.ts -------------------------------------
+// ---- src/ui/mascot/states.ts -------------------------------------
 /**
  * The five states Orangey ships with.
  *
@@ -16077,7 +16783,7 @@ function isMascotState(name         )                          {
   return typeof name === "string" && (MASCOT_BUILTIN_STATES                     ).includes(name);
 }
 
-// ---- src\ui\single.ts --------------------------------------------
+// ---- src/ui/single.ts --------------------------------------------
 /**
  * Which build this is, and where the other one lives.
  *
@@ -16101,7 +16807,7 @@ function releasesUrl()         {
   return `${REPO_URL}/releases/latest`;
 }
 
-// ---- src\ui\views\settings.ts ------------------------------------
+// ---- src/ui/views/settings.ts ------------------------------------
 /**
  * Settings, most of which is Feel (plan C10, decision D22).
  *
@@ -16527,7 +17233,7 @@ function createSettingsView()       {
   };
 }
 
-// ---- src\ui\mascot\host.ts ---------------------------------------
+// ---- src/ui/mascot/host.ts ---------------------------------------
 /**
  * The one Orangey the app shows.
  *
@@ -16748,7 +17454,7 @@ class MascotHost {
   }
 }
 
-// ---- src\ui\app.ts -----------------------------------------------
+// ---- src/ui/app.ts -----------------------------------------------
 /**
  * The shell: layout, routing, the tab bar, toasts and global shortcuts.
  */
@@ -16897,7 +17603,7 @@ function mountApp(root             )             {
         void decodeRandomizer(payload).then(
           (randomizer) => {
             if (!stillHere()) return;
-            setMain(createPlayView(null, route.params, randomizer));
+            setMain(createPlayView(null, route.params, randomizer, route.quick === true));
           },
           (error         ) => {
             if (!stillHere()) return;
@@ -17094,7 +17800,7 @@ function mountApp(root             )             {
   return mascot;
 }
 
-// ---- src\main.ts -------------------------------------------------
+// ---- src/main.ts -------------------------------------------------
 async function start()                {
   const root = document.getElementById("app");
   if (!root) throw new Error("no #app element");

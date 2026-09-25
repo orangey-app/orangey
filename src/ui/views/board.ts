@@ -307,7 +307,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     }
     // On a cell's own Roll the key belongs to that button: a keyboard user
     // who tabbed to one cell meant that cell, not the whole board.
-    if ((e.target as HTMLElement | null)?.closest?.(".cell-roll, .chain-roll")) return;
+    if ((e.target as HTMLElement | null)?.closest?.(".cell-roll, .chain-roll, .offer-card")) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       void rollEverything();

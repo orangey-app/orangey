@@ -7,7 +7,9 @@
  * home, so that a stray press cannot swap out what the table is rolling.
  */
 
-import { emptyRandomizer, newId, type ListItem, type Randomizer, type Rollable } from "../../model/randomizer.ts";
+import { emptyRandomizer, newId, nowIso, OFFER_MAX, OFFER_MIN, type ListItem, type ListRandomizer, type Randomizer, type Rollable } from "../../model/randomizer.ts";
+import { parseQuickOptions, quickText } from "../../import/quick.ts";
+import { encodeRandomizer, LINK_HARD_LIMIT } from "../../model/link.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
 import { button, h, isTyping, setChildren } from "../dom.ts";
@@ -23,8 +25,8 @@ import { createRoller } from "../rolling.ts";
 import { bagDrawn, bagLoad, bagRefill } from "../bag.ts";
 import { openLinkDialog } from "../components/linkdialog.ts";
 import { isPresenting, setPresenting } from "../presenting.ts";
-import { effectiveFeel } from "../feel.ts";
-import { navigate, type LinkParams } from "../router.ts";
+import { effectiveFeel, QUICK_DEBOUNCE_MS } from "../feel.ts";
+import { appBase, currentRoute, navigate, wheelLink, type LinkParams } from "../router.ts";
 import type { View } from "../view.ts";
 import { displayPercents, isRollable, withoutDrawn } from "../../core/weighted.ts";
 
@@ -33,15 +35,18 @@ const PRESETS = [4, 6, 8, 10, 12, 20, 100];
 /**
  * @param node     a randomizer from the library, or null
  * @param linked   a randomizer that arrived inside a link, when there is one
+ * @param quick    the link is a quick wheel being typed at this table, not a
+ *                 wheel someone sent: open the home screen with its text back
  */
 export function createPlayView(
   node: LibraryNode | null,
   params: LinkParams = { roll: false, present: false },
   linked: Randomizer | null = null,
+  quick = false,
 ): View {
   let randomizer: Randomizer = node?.randomizer ?? linked ?? adHocDice("d20");
   /** Opened from the library or from a link: either way, one fixed randomizer. */
-  const fixed = node !== null || linked !== null;
+  const fixed = node !== null || (linked !== null && !quick);
 
   const result = createResultPanel(fixed ? "Ready" : "Pick something to roll");
   const stage = h("div", { class: "stage" });
@@ -82,8 +87,11 @@ export function createPlayView(
   }
 
   function updateHeaderControls(): void {
-    countField.hidden = randomizer.type !== "list";
-    if (randomizer.type !== "list") countInput.value = "1";
+    // A wheel that offers a choice is not also rolled six at a time: the two
+    // answer different questions, and together they answer neither.
+    const many = randomizer.type === "list" && !offerSize(randomizer);
+    countField.hidden = !many;
+    if (!many) countInput.value = "1";
   }
 
   let wheel: ReturnType<typeof createWheel> | null = null;
@@ -157,9 +165,17 @@ export function createPlayView(
     // is what `roller.roll()` reads as "skip".
     onStart: (willAnimate: boolean) => {
       rollButton.textContent = willAnimate ? "Skip" : "Roll";
+      rollButton.disabled = false;
     },
     onEnd: () => {
       rollButton.textContent = "Roll";
+      rollButton.disabled = false;
+      // The quick wheel changed while this roll was spinning; redraw it now
+      // rather than under the pointer.
+      if (wheelStale) {
+        wheelStale = false;
+        wheel?.refresh();
+      }
     },
     // The count changes at the landing; the wheel does not. Taking the
     // winning slice off the wheel the instant it wins would make it vanish
@@ -173,6 +189,13 @@ export function createPlayView(
     onHeld: () => {
       rollButton.textContent = "Reveal";
     },
+    // Cards are out: the next press is on a card, so the button says so and
+    // stays out of the way until one is taken.
+    onChoosing: () => {
+      rollButton.textContent = "Choose one";
+      rollButton.disabled = true;
+    },
+    focusOffer: () => true,
   });
 
   const doRoll = (): Promise<void> => {
@@ -182,6 +205,188 @@ export function createPlayView(
   };
 
   const skip = (): void => roller.skip();
+
+  // ---- quick wheel ---------------------------------------------------------
+
+  /**
+   * A wheel typed at the table: one option per line, rolled at once, kept
+   * only if saved.
+   *
+   * It is a randomizer in the address like any wheel sent in a link, so a
+   * phone that locks between rolls comes back to it, and Link and Save work
+   * as they do for any other wheel. The address is rewritten in place, which
+   * does not fire `hashchange`, so the screen is not rebuilt under the typing.
+   * A preset or a dice expression replaces it outright: the text goes, and
+   * the address returns to the plain play screen.
+   */
+  let quickModel: ListRandomizer | null = quick && linked?.type === "list" ? linked : null;
+  let destroyed = false;
+  let addressTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Encoding is asynchronous; only the newest one may write the address. */
+  let addressTurn = 0;
+  let wheelFrame = 0;
+  /** The quick wheel changed during a spin and is redrawn when it lands. */
+  let wheelStale = false;
+
+  const quickArea = h("textarea", {
+    class: "quick-options",
+    rows: "4",
+    placeholder: "Goblins\nBandits | 2\nNothing x3",
+    "aria-label": "Quick wheel: one option per line",
+    spellcheck: "false",
+  });
+  const quickOffer = h("input", {
+    type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "quick-offer",
+    "aria-label": "Offer this many to choose from", placeholder: "–",
+  });
+  const quickTooLong = h("p", {
+    class: "warning quick-too-long",
+    text: "This wheel is too long for a link. It still rolls, but the address keeps the last version that fitted, so save it to keep it.",
+  });
+  quickTooLong.hidden = true;
+  const quickCard = h("div", { class: "card quick-wheel" },
+    quickArea,
+    h("div", { class: "row tight quick-wheel-foot" },
+      h("label", { class: "row tight quick-offer-field faint" }, "Offer", quickOffer, "to choose from"),
+      h("span", { class: "spacer" }),
+      h("span", { class: "faint quick-hint", text: "“| 3” or “x3” weighs a line" }),
+    ),
+    quickTooLong,
+  );
+  quickCard.hidden = true;
+  const quickToggle = button("Quick wheel", () => setQuickOpen(quickCard.hidden === true), {
+    class: "quick-wheel-toggle", "aria-expanded": "false",
+  });
+
+  function setQuickOpen(open: boolean): void {
+    quickCard.hidden = !open;
+    quickToggle.setAttribute("aria-expanded", String(open));
+    if (open) quickArea.focus({ preventScroll: true });
+  }
+
+  /** The offer typed beside the options, when it is one a file may hold. */
+  function quickOfferValue(): number | undefined {
+    const raw = quickOffer.value.trim();
+    const n = Number(raw);
+    const ok = raw !== "" && Number.isInteger(n) && n >= OFFER_MIN && n <= OFFER_MAX;
+    if (raw !== "" && !ok) quickOffer.setAttribute("aria-invalid", "true");
+    else quickOffer.removeAttribute("aria-invalid");
+    return ok ? n : undefined;
+  }
+
+  function onQuickInput(): void {
+    const items = parseQuickOptions(quickArea.value);
+    if (items.length === 0) {
+      // Nothing typed is nothing to roll: back to the die the screen starts with.
+      if (quickModel) {
+        quickModel = null;
+        setRandomizer(adHocDice("d20"));
+      }
+      scheduleAddress();
+      return;
+    }
+    const now = nowIso();
+    const next: ListRandomizer = {
+      id: quickModel?.id ?? newId(),
+      type: "list",
+      name: "Quick wheel",
+      view: "wheel",
+      created: quickModel?.created ?? now,
+      modified: now,
+      items,
+    };
+    const offer = quickOfferValue();
+    if (offer !== undefined) next.offer = offer;
+    const onStage = quickModel !== null;
+    quickModel = next;
+    if (onStage) updateQuickInPlace(next);
+    else setRandomizer(next);
+    scheduleAddress();
+  }
+
+  /**
+   * The wheel follows the typing without the screen being rebuilt: the same
+   * stage, the same result, a redraw at most once a frame.
+   */
+  function updateQuickInPlace(next: ListRandomizer): void {
+    randomizer = next;
+    // A roll held back or an offer on the table was drawn from the old
+    // options; what it would land on is no longer on the wheel.
+    if (roller.holding || roller.choosing) {
+      roller.discard();
+      result.clear("Ready");
+      rollButton.textContent = "Roll";
+      rollButton.disabled = false;
+    }
+    subtitle.textContent = describeType(next);
+    reserveResult();
+    updateHeaderControls();
+    if (roller.rolling) {
+      wheelStale = true;
+      return;
+    }
+    cancelAnimationFrame(wheelFrame);
+    wheelFrame = requestAnimationFrame(() => wheel?.refresh());
+  }
+
+  /** Throw the quick wheel away, as pressing a preset does. */
+  function leaveQuick(): void {
+    if (!quickModel && !quickArea.value && !quickOffer.value) return;
+    quickModel = null;
+    quickArea.value = "";
+    quickOffer.value = "";
+    quickOffer.removeAttribute("aria-invalid");
+    quickTooLong.hidden = true;
+    setQuickOpen(false);
+    void writeAddress();
+  }
+
+  function scheduleAddress(): void {
+    clearTimeout(addressTimer);
+    addressTimer = setTimeout(() => void writeAddress(), QUICK_DEBOUNCE_MS);
+  }
+
+  /** Save what is typed into the address now, if the wait has not already. */
+  const keepAddress = (): void => {
+    if (addressTimer !== undefined) void writeAddress();
+  };
+
+  async function writeAddress(): Promise<void> {
+    clearTimeout(addressTimer);
+    addressTimer = undefined;
+    const turn = ++addressTurn;
+    // Only the play screen's own address is this view's to rewrite; a press
+    // that has already taken the reader elsewhere wins.
+    const here = currentRoute();
+    if (destroyed || !(here.name === "play" || (here.name === "linked" && here.quick === true))) return;
+    const model = quickModel;
+    if (!model) {
+      quickTooLong.hidden = true;
+      if (here.name !== "play") history.replaceState(null, "", "#/");
+      return;
+    }
+    let payload: string;
+    try {
+      payload = await encodeRandomizer(model);
+    } catch {
+      return;
+    }
+    if (turn !== addressTurn || destroyed) return;
+    // Past the limit a link stops being something to paste about; the wheel
+    // keeps rolling from memory, and the address keeps what last fitted.
+    const tooLong = wheelLink(appBase(), payload).length > LINK_HARD_LIMIT;
+    quickTooLong.hidden = !tooLong;
+    if (!tooLong) history.replaceState(null, "", `#/roll?w=${payload}&quick=1`);
+  }
+
+  quickArea.addEventListener("input", onQuickInput);
+  quickOffer.addEventListener("input", onQuickInput);
+  quickArea.addEventListener("blur", keepAddress);
+  quickOffer.addEventListener("blur", keepAddress);
+  // A phone locks between rolls: whatever was typed last goes into the
+  // address before the page is put away.
+  window.addEventListener("pagehide", keepAddress);
+  document.addEventListener("visibilitychange", keepAddress);
 
   // ---- quick bar -----------------------------------------------------------
 
@@ -210,6 +415,7 @@ export function createPlayView(
     e.preventDefault();
     const parsed = tryParse(expression.value.trim());
     if (!parsed.ok) return;
+    leaveQuick();
     setRandomizer(adHocDice(parsed.expression.normalized));
     void doRoll();
   });
@@ -217,18 +423,22 @@ export function createPlayView(
   const quickbar = h("div", { class: "quickbar" },
     ...PRESETS.map((sides) =>
       button(`d${sides}`, () => {
+        leaveQuick();
         setRandomizer(adHocDice(`d${sides}`));
         void doRoll();
       }, { class: "preset" }),
     ),
     button("Coin", () => {
+      leaveQuick();
       setRandomizer(emptyRandomizer("coin", "Coin"));
       void doRoll();
     }),
     button("1–100", () => {
+      leaveQuick();
       setRandomizer(emptyRandomizer("number", "Number"));
       void doRoll();
     }),
+    quickToggle,
     expression,
     expressionError,
   );
@@ -245,7 +455,10 @@ export function createPlayView(
     title.textContent = next.type === "dice" ? (next as { expression: string }).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
     editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    linkButton.hidden = !fixed && next !== quickModel;
     roller.discard();
+    rollButton.textContent = "Roll";
+    rollButton.disabled = false;
     reserveResult();
     result.clear("Ready");
     buildStage();
@@ -271,7 +484,7 @@ export function createPlayView(
     const one = longestOutcome(randomizer);
     const n = randomizer.type === "list" ? rollCount() : 1;
     const longest = n > 1 ? Array.from({ length: n }, () => one).join(", ") : one;
-    result.reserve(longest, { seed: state.prefs.seed !== null });
+    result.reserve(longest, { seed: state.prefs.seed !== null, offer: offerSize(randomizer) });
   }
 
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer as { expression: string }).expression : randomizer.name });
@@ -282,7 +495,7 @@ export function createPlayView(
   // A wheel that arrived in a link is nobody's until it is saved. The button
   // is one more quiet item in this row rather than anything that interrupts a
   // game: it is not offered at all in full screen, where the row is hidden.
-  const saveAdHoc = button(linked ? "Save to my library" : "Save to library", async () => {
+  const saveAdHoc = button(linked && !quick ? "Save to my library" : "Save to library", async () => {
     // Keep the identity it came with when nothing here already has it, so a
     // slide link by id finds this copy afterwards.
     const taken = state.library.findById(randomizer.id) !== null;
@@ -379,6 +592,7 @@ export function createPlayView(
   const playCard = h("div", { class: "card play-card" }, header, stage, bagLine, result.el, rollButton);
   const el = h("div", { class: "play" },
     fixed ? homeBar : quickbar,
+    fixed ? null : quickCard,
     playCard,
     ...(fixed ? [] : [shortcuts]),
     recent.el,
@@ -411,6 +625,14 @@ export function createPlayView(
   buildStage();
   updateBagLine();
   updateHeaderControls();
+  // Reopened from its address: the text comes back, normalised, and the card
+  // is open so the table can go on typing.
+  if (quickModel) {
+    quickArea.value = quickText(quickModel.items);
+    quickOffer.value = quickModel.offer !== undefined ? String(quickModel.offer) : "";
+    quickCard.hidden = false;
+    quickToggle.setAttribute("aria-expanded", "true");
+  }
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
     const opened = randomizer.id;
     void bagLoad(opened).then(() => {
@@ -436,7 +658,9 @@ export function createPlayView(
   const present = (on: boolean): void => setPresenting(on, { exitButton, presentButton });
 
   const linkButton = button("Link…", () => void openLinkDialog(randomizer, node), { class: "ghost link-button" });
-  linkButton.hidden = !fixed;
+  // A quick wheel is shareable the moment it exists. The link carries the
+  // wheel, not the textarea: whoever opens it gets a wheel to roll.
+  linkButton.hidden = !fixed && randomizer !== quickModel;
 
   // Switch animation off for now without touching the settings — after the
   // fortieth roll of the evening nobody wants to watch the wheel.
@@ -462,6 +686,16 @@ export function createPlayView(
       return;
     }
     if (typing) return;
+    // Cards on the table: a digit takes that card, and a card's own Enter or
+    // Space belongs to the card rather than to the Roll behind it.
+    if (roller.choosing) {
+      if (/^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        void roller.pick(Number(e.key) - 1);
+        return;
+      }
+      if ((e.target as HTMLElement | null)?.closest?.(".offer-card")) return;
+    }
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       // A chain is rolled from its newest end: that is the randomizer the
@@ -475,6 +709,14 @@ export function createPlayView(
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
+      // An offer nobody picked, like a hidden roll nobody revealed, goes with
+      // the screen; the quick wheel's address is only this screen's to write.
+      roller.discard();
+      destroyed = true;
+      clearTimeout(addressTimer);
+      cancelAnimationFrame(wheelFrame);
+      window.removeEventListener("pagehide", keepAddress);
+      document.removeEventListener("visibilitychange", keepAddress);
       // The full-screen class belongs to the app, which clears it before each
       // render: a view being torn down must not undo what the view replacing
       // it has already set up.
@@ -482,6 +724,11 @@ export function createPlayView(
       unsubscribe();
     },
   };
+}
+
+/** How many outcomes a roll of this offers to choose from; 0 when it lands on one. */
+function offerSize(r: Randomizer): number {
+  return r.type === "list" && r.offer !== undefined && r.offer >= OFFER_MIN ? r.offer : 0;
 }
 
 function describeType(r: Randomizer): string {

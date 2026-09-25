@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { CryptoSource, SeededSource, seedHash64, hash32, intFromWords } from "../../src/core/rng.ts";
-import { rollListMany } from "../../src/ui/roll.ts";
+import { chosenFromOffer, offerFromList, rollListMany } from "../../src/ui/roll.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import {
   NotRollableError,
@@ -146,6 +146,38 @@ describe("weighted selection", () => {
     assert.equal(labels.length, 2, `asked for 5 with 2 left, got ${out.text}`);
     assert.deepEqual([...labels].sort(), ["Three", "Two"]);
     assert.deepEqual(out.indices, out.indices?.slice().filter((i) => i !== 0), "a drawn outcome came up again");
+  });
+
+  test("an offer draws different outcomes, keeps their places, and respects a bag", () => {
+    const list = {
+      ...emptyRandomizer("list", "Hooks"),
+      items: ["Ruin", "Signal", "Wreck", "Feud", "Plague"].map((label) => makeItem(label, 1)),
+    } as ListRandomizer;
+    list.items[3].description = "an old one";
+
+    const offer = offerFromList(list, 3, new SeededSource("offer"));
+    assert.equal(offer.length, 3);
+    assert.equal(new Set(offer.map((o) => o.itemIndex)).size, 3, "an offer never shows the same outcome twice");
+    for (const o of offer) {
+      // The index is the outcome's place in the whole list, not on the table:
+      // colours, the chain and the bag all read it.
+      assert.equal(list.items[o.itemIndex!].label, o.text);
+    }
+    // The same seed deals the same hand.
+    assert.deepEqual(offerFromList(list, 3, new SeededSource("offer")).map((o) => o.text), offer.map((o) => o.text));
+
+    // A pick is that outcome, with what it was chosen from and not its odds.
+    const picked = chosenFromOffer(list.name, offer, 1);
+    assert.equal(picked.text, offer[1].text);
+    assert.equal(picked.itemIndex, offer[1].itemIndex);
+    assert.deepEqual(picked.offered, offer.map((o) => o.text));
+    assert.match(picked.detail!, /^(?:.* · )?chosen from /);
+    assert.doesNotMatch(picked.detail!, /%/);
+
+    // A bag with two left offers the two; asking beyond the list offers all.
+    const bag = { ...list, withoutReplacement: true, items: withoutDrawn(list.items, new Set(list.items.slice(0, 3).map((i) => i.id))) };
+    assert.deepEqual(offerFromList(bag, 3, new SeededSource("bag-offer")).map((o) => o.text).sort(), ["Feud", "Plague"]);
+    assert.equal(offerFromList(list, 12, new SeededSource("all")).length, 5);
   });
 
   test("a bag empties one outcome at a time, and the list keeps its order", () => {

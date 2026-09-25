@@ -22,6 +22,9 @@ describe("routes", () => {
       ["a linked randomizer", "#/roll?w=0abc-_123", { name: "linked", payload: "0abc-_123" }],
       ["a linked randomizer that rolls and presents", "#/roll?w=0abc&roll=1&present=1", { name: "linked", payload: "0abc" }],
       ["a roll route carrying nothing", "#/roll?w=", { name: "play" }],
+      // a quick wheel's own address reopens the text box; a sent wheel does not
+      ["a quick wheel", "#/roll?w=0abc&quick=1", { name: "linked", payload: "0abc", quick: true }],
+      ["a sent wheel is not quick", "#/roll?w=0abc", { name: "linked", quick: undefined }],
       // a query must never be mistaken for part of what it qualifies
       ["a query beside a path", "#/r/forest.orangey.json?roll=1", { name: "randomizer", path: "forest.orangey.json" }],
       // an empty argument means look nothing up, so fall back rather than 404

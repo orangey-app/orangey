@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **A quick wheel.** The home screen has a Quick wheel button: type the
+  options one per line and the wheel is there as you type, ready to roll.
+  `| 3` or `x3` after a line weighs it. It lives in the page's address, so a
+  phone that locks between rolls comes back to it, and Link and Save to
+  library work as for any wheel; a dice preset throws it away.
+- **Make a choice.** A wheel can offer several outcomes and let the player
+  take one: set "Offer … to choose from" in its editor (or beside the quick
+  wheel), and Roll deals that many different outcomes as cards. The card
+  taken is the outcome — it goes to history with what it was chosen from,
+  opens what it points at, and in bag mode only it leaves the bag. Cards
+  can be picked with the digits 1 to 9. Hidden rolls deal them face down.
+
+## 0.5.1
+
+Fixes for iPhone and iPad, and one typeface throughout. (The files in this
+release still give their version as 0.5.0: the number was not bumped before
+the tag. Nothing depends on it — installed copies update from the content,
+not the number.)
+
 - **iPhone and iPad on iOS 18 get a library.** Safari 18 — and every browser
   on iOS 18, since they all run on its engine — has a private filesystem that
   can be listed but not written to. Orangey chose it, and then every write

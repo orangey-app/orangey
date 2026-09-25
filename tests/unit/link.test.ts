@@ -35,6 +35,8 @@ describe("a randomizer inside a link", () => {
     assert.equal(after.id, before.id, "the identity travels, so saving it can keep it");
     assert.equal(after.view, "wheel");
     assert.deepEqual(after.feel, before.feel, "the author's spin travels with the wheel");
+    const offering = (await decodeRandomizer(await encodeRandomizer({ ...before, offer: 3 }))) as ListRandomizer;
+    assert.equal(offering.offer, 3, "a wheel that offers a choice still offers it at the other end");
     assert.deepEqual(
       after.items.map((i) => [i.label, i.weight, i.color ?? null, i.reaction ?? null, i.disabled ?? false]),
       before.items.map((i) => [i.label, i.weight, i.color ?? null, i.reaction ?? null, i.disabled ?? false]),

@@ -45,6 +45,12 @@ export interface Outcome {
    * history can keep the dice behind "3 wolves" without the rest.
    */
   rolled?: string[];
+  /**
+   * The outcomes a choice was made from, when this one was picked from an
+   * offer: "chosen from A, B, C" is part of what happened, and history keeps
+   * it with the dice.
+   */
+  offered?: string[];
 }
 
 export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
@@ -122,7 +128,17 @@ function expandInlineDice(text: string, rng: RandomSource, rolled: string[]): st
 }
 
 function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
-  const index = pickWeightedIndex(r.items, rng);
+  return listOutcome(r, pickWeightedIndex(r.items, rng), rng);
+}
+
+/**
+ * One outcome of a list, as the table sees it, once the pick is made.
+ *
+ * Shared by a single roll and an offer, so a card in an offer says exactly
+ * what the same outcome would have said had it been rolled on its own. The
+ * pick is the caller's; the only draws here are the dice in the text.
+ */
+function listOutcome(r: ListRandomizer, index: number, rng: RandomSource): Outcome {
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
@@ -177,6 +193,45 @@ export function rollListMany(r: ListRandomizer, n: number, rng: RandomSource, dr
     // Deliberately no itemIndex, image or reaction: see above.
     indices,
     ...(rolled.length ? { rolled } : {}),
+  };
+}
+
+/**
+ * Make a choice: draw `m` different outcomes for the player to pick from.
+ *
+ * Weighted and without putting back, from what is in play — the caller hands
+ * over the list with drawn (bag) outcomes already marked, exactly as it would
+ * for a single roll, so indices stay those of the original list. Fewer come
+ * back when fewer can come up. A path of its own (P12): no existing roll
+ * draws any differently for it.
+ *
+ * All the picks happen first and the dice written into the offered texts
+ * after them, in the order drawn, which is the order a single roll uses too.
+ */
+export function offerFromList(r: ListRandomizer, m: number, rng: RandomSource): Outcome[] {
+  const wanted = Math.max(1, Math.trunc(m));
+  const indices = drawWithoutReplacement(r.items, Math.min(wanted, rollableIndices(r.items).length), rng);
+  return indices.map((index) => listOutcome(r, index, rng));
+}
+
+/**
+ * The outcome a player picked from an offer, ready to land: its own text,
+ * picture and reaction, and a detail line that says what else was offered.
+ */
+export function chosenFromOffer(name: string, offer: readonly Outcome[], at: number): Outcome {
+  const chosen = offer[at];
+  const labels = offer.map((o) => o.text);
+  const note = labels.length > 1 ? `chosen from ${labels.join(", ")}` : "the only one that could come up";
+  // A single roll's detail ends with the outcome's odds, which say nothing
+  // about a pick; the dice and the description before them still apply.
+  const detail = chosen.detail ?? "";
+  const cut = detail.lastIndexOf(" · ");
+  const kept = cut < 0 ? "" : detail.slice(0, cut);
+  return {
+    ...chosen,
+    detail: [kept, note].filter(Boolean).join(" · "),
+    speak: `${name}: ${chosen.text}, ${note}.`,
+    ...(labels.length > 1 ? { offered: labels } : {}),
   };
 }
 

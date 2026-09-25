@@ -75,7 +75,14 @@ nothing has to add up to 100. Segments take up the space their weight deserves.
 **Draw without putting back** turns a wheel into a bag: what came up stays out
 until the bag is empty. The **×** beside Roll draws several at once, and
 **Hidden** rolls behind the screen — the answer waits until you choose to
-reveal it.
+reveal it. **Offer … to choose from** makes a wheel deal that many different
+outcomes as cards, and the one the player takes is the outcome: "here are
+three hooks, take one".
+
+**Quick wheel.** On the home screen, type the options one per line — `| 3` or
+`x3` after a line weighs it — and the wheel follows as you type. It rolls at
+once, it survives the phone locking, and it is gone when you press a preset
+unless you save it to your library.
 
 **Import.** Paste or drop a table — commas, semicolons, tabs, pipes and aligned
 columns are all detected — map the columns, read a report of exactly what will

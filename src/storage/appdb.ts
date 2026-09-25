@@ -22,7 +22,10 @@ export interface HistoryEntry {
   seed?: string;
   /** Enough to repeat the roll: an expression, or the randomizer id. */
   repeat?: { kind: "dice"; expression: string } | { kind: "randomizer"; id: string };
-  /** Dice rolled inside the outcome's text, e.g. "2d4 [1, 2] = 3". */
+  /**
+   * Dice rolled inside the outcome's text, e.g. "2d4 [1, 2] = 3", and for an
+   * outcome picked from an offer, "chosen from A, B, C".
+   */
   parts?: string[];
   /**
    * The roll that sent you here, when an outcome's link opened this

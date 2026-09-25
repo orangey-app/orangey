@@ -12,8 +12,13 @@ export type Route =
   | { name: "play"; params: LinkParams }
   | { name: "randomizer"; path: string; params: LinkParams }
   | { name: "byId"; id: string; params: LinkParams }
-  /** A randomizer carried inside the link itself; `payload` is the `w` value. */
-  | { name: "linked"; payload: string; params: LinkParams }
+  /**
+   * A randomizer carried inside the link itself; `payload` is the `w` value.
+   * `quick` marks a quick wheel's own address: the play screen with the text
+   * back in its box, rather than a wheel someone sent. On the route, not in
+   * `LinkParams`, because it means nothing anywhere else.
+   */
+  | { name: "linked"; payload: string; params: LinkParams; quick?: true }
   /**
    * `from` is the address of the screen that opened this editor, when that
    * matters for getting back: a randomizer made from a board's picker or from
@@ -72,8 +77,10 @@ export function parseRoute(hash: string): Route {
     case "roll": {
       // The payload is base64url, which URLSearchParams leaves alone, but a
       // deck program may have escaped it on the way in.
-      const w = new URLSearchParams(query).get("w") ?? "";
-      return w ? { name: "linked", payload: w, params } : { name: "play", params };
+      const search = new URLSearchParams(query);
+      const w = search.get("w") ?? "";
+      if (!w) return { name: "play", params };
+      return search.get("quick") === "1" ? { name: "linked", payload: w, params, quick: true } : { name: "linked", payload: w, params };
     }
     case "r":
       return arg ? { name: "randomizer", path: arg, params } : { name: "play", params };

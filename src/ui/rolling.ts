@@ -15,13 +15,13 @@
  */
 
 import type { FeelSettings } from "./feel.ts";
-import { motionScale } from "./feel.ts";
-import type { Rollable } from "../model/randomizer.ts";
+import { motionScale, OFFER_FLIP_MS } from "./feel.ts";
+import type { ListRandomizer, Rollable } from "../model/randomizer.ts";
 import type { ResultPanel } from "./components/result.ts";
 import type { WheelView } from "./components/wheel.ts";
 import type { DiceTray } from "./components/dice.ts";
 import type { CoinView } from "./components/coin.ts";
-import { rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
+import { chosenFromOffer, offerFromList, rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
 import { bagDrawn, bagTake } from "./bag.ts";
 import { withoutDrawn } from "../core/weighted.ts";
 import { summarize } from "./mascot/events.ts";
@@ -63,6 +63,13 @@ export interface RollerOptions {
   count?: () => number;
   /** The roll is held, waiting to be revealed. */
   onHeld?: () => void;
+  /** An offer is on the table and waiting for a pick. */
+  onChoosing?: () => void;
+  /**
+   * Whether the first card of an offer should take the keyboard. The play
+   * screen says yes; a board cell only when the keyboard is already in it.
+   */
+  focusOffer?: () => boolean;
 }
 
 export interface Roller {
@@ -71,14 +78,53 @@ export interface Roller {
   readonly rolling: boolean;
   /** A hidden roll is waiting to be revealed. */
   readonly holding: boolean;
-  /** Throw away an unrevealed roll — leaving the screen does this. */
+  /** Throw away an unrevealed roll or an unpicked offer — leaving the screen does this. */
   discard(): void;
+  /** Cards are on the table and nothing has been picked. */
+  readonly choosing: boolean;
+  /** Take the card at this position; nothing happens when no offer is open. */
+  pick(at: number): Promise<void>;
 }
 
 export function createRoller(opts: RollerOptions): Roller {
   let rolling = false;
-  /** A hidden roll that has happened but has not been shown yet. */
-  let held: { outcome: Outcome; randomizer: Rollable; bag: ReadonlySet<string> | null } | null = null;
+  /**
+   * A hidden roll that has happened but has not been shown yet: one outcome,
+   * or the cards of an offer, face down.
+   */
+  let held:
+    | { outcome: Outcome; offer?: undefined; randomizer: Rollable; bag: ReadonlySet<string> | null }
+    | { outcome?: undefined; offer: Outcome[]; randomizer: ListRandomizer; bag: ReadonlySet<string> | null }
+    | null = null;
+  /**
+   * Cards on the table. The draw is done (P8: decided before anything moves);
+   * nothing lands, is announced as an answer, or is recorded until a pick.
+   */
+  let offered: { outcomes: Outcome[]; randomizer: ListRandomizer; bag: ReadonlySet<string> | null } | null = null;
+
+  /** How long the cards take to turn over for this roll's feel. */
+  const flipMs = () => OFFER_FLIP_MS * motionScale(opts.feel().motion);
+
+  function lay(outcomes: Outcome[], faceDown: boolean): void {
+    opts.result.offer(outcomes.map((o) => o.text), {
+      onPick: (at) => void pick(at),
+      prompt: faceDown ? "Rolled. Press Reveal." : "Choose one",
+      faceDown,
+      flipMs: flipMs(),
+      focus: !faceDown && (opts.focusOffer?.() ?? false),
+    });
+  }
+
+  async function pick(at: number): Promise<void> {
+    if (!offered || !offered.outcomes[at]) return;
+    const { outcomes, randomizer, bag } = offered;
+    offered = null;
+    opts.result.chose(at);
+    // Once, through the ordinary landing: the answer, the announcement, the
+    // mascot and the history row, as for any roll. The wheel stayed still
+    // while the cards were out and now simply shows the pick.
+    await land(randomizer, chosenFromOffer(randomizer.name, outcomes, at), bag, false);
+  }
 
   function skip(): void {
     opts.wheel()?.skip();
@@ -102,11 +148,19 @@ export function createRoller(opts: RollerOptions): Roller {
       skip();
       return;
     }
+    // Cards are out: the next thing that happens is a pick, not a roll.
+    if (offered) return;
     // A second press after a hidden roll means "show the table".
     if (held) {
-      const { outcome, randomizer: what, bag } = held;
+      const was = held;
       held = null;
-      await land(what, outcome, bag, false);
+      if (was.offer) {
+        offered = { outcomes: was.offer, randomizer: was.randomizer, bag: was.bag };
+        lay(was.offer, false);
+        opts.onChoosing?.();
+        return;
+      }
+      await land(was.randomizer, was.outcome, was.bag, false);
       return;
     }
     const randomizer = opts.randomizer();
@@ -122,6 +176,43 @@ export function createRoller(opts: RollerOptions): Roller {
     if (problem) {
       opts.result.clear(problem);
       if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason: problem });
+      return;
+    }
+
+    // Make a choice: several outcomes drawn at once, and the player picks.
+    // A wheel that offers is not spun and is not rolled several at a time.
+    if (rollable.type === "list" && randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2) {
+      let outcomes: Outcome[];
+      try {
+        outcomes = offerFromList(rollable, randomizer.offer, state.source());
+      } catch (e) {
+        const reason = (e as Error).message;
+        opts.result.clear(reason);
+        if (opts.live) state.tell({ type: "roll:fail", source: randomizer.type, reason });
+        return;
+      }
+      // One left in play is no choice: it lands like any roll, and says why.
+      if (outcomes.length > 1) {
+        if (opts.hidden?.()) {
+          held = { offer: outcomes, randomizer, bag };
+          lay(outcomes, true);
+          opts.onHeld?.();
+          return;
+        }
+        offered = { outcomes, randomizer, bag };
+        lay(outcomes, false);
+        opts.onChoosing?.();
+        return;
+      }
+      const only = chosenFromOffer(randomizer.name, outcomes, 0);
+      if (opts.hidden?.()) {
+        held = { outcome: only, randomizer, bag };
+        opts.result.pending("Rolled. Press Reveal.");
+        opts.onHeld?.();
+        return;
+      }
+      rolling = true;
+      await land(randomizer, only, bag, true);
       return;
     }
 
@@ -210,8 +301,13 @@ export function createRoller(opts: RollerOptions): Roller {
     get holding() {
       return held !== null;
     },
+    get choosing() {
+      return offered !== null;
+    },
+    pick,
     discard() {
       held = null;
+      offered = null;
     },
   };
 }

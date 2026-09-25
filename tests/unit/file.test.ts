@@ -84,6 +84,7 @@ describe("the file format", () => {
       ["a tag that is neither cheer nor wince", doctored((d) => (d.randomizer.items[0].reaction = "dance")), /items\[0\]\.reaction/],
       ["a list with nothing in it", doctored((d) => (d.randomizer.items = [])), /items/],
       ["slices that show something unheard of", doctored((d) => (d.randomizer.slices = "sideways")), /randomizer\.slices/],
+      ["an offer of one, which is no choice", doctored((d) => (d.randomizer.offer = 1)), /randomizer\.offer/],
       ["feel that is not an object", doctored((d) => (d.randomizer.feel = "fast")), /feel/],
       ["one face reaction for a two-faced coin", serialize(wrap({ ...emptyRandomizer("coin", "Fate"), faceReactions: ["cheer"] } as never)), /faceReactions/],
     ];

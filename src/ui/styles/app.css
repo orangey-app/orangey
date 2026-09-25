@@ -234,6 +234,73 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .result-value.is-max { color: var(--ok); }
 .result-value.is-min { color: var(--error); }
 
+/* Make a choice: the offered outcomes as cards under the answer's slot. Every
+   card is the same height — two lines, clipped — and the row holds invisible
+   stand-ins from the moment the randomizer opens, so neither the cards
+   arriving nor a longer label moves anything. */
+.offer-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin: 4px 0 2px;
+}
+.offer-cards[hidden] { display: none; }
+.offer-card {
+  position: relative;
+  height: calc(2 * 1.2em + 18px);
+  padding: 9px 8px 9px 22px;
+  font-size: 15px;
+  line-height: 1.2;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+.offer-card.placeholder { visibility: hidden; }
+.offer-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+}
+.offer-key { position: absolute; left: 7px; top: 6px; font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+button.offer-card:not([aria-disabled="true"]):hover { border-color: var(--accent); background: var(--accent-soft); }
+.offer-card.face-down {
+  background: repeating-linear-gradient(135deg, var(--accent-soft) 0 6px, var(--bg-raised) 6px 12px);
+  opacity: 1;
+}
+.offer-card.chosen { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); font-weight: 650; }
+.offer-card.not-chosen { opacity: 0.35; }
+.offer-cards.flipping .offer-card:not(.placeholder) {
+  /* The duration comes from feel.ts (OFFER_FLIP_MS), scaled by the motion
+     setting; instant leaves this class off altogether. */
+  animation: offer-in var(--offer-flip, 260ms) cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * var(--offer-flip, 260ms) / 3);
+}
+@keyframes offer-in {
+  from { transform: rotateY(90deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.cell .offer-card { font-size: 13px; }
+.cell .offer-cards { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+
+/* The quick wheel: a box of lines on the home screen, behind its own button
+   in the preset row so the play card stays where a phone's thumb expects it. */
+.quick-wheel[hidden] { display: none; }
+/* The interface's own type rather than the mono of other text boxes: these
+   are the options as the table will read them. 16px, or iOS zooms on focus. */
+.quick-options { width: 100%; min-height: 6.5em; box-sizing: border-box; font-family: inherit; font-size: 16px; }
+.quick-wheel-foot { margin-top: 6px; }
+input.quick-offer, input.offer-input { width: 56px; }
+.quick-too-long[hidden] { display: none; }
+.quick-wheel-toggle[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
 .quickbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
 .quickbar button { min-width: 54px; font-variant-numeric: tabular-nums; }
 /* The same row, holding the way home instead of the presets, so opening a
@@ -551,7 +618,11 @@ body.presenting .topbar,
 body.presenting .side,
 body.presenting .tabbar,
 body.presenting .quickbar,
-body.presenting .play > .card ~ .card,
+body.presenting .quick-wheel,
+/* Everything after the play card, not after the first card: on the home
+   screen the quick wheel's card comes first, and would take the play card
+   with it. */
+body.presenting .play > .play-card ~ .card,
 body.presenting .present-button,
 body.presenting .link-button,
 body.presenting .edit-link {
@@ -604,6 +675,8 @@ body.presenting .result-slot.small { font-size: clamp(30px, 7vw, 96px); }
 body.presenting .result-panel.two-lines .result-slot { font-size: min(clamp(36px, 8vw, 112px), 17vh); }
 body.presenting .result-panel.two-lines .result-slot.small { font-size: min(clamp(28px, 6vw, 84px), 15vh); }
 body.presenting .result-detail { font-size: clamp(13px, 1.5vw, 20px); }
+/* Cards read from across the room, like the answer they stand in for. */
+body.presenting .offer-card { font-size: clamp(15px, 1.8vw, 24px); }
 body.presenting .roll-button { min-height: 60px; font-size: 20px; flex: none; }
 body.presenting .leave-presenting {
   position: fixed;

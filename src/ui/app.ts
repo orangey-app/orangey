@@ -146,7 +146,7 @@ export function mountApp(root: HTMLElement): MascotHost {
         void decodeRandomizer(payload).then(
           (randomizer) => {
             if (!stillHere()) return;
-            setMain(createPlayView(null, route.params, randomizer));
+            setMain(createPlayView(null, route.params, randomizer, route.quick === true));
           },
           (error: unknown) => {
             if (!stillHere()) return;

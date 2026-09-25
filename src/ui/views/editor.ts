@@ -9,7 +9,7 @@
 
 import { displayPercents, isRollable } from "../../core/weighted.ts";
 import type { CoinRandomizer, ListItem, ListRandomizer, OutcomeReaction, Randomizer } from "../../model/randomizer.ts";
-import { makeItem, newId } from "../../model/randomizer.ts";
+import { makeItem, newId, OFFER_MAX, OFFER_MIN } from "../../model/randomizer.ts";
 import { draftProblem } from "../../model/draft.ts";
 import type { View } from "../view.ts";
 import type { LibraryNode } from "../../storage/library.ts";
@@ -204,6 +204,25 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     saveNow(bagToggle);
   });
   const bagField = h("label", { class: "row tight" }, bagToggle, "Draw without putting back");
+
+  // Make a choice. Empty is off. What is typed is kept in the draft even when
+  // it is out of range, so it can be finished; `draftProblem` holds the file
+  // at its last good state meanwhile, as for any other field.
+  const offerInput = h("input", {
+    type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "offer-input",
+    value: model.offer !== undefined ? String(model.offer) : "", placeholder: "–",
+    "aria-label": "Offer this many outcomes to choose from",
+  });
+  offerInput.addEventListener("input", () => {
+    const raw = offerInput.value.trim();
+    model = { ...model, offer: raw === "" ? undefined : Number(raw) };
+    if (raw === "") delete (model as { offer?: number }).offer;
+    // Cards drawn for the old number would not fit the row the new one lays out.
+    previewRoller.discard();
+    result.clear("Try it");
+    save(offerInput);
+  });
+  const offerField = h("label", { class: "row tight offer-field" }, "Offer", offerInput, "to choose from");
 
   const viewToggle = h("div", { class: "segmented", role: "group", "aria-label": "How this looks when rolled" });
   const renderViewToggle = () => {
@@ -707,7 +726,11 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   async function rollNow(): Promise<void> {
     // The labels change as they are typed, so the preview re-reserves its
     // height on every try rather than once at the start.
-    result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null });
+    const offer = model.offer !== undefined && Number.isInteger(model.offer) && model.offer >= OFFER_MIN && model.offer <= OFFER_MAX ? model.offer : 0;
+    result.reserve(longestOutcome(model), { seed: state.prefs.seed !== null, offer });
+    // Trying it again while cards are out deals a fresh hand: this is a
+    // preview, and nothing it draws is kept.
+    if (previewRoller.choosing) previewRoller.discard();
     await previewRoller.roll();
   }
 
@@ -752,7 +775,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, slicesField, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, offerField, slicesField, h("div", { class: "spacer" }), filterInput),
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),

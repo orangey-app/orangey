@@ -326,6 +326,10 @@ class AppState {
 
   async record(randomizer: Randomizer, outcome: Outcome, from?: RollOrigin): Promise<void> {
     this.lastOutcome = { outcome, randomizer };
+    // What a row says beyond its headline: the dice inside the outcome and,
+    // for a pick, what it was picked from. Both ride in `parts`, the row's
+    // existing details line, rather than in a field of their own.
+    const parts = [...(outcome.rolled ?? []), ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : [])];
     const entry: HistoryRow = {
       id: newId(),
       at: Date.now(),
@@ -339,7 +343,7 @@ class AppState {
         randomizer.type === "dice"
           ? { kind: "dice", expression: randomizer.expression }
           : { kind: "randomizer", id: randomizer.id },
-      ...(outcome.rolled?.length ? { parts: outcome.rolled } : {}),
+      ...(parts.length ? { parts } : {}),
       ...(from ? { from } : {}),
     };
     this.history = [entry, ...this.history].slice(0, HISTORY_IN_MEMORY);

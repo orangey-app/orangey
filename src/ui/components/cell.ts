@@ -59,7 +59,8 @@ export function createCell(
   } else if (randomizer.type === "coin") {
     stage.append(coin.el);
   }
-  result.reserve(longestOutcome(randomizer));
+  const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
+  result.reserve(longestOutcome(randomizer), { offer });
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
@@ -78,6 +79,9 @@ export function createCell(
     onStart: () => opts.onRoll?.(),
     onLanded: (outcome) => opts.onLanded?.(outcome),
     from: opts.from,
+    // Several cells can offer at once after Roll all; the keyboard goes to a
+    // cell's cards only when it was already in that cell.
+    focusOffer: () => el.contains(document.activeElement) || (el.parentElement?.contains(document.activeElement) ?? false),
   });
 
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },

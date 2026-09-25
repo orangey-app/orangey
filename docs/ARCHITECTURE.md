@@ -48,6 +48,20 @@ consistent, a board has no mascot slot for the event to disturb, and a chain
 reads better when it says it has begun rolling rather than only that it has
 landed.
 
+A wheel with `offer` adds one phase to that sequence, between the draw and the
+landing. The draw happens at the press — `offerFromList` picks the M outcomes
+then and there — and the cards are laid out, but nothing lands: no answer, no
+`roll:land`, no history row. The pick is what lands, once, through the same
+landing as any roll, so the mascot, the announcement, the bag and the chain all
+see the one outcome taken. `roll()` resolves when the cards are down rather than
+at the pick, because a board's Roll all waits for every cell.
+
+**The quick wheel is a link to itself.** Typed on the home screen, it is a
+list randomizer encoded into `#/roll?w=…&quick=1` with `history.replaceState`
+as it changes, which does not fire `hashchange`, so the view updates the wheel
+in place instead of being rebuilt. `quick=1` is what tells the router to open
+the home screen with the text back in its box rather than a wheel someone sent.
+
 **Pictures live beside the library, not in it.** An outcome's `image` is an id
 into `src/storage/images.ts`, which writes `images/<id>.png` through the library
 backend — so the folder backend holds real PNGs, and a randomizer file stays

@@ -22,8 +22,14 @@ let browser;
 let server;
 const results = [];
 
-/** No single test may hold the suite up; a stuck one fails and is named. */
-const TEST_TIMEOUT_MS = 120000;
+/**
+ * No single test may hold the suite up; a stuck one fails and is named.
+ *
+ * The harness's own waits are 15 to 30 seconds and a healthy test takes a few,
+ * so 45 seconds means a hang costs 45 seconds rather than two minutes. A
+ * slower machine or CI runner raises it through the environment.
+ */
+const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS ?? 45000);
 
 async function test(name, fn) {
   // On CI the name goes out before the test runs, so a hang can be attributed
@@ -2291,6 +2297,73 @@ async function main() {
     await page.waitForFunction(`/Ambush|Nothing/.test(document.querySelector(".result-value").textContent)`);
     await page.waitForFunction(`window.orangey.state.history.length === 1`);
     assert.equal(await rows(), 1, "revealing should write exactly one row");
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  // ---- AD–AG: quick wheel, theme, stories ------------------------------------
+
+  // A wheel typed at the table: it rolls at once, survives the phone locking
+  // (a reload), and is thrown away by a preset unless it is saved. Then the
+  // same wheel offers two cards, and the pick is what lands and is recorded.
+  await test("AD a quick wheel rolls as it is typed, comes back after a reload, offers a choice, and saves", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    await page.setViewport(375, 740);
+
+    await page.click(".quick-wheel-toggle");
+    await page.type(".quick-wheel textarea", "Ambush\nMerchant | 2\n- Storm x3");
+    await page.waitForFunction(`document.querySelector(".play-card h1").textContent === "Quick wheel" && document.querySelector(".wheel-svg")`);
+    await page.click(".roll-button");
+    await page.waitForFunction(`/^(Ambush|Merchant|Storm)$/.test(document.querySelector(".result-value").textContent)`);
+    await page.waitForFunction(`/[?&]quick=1/.test(location.hash)`);
+
+    // The phone locked: the address brings the wheel and its text back.
+    await open(page, await page.evaluate(`return location.hash`));
+    await page.waitForFunction(`document.querySelector(".quick-wheel textarea")?.value.length > 0`);
+    assert.equal(await page.evaluate(`return document.querySelector(".quick-wheel textarea").value`), "Ambush\nMerchant | 2\nStorm | 3");
+    assert.equal(await page.evaluate(`return document.querySelector(".quick-wheel").hidden`), false);
+
+    // Make a choice: two cards, nothing recorded until one is taken.
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    const before = await page.evaluate(`return window.orangey.state.history.length`);
+    await page.type(".quick-offer", "2");
+    await page.waitForFunction(`document.querySelector(".roll-count-field").hidden`);
+    await page.click(".roll-button");
+    await page.waitForFunction(`document.querySelectorAll("button.offer-card").length === 2`);
+    const cards = await page.evaluate(`return [...document.querySelectorAll("button.offer-card .offer-text")].map((c) => c.textContent)`);
+    assert.equal(new Set(cards).size, 2, `the same outcome was offered twice: ${cards.join(", ")}`);
+    assert.equal(await page.evaluate(`return window.orangey.state.history.length`), before, "an offer was recorded before anything was picked");
+    const overflow = await page.evaluate(`return document.documentElement.scrollWidth - document.documentElement.clientWidth`);
+    assert.ok(overflow <= 0, `the page scrolls sideways by ${overflow}px at 375px with the cards out`);
+    // Full screen shows the wheel and its cards, not the box the wheel was
+    // typed into — which, coming first, once took the play card with it.
+    await page.click(".present-button");
+    const shown = await page.evaluate(`return [".quick-wheel", ".play-card", "button.offer-card"].map((s) => getComputedStyle(document.querySelector(s)).display !== "none")`);
+    assert.deepEqual(shown, [false, true, true], "full screen: quick box hidden, play card and cards shown");
+    await page.click(".leave-presenting");
+
+    await page.click("button.offer-card:nth-child(2)");
+    await page.waitForFunction(`document.querySelector(".result-value").textContent === ${JSON.stringify(cards[1])}`);
+    await page.waitForFunction(`window.orangey.state.history.length === ${before + 1}`);
+    const row = await page.evaluate(`return window.orangey.state.history[0]`);
+    assert.equal(row.resultText, cards[1]);
+    assert.ok(row.parts?.some((p) => p.includes(cards[0]) && p.includes(cards[1])), `the row does not say what was offered: ${JSON.stringify(row.parts)}`);
+
+    // Save keeps it; the library opens it like any other file.
+    await page.click(".save-randomizer");
+    await page.waitForFunction(`location.hash.startsWith("#/r/")`);
+    const saved = await page.evaluate(`return window.orangey.state.library.files().map((f) => [f.randomizer.name, f.randomizer.offer ?? null])`);
+    assert.deepEqual(saved, [["Quick wheel", 2]]);
+
+    // Unsaved, a preset throws it away and the address goes home. (With no
+    // hash at all the app reopens the last randomizer played, so "#/".)
+    await open(page, "#/");
+    await page.click(".quick-wheel-toggle");
+    await page.type(".quick-wheel textarea", "Left\nRight");
+    await page.waitForFunction(`/[?&]quick=1/.test(location.hash)`);
+    await page.click(".quickbar .preset");
+    await page.waitForFunction(`location.hash === "#/" || location.hash === ""`);
+    assert.equal(await page.evaluate(`return document.querySelector(".quick-wheel textarea").value`), "");
     assert.deepEqual(page.consoleErrors, []);
   });
 

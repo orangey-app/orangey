@@ -56,6 +56,21 @@ export const MASCOT_LINK_FAIL_HOLD_MS = 3200;
  */
 export const MASCOT_ANTICIPATE_MIN_MS = 120;
 
+/**
+ * How long the cards of an offer take to turn face up, one after another.
+ * Not a Feel setting — nothing about a choice is worth tuning — so it is a
+ * constant, scaled by the motion level like everything else: instant shows
+ * them at once. Kept short: the table is waiting to read them, not to watch.
+ */
+export const OFFER_FLIP_MS = 260;
+
+/**
+ * How long typing in the quick wheel pauses before the address is rewritten.
+ * The wheel itself follows every keystroke; only the link waits, because
+ * compressing it on every letter is wasted work and the address bar flickers.
+ */
+export const QUICK_DEBOUNCE_MS = 300;
+
 export const LIMITS = {
   wheelDuration: [400, 8000],
   turns: [1, 12],
