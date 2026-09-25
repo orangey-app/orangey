@@ -114,8 +114,13 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     setPresenting(on, { exitButton, presentButton });
   };
 
+  // The board's own randomizers and whatever their chains have opened: every
+  // roll made on this screen shows here, and Clear takes the same set.
   const recent = createRecentRolls({
-    ids: () => board.entries.map((e) => e.id),
+    ids: () => [...new Set([
+      ...board.entries.map((e) => e.id),
+      ...[...chains.values()].flatMap((c) => c.links.filter((l) => l.found).map((l) => l.id)),
+    ])],
     scopeName: () => "this board",
   });
 

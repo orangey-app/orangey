@@ -150,6 +150,11 @@ export interface ChainView {
   reset(): void;
   /** Roll the newest randomizer the chain has open. False when there is none. */
   rollNewest(): boolean;
+  /**
+   * The randomizers on this screen because of the chain, root first, full
+   * size or icon, that the library still has: whose rolls the screen shows.
+   */
+  present(): { id: string; name: string }[];
   destroy(): void;
 }
 
@@ -258,6 +263,7 @@ export function createChainRow(root: ChainRoot): ChainView {
     note,
     reset,
     rollNewest,
+    present: () => links.filter((link) => link.found).map((link) => ({ id: link.id, name: link.name })),
     destroy() {
       unsubscribe();
     },

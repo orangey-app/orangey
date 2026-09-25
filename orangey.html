@@ -10573,6 +10573,11 @@ function createChainSurface(
                 
                                                                                  
                         
+     
+                                                                          
+                                                                            
+     
+                                            
                   
  
 
@@ -10681,6 +10686,7 @@ function createChainRow(root           )            {
     note,
     reset,
     rollNewest,
+    present: () => links.filter((link) => link.found).map((link) => ({ id: link.id, name: link.name })),
     destroy() {
       unsubscribe();
     },
@@ -11087,6 +11093,9 @@ function createPlayView(
 
   const skip = ()       => roller.skip();
 
+  /** The chain beside the card, once it exists; the Recent panel asks it what is open. */
+  let chainView                   = null;
+
   // ---- quick wheel ---------------------------------------------------------
 
   /**
@@ -11385,13 +11394,19 @@ function createPlayView(
     navigate(`#/r/${encodeURIComponent(path)}`);
   }, { class: "ghost save-randomizer" });
 
-  // The panel is about whatever is open, so its Clear takes only those rolls.
-  // The quick screen has no one randomizer open — every preset press is a new
-  // ad-hoc one — so there it is about everything, which is also all the table
-  // can see from here.
+  // The panel is about whatever is open, so its Clear takes only those rolls:
+  // the randomizer, and whatever its chain has opened beside it, because a
+  // roll made on this screen belongs in the panel on this screen. The quick
+  // screen has no one randomizer open — every preset press is a new ad-hoc
+  // one — so there it is about everything, which is also all the table can
+  // see from here.
+  const onScreen = ()                                 => {
+    const all = [{ id: randomizer.id, name: randomizer.name }, ...(chainView?.present() ?? [])];
+    return all.filter((r, i) => all.findIndex((o) => o.id === r.id) === i);
+  };
   const recent = createRecentRolls({
-    ids: () => (fixed ? [randomizer.id] : []),
-    scopeName: () => randomizer.name,
+    ids: () => (fixed ? onScreen().map((r) => r.id) : []),
+    scopeName: () => listNames(onScreen().map((r) => r.name)),
   });
 
   const header = h("div", { class: "row" }, h("div", {}, title, subtitle), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
@@ -11489,7 +11504,7 @@ function createPlayView(
    * The two columns are a grid on `.play` that exists only while something is
    * open, which is what the classes here say.
    */
-  const chain = createChainRow({
+  const chain            = createChainRow({
     id: () => randomizer.id,
     name: () => randomizer.name,
     card: playCard,
@@ -11498,6 +11513,7 @@ function createPlayView(
       el.classList.toggle("chain-wide", wide);
     },
   });
+  chainView = chain;
   el.insertBefore(chain.strip, playCard);
   el.insertBefore(chain.open, recent.el);
   el.insertBefore(chain.note, recent.el);
@@ -11605,6 +11621,12 @@ function createPlayView(
       unsubscribe();
     },
   };
+}
+
+/** "Encounters", "Encounters and Hoard", "Encounters, Hoard and Gems". */
+function listNames(names          )         {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /** How many outcomes a roll of this offers to choose from; 0 when it lands on one. */
@@ -12264,8 +12286,13 @@ function createBoardView(node             , params                              
     setPresenting(on, { exitButton, presentButton });
   };
 
+  // The board's own randomizers and whatever their chains have opened: every
+  // roll made on this screen shows here, and Clear takes the same set.
   const recent = createRecentRolls({
-    ids: () => board.entries.map((e) => e.id),
+    ids: () => [...new Set([
+      ...board.entries.map((e) => e.id),
+      ...[...chains.values()].flatMap((c) => c.links.filter((l) => l.found).map((l) => l.id)),
+    ])],
     scopeName: () => "this board",
   });
 

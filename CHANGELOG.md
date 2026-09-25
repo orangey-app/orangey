@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Rolls made in a chain show under the wheel.** A randomizer opened by an
+  outcome was recorded in History, but the Recent rolls panel under the
+  wheel (and under a board) only listed the wheel's own rolls, so the second
+  roll looked lost. The panel now covers everything the chain has open, and
+  its Clear says which randomizers it will clear.
 - **A quick wheel.** The home screen has a Quick wheel button: type the
   options one per line and the wheel is there as you type, ready to roll.
   `| 3` or `x3` after a line weighs it. It lives in the page's address, so a

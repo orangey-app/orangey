@@ -1834,6 +1834,14 @@ async function main() {
       await page.evaluate(`return window.orangey.state.history.map((h) => h.from ?? null)`),
       [{ randomizerName: "Encounters", label: "The dragon's hoard" }, null],
     );
+    // Both rolls were made on this screen, so both are in its Recent rolls:
+    // the panel once showed only the wheel's own, and the chained roll looked
+    // as if it had never been recorded.
+    await page.waitForFunction(`document.querySelectorAll(".recent-rolls li").length === 2`);
+    assert.deepEqual(
+      await page.evaluate(`return [...document.querySelectorAll(".recent-rolls li .name")].map((n) => n.textContent)`),
+      ["Hoard", "Encounters"],
+    );
     await open(page, "#/history");
     await page.waitForFunction(`[...document.querySelectorAll(".history-list .roll-from")].some((e) => e.textContent === "from Encounters → The dragon's hoard")`);
 

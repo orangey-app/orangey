@@ -19,7 +19,7 @@ import { createDiceTray } from "../components/dice.ts";
 import { createCoin } from "../components/coin.ts";
 import { createResultPanel } from "../components/result.ts";
 import { createRecentRolls } from "../components/recent.ts";
-import { createChainRow } from "../components/chain.ts";
+import { createChainRow, type ChainView } from "../components/chain.ts";
 import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
 import { bagDrawn, bagLoad, bagRefill } from "../bag.ts";
@@ -205,6 +205,9 @@ export function createPlayView(
   };
 
   const skip = (): void => roller.skip();
+
+  /** The chain beside the card, once it exists; the Recent panel asks it what is open. */
+  let chainView: ChainView | null = null;
 
   // ---- quick wheel ---------------------------------------------------------
 
@@ -504,13 +507,19 @@ export function createPlayView(
     navigate(`#/r/${encodeURIComponent(path)}`);
   }, { class: "ghost save-randomizer" });
 
-  // The panel is about whatever is open, so its Clear takes only those rolls.
-  // The quick screen has no one randomizer open — every preset press is a new
-  // ad-hoc one — so there it is about everything, which is also all the table
-  // can see from here.
+  // The panel is about whatever is open, so its Clear takes only those rolls:
+  // the randomizer, and whatever its chain has opened beside it, because a
+  // roll made on this screen belongs in the panel on this screen. The quick
+  // screen has no one randomizer open — every preset press is a new ad-hoc
+  // one — so there it is about everything, which is also all the table can
+  // see from here.
+  const onScreen = (): { id: string; name: string }[] => {
+    const all = [{ id: randomizer.id, name: randomizer.name }, ...(chainView?.present() ?? [])];
+    return all.filter((r, i) => all.findIndex((o) => o.id === r.id) === i);
+  };
   const recent = createRecentRolls({
-    ids: () => (fixed ? [randomizer.id] : []),
-    scopeName: () => randomizer.name,
+    ids: () => (fixed ? onScreen().map((r) => r.id) : []),
+    scopeName: () => listNames(onScreen().map((r) => r.name)),
   });
 
   const header = h("div", { class: "row" }, h("div", {}, title, subtitle), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
@@ -608,7 +617,7 @@ export function createPlayView(
    * The two columns are a grid on `.play` that exists only while something is
    * open, which is what the classes here say.
    */
-  const chain = createChainRow({
+  const chain: ChainView = createChainRow({
     id: () => randomizer.id,
     name: () => randomizer.name,
     card: playCard,
@@ -617,6 +626,7 @@ export function createPlayView(
       el.classList.toggle("chain-wide", wide);
     },
   });
+  chainView = chain;
   el.insertBefore(chain.strip, playCard);
   el.insertBefore(chain.open, recent.el);
   el.insertBefore(chain.note, recent.el);
@@ -724,6 +734,12 @@ export function createPlayView(
       unsubscribe();
     },
   };
+}
+
+/** "Encounters", "Encounters and Hoard", "Encounters, Hoard and Gems". */
+function listNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /** How many outcomes a roll of this offers to choose from; 0 when it lands on one. */
