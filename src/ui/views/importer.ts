@@ -23,6 +23,17 @@ import { state } from "../state.ts";
 import { navigate } from "../router.ts";
 import type { View } from "../view.ts";
 
+/**
+ * What the file picker offers. Extensions for the browsers that filter by
+ * them, and the matching types for the ones that do not: iOS maps `accept` to
+ * its own type identifiers and, given extensions alone, greys out the
+ * `.orangey.json` and `.zip` files a person is there to pick.
+ */
+export const IMPORT_ACCEPT = [
+  ".csv", ".tsv", ".txt", ".json", ".zip",
+  "text/csv", "text/tab-separated-values", "text/plain", "application/json", "application/zip", "application/x-zip-compressed",
+].join(",");
+
 export function createImportView(initialText = ""): View {
   let text = initialText;
   let detection: Detection | null = null;
@@ -291,7 +302,7 @@ export function createImportView(initialText = ""): View {
 
   /** Dropping a file anywhere on the page opens it here: outcomes, a
    *  randomizer file, or a whole library ZIP — one door for all of them. */
-  async function handleFile(file: File): Promise<void> {
+  async function handleFile(file: File, quiet = false): Promise<string | void> {
     if (file.name.toLowerCase().endsWith(".zip")) {
       try {
         const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
@@ -324,10 +335,11 @@ export function createImportView(initialText = ""): View {
         // A file dropped in twice, or one copied from another library, would
         // otherwise arrive sharing its id with a randomizer already here.
         const clash = state.library.findById(randomizer.id) !== null;
-        const path = await state.library.create("", clash ? { ...randomizer, id: newId() } : randomizer);
-        state.toast(`Imported "${randomizer.name}"`);
-        navigate(`#/r/${encodeURIComponent(path)}`);
-        return;
+        // Into the folder chosen on this page: the dropdown is there, and a
+        // file that always landed at the top level made it a lie.
+        const path = await state.library.create(folderSelect.value, clash ? { ...randomizer, id: newId() } : randomizer);
+        if (!quiet) state.toast(`Imported "${randomizer.name}"`);
+        return path;
       } catch (e) {
         state.toast(`That file could not be read: ${(e as Error).message}`);
         return;
@@ -336,6 +348,29 @@ export function createImportView(initialText = ""): View {
     textarea.value = content;
     nameInput.value = file.name.replace(/\.[^.]+$/, "");
     analyse();
+  }
+
+  /**
+   * Several files at once — a whole library's worth of `.orangey.json`
+   * picked in one go, which on an iPad is the only way to bring them over,
+   * since there is no drag and drop from another window there. One file
+   * opens as it always did; several are counted and the library is shown.
+   */
+  async function handleFiles(files: Iterable<File>): Promise<void> {
+    const list = Array.from(files);
+    if (list.length === 1) {
+      const path = await handleFile(list[0]);
+      if (path) navigate(`#/r/${encodeURIComponent(path)}`);
+      return;
+    }
+    let imported = 0;
+    for (const file of list) {
+      if (await handleFile(file, true)) imported++;
+    }
+    if (imported) {
+      state.toast(`Imported ${imported} of ${list.length} files`);
+      navigate("#/library");
+    }
   }
 
   const dropZone = h("div", { class: "card" },
@@ -351,24 +386,32 @@ export function createImportView(initialText = ""): View {
     ),
   );
 
-  const fileInput = h("input", { type: "file", accept: ".csv,.tsv,.txt,.json,.zip", "aria-label": "Choose a file to import", style: { display: "none" } });
+  // Extensions and types both: iOS builds its file picker from the types it
+  // can map, and given only extensions it greys out the very files asked for.
+  const fileInput = h("input", {
+    type: "file",
+    multiple: "",
+    accept: IMPORT_ACCEPT,
+    "aria-label": "Choose files to import",
+    style: { display: "none" },
+  });
   fileInput.addEventListener("change", () => {
-    const file = fileInput.files?.[0];
-    if (file) void handleFile(file);
+    const files = Array.from(fileInput.files ?? []);
+    if (files.length) void handleFiles(files);
     fileInput.value = "";
   });
 
   const el = h("div", { class: "importer" },
     dropZone,
-    h("div", { class: "row", style: { marginBottom: "12px" } }, button("Choose a file…", () => fileInput.click()), fileInput),
+    h("div", { class: "row", style: { marginBottom: "12px" } }, button("Choose files…", () => fileInput.click()), fileInput),
     settings,
     preview,
   );
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer?.files?.[0];
-    if (file) void handleFile(file);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length) void handleFiles(files);
   };
   const onDragOver = (e: DragEvent) => e.preventDefault();
   document.addEventListener("drop", onDrop);

@@ -54,8 +54,8 @@ let labelFamily = "";
 function measureWheelLabel(text: string, fontSize: number): number {
   if (labelCanvas === undefined) {
     labelCanvas = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
-    // The --font token is fixed for the life of the page, so it is read once.
-    if (labelCanvas) labelFamily = getComputedStyle(document.documentElement).getPropertyValue("--font").trim();
+    // The --font-ui token is fixed for the life of the page, so it is read once.
+    if (labelCanvas) labelFamily = getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim();
   }
   if (!labelCanvas) return Array.from(text).length * 0.6 * fontSize;
   labelCanvas.font = `${WHEEL_LABEL_WEIGHT} ${fontSize}px ${labelFamily || "system-ui, sans-serif"}`;

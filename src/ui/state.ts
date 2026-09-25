@@ -80,6 +80,28 @@ export interface Toast {
 /** How often coming back to the tab may re-read a folder library. */
 const RESCAN_DELAY = 30_000;
 
+/**
+ * The browser's own storage for the library: the origin-private filesystem
+ * where it can be written to, IndexedDB otherwise.
+ *
+ * With one exception. A browser that gains a writable filesystem in an update
+ * — Safari did between 18 and 26 — would open an empty one and hide the
+ * library its IndexedDB holds. So a library already in IndexedDB is kept over
+ * an empty filesystem. The extra look costs one IndexedDB open, and only on a
+ * browser whose filesystem is empty, which after the first run means never.
+ */
+async function pickBrowserStorage(): Promise<LibraryBackend | null> {
+  const opfs = await openOpfs();
+  if (!opfs) return IndexedDbBackend.open();
+  const empty = (await opfs.list("").catch(() => [])).length === 0;
+  if (!empty || (await IndexedDbBackend.exists()) === false) return opfs;
+  const idb = await IndexedDbBackend.open();
+  if (!idb) return opfs;
+  if ((await idb.list("").catch(() => [])).length > 0) return idb;
+  idb.close();
+  return opfs;
+}
+
 export const DEFAULT_PREFS: Prefs = {
   feel: DEFAULT_FEEL,
   seed: null,
@@ -168,8 +190,7 @@ class AppState {
     const remembered = await reopenFolder();
     if (remembered && remembered !== "ask") backend = remembered;
     this.folderNeedsPermission = remembered === "ask";
-    backend ??= await openOpfs();
-    backend ??= await IndexedDbBackend.open();
+    backend ??= await pickBrowserStorage();
     backend ??= new MemoryBackend();
     this.setLibrary(new LibraryService(backend));
     await this.library.refresh();
@@ -177,14 +198,22 @@ class AppState {
     // First run: a few real randomizers, so the app is not an empty page.
     // Only ever once per browser, and only into an empty library.
     // ?noseed lets the test suite start from a genuinely empty library.
+    // A write that fails here is reported the way any failed save is; it
+    // must not stop the app from opening, since an empty library that can be
+    // looked at beats a page that says "Loading…" for ever.
     const noSeed = new URLSearchParams(location.search).has("noseed");
     if (!noSeed && !this.prefs.seeded && backend.kind !== "memory" && this.library.files().length === 0) {
-      for (const starter of starters()) {
-        if (starter.folder) await backend.mkdir(starter.folder);
-        await this.library.create(starter.folder, starter.randomizer);
+      try {
+        for (const starter of starters()) {
+          if (starter.folder) await backend.mkdir(starter.folder);
+          await this.library.create(starter.folder, starter.randomizer);
+        }
+        this.prefs.seeded = true;
+        await appdb.set("prefs", this.prefs);
+      } catch (error) {
+        console.error("Orangey could not write the starter randomizers", error);
+        this.toast("Could not write to this browser's storage");
       }
-      this.prefs.seeded = true;
-      await appdb.set("prefs", this.prefs);
     }
     this.history = await appdb.history(HISTORY_IN_MEMORY);
     this.ready = true;

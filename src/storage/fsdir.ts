@@ -153,15 +153,33 @@ export class DirectoryBackend implements LibraryBackend {
   }
 }
 
+/**
+ * The origin-private filesystem, but only where it can be written to.
+ *
+ * Safari up to 18 — every browser on an iPhone or iPad running iOS 18, since
+ * they all use its engine — hands out the directory and lists it, and has no
+ * `createWritable()`: reads succeed and every write throws. A library that
+ * can be listed but not written to is worse than none, because the first
+ * write is the starters, the next is the person's first wheel, and each of
+ * them fails after the app has already opened. So the check is a write: one
+ * small file, made and removed, and any failure at all sends the caller on
+ * to IndexedDB, which those browsers do have.
+ */
 export async function openOpfs(): Promise<DirectoryBackend | null> {
   try {
     const root = await navigator.storage.getDirectory();
     const library = await root.getDirectoryHandle("library", { create: true });
-    return new DirectoryBackend(library, "opfs", "Browser storage");
+    const backend = new DirectoryBackend(library, "opfs", "Browser storage");
+    await backend.write(PROBE_NAME, "");
+    await backend.remove(PROBE_NAME);
+    return backend;
   } catch {
     return null;
   }
 }
+
+/** Dot-prefixed so that a probe left behind by a crash never shows in the tree. */
+const PROBE_NAME = ".orangey-write-probe";
 
 export function canPickFolder(): boolean {
   return typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function";

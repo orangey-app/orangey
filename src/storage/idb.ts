@@ -78,6 +78,30 @@ export class IndexedDbBackend implements LibraryBackend {
   }
 
   /**
+   * Whether a library database already exists here, without opening one.
+   *
+   * Opening creates the database, and an open connection that is then not
+   * used is exactly what made clearing the site's storage misbehave (see
+   * appdb). Where the browser cannot list its databases the answer is
+   * "maybe", and the caller opens to find out.
+   */
+  static async exists(): Promise<boolean | "maybe"> {
+    if (typeof indexedDB === "undefined") return false;
+    const list = (indexedDB as { databases?: () => Promise<{ name?: string }[]> }).databases;
+    if (typeof list !== "function") return "maybe";
+    try {
+      return (await list.call(indexedDB)).some((d) => d.name === LIBRARY_DB);
+    } catch {
+      return "maybe";
+    }
+  }
+
+  /** Let go of the connection. For a backend that was opened and not chosen. */
+  close(): void {
+    this.#db.close();
+  }
+
+  /**
    * The records in a range of paths.
    *
    * Every read used to be `getAll()` over the whole store, which loads every

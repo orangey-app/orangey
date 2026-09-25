@@ -332,11 +332,22 @@ export function createLibraryView(): View {
     download(basename(node.path), serialize(wrap(await portableRandomizer(node.randomizer))), "application/json");
   }
 
+  /**
+   * A create that fails used to fail in silence: the name dialog closed and
+   * nothing appeared, which on an iPad whose storage would not take a write
+   * looked like a button that did nothing. Now it says so, with the reason.
+   */
+  function couldNotSave(error: unknown): null {
+    state.toast(`Could not save to this browser's storage: ${(error as Error).message}`);
+    return null;
+  }
+
   async function newRandomizer(type: RandomizerType, folder = selectedFolder): Promise<void> {
     const titles: Record<RandomizerType, string> = { list: "New wheel", dice: "New dice", coin: "New coin", number: "New number", board: "New board" };
     const name = await askText(titles[type], { label: "Name", value: titles[type], confirm: "Create", opener: newButton });
     if (!name) return;
-    const path = await state.library.create(folder, emptyRandomizer(type, name));
+    const path = await state.library.create(folder, emptyRandomizer(type, name)).catch(couldNotSave);
+    if (!path) return;
     render();
     // A board is built on the board itself — there is nothing to edit in a
     // separate screen — so it opens where it is played.
@@ -346,7 +357,8 @@ export function createLibraryView(): View {
   async function newFolder(folder = selectedFolder): Promise<void> {
     const name = await askText("New folder", { label: "Name", value: "New folder", confirm: "Create", opener: newButton });
     if (!name) return;
-    const path = await state.library.createFolder(folder, name);
+    const path = await state.library.createFolder(folder, name).catch(couldNotSave);
+    if (!path) return;
     if (!state.prefs.expandedFolders.includes(folder)) void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, folder] });
     selectedFolder = path;
     render();

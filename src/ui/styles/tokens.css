@@ -38,10 +38,12 @@
   --gap: 12px;
   --pad: 16px;
 
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  /* Names, headings and answers (Arapey), and the numbers on dice (Young
-     Serif, digits and signs only). Both are embedded by the build; see assets/fonts. */
-  --font-text: "Orangey Text", Georgia, "Times New Roman", serif;
+  /* Arapey for everything that is read, the system font for the labels on
+     wheel slices — small, dense and on strong colour — and Young Serif for the
+     numbers on dice (digits and signs only). The two embedded fonts come from
+     the build; see assets/fonts. */
+  --font: "Orangey Text", Georgia, "Times New Roman", serif;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-dice: "Orangey Dice", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }

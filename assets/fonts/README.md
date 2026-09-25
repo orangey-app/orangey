@@ -6,7 +6,7 @@ notices included, so the app needs no network to show them.
 
 | File | Font | Used for | Made with |
 |---|---|---|---|
-| `arapey-regular.woff` | Arapey Regular, whole font | names, headings, the wordmark, wheel and list answers | `pyftsubset Arapey-Regular.ttf --unicodes="*" --layout-features='*' --flavor=woff` |
+| `arapey-regular.woff` | Arapey Regular, whole font | the whole interface: text, buttons, tables, names, headings, the wordmark, wheel and list answers — everything but the labels on wheel slices (system font) and the numbers on dice | `pyftsubset Arapey-Regular.ttf --unicodes="*" --layout-features='*' --flavor=woff` |
 | `youngserif-digits.woff` | Young Serif Regular, digits, `+`, `−` and `!` only | the numbers on dice and dice totals | `pyftsubset YoungSerif-Regular.ttf --unicodes="U+0030-0039,U+002B,U+2212,U+0021" --layout-features='' --flavor=woff` |
 
 The sources are the Google Fonts downloads of each family. Young Serif's

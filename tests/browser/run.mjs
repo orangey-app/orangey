@@ -187,6 +187,61 @@ async function main() {
     assert.equal(kind, "opfs");
   });
 
+  // Safari 18 — and so every browser on iOS 18 — has an origin-private
+  // filesystem that lists but cannot write: createWritable() is not there.
+  // The app used to pick it on the strength of getDirectory() alone and then
+  // hang on "Loading…" at the first write. Chromium is made to look like that
+  // here, and the library has to land in IndexedDB and stay there.
+  await test("an OPFS that cannot be written to is passed over for IndexedDB", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      // Guarded: the harness passes through about:blank, which is not a
+      // secure context and has no file system classes at all.
+      source: "if (typeof FileSystemFileHandle !== 'undefined') { delete FileSystemFileHandle.prototype.createWritable; delete FileSystemHandle.prototype.move; }",
+    });
+    // With the starters this time: seeding is the first write a new library sees.
+    await page.goto(`${server.origin}/index.html?debug`);
+    await page.waitForFunction("window.orangey && window.orangey.state.ready");
+    const kind = await page.evaluate(`return window.orangey.state.library.backend.kind`);
+    assert.equal(kind, "idb");
+    const seeded = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
+    assert.ok(seeded.includes("Forest Encounters"), `starters were not written: ${seeded.join(", ")}`);
+    await createList(page, "Made on Safari 18", [{ label: "A", weight: 1 }]);
+    await page.goto(`${server.origin}/index.html?debug`);
+    await page.waitForFunction("window.orangey && window.orangey.state.ready");
+    const names = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
+    assert.ok(names.includes("Made on Safari 18"), `the wheel did not survive a reload: ${names.join(", ")}`);
+    assert.equal(await page.evaluate(`return window.orangey.state.library.backend.kind`), "idb");
+    // Nothing of the probe may be left where the tree would show it.
+    const stray = await page.evaluate(`
+      const root = await navigator.storage.getDirectory();
+      const lib = await root.getDirectoryHandle("library");
+      const names = [];
+      for await (const [name] of lib.entries()) names.push(name);
+      return names.filter((n) => !n.startsWith("."));
+    `);
+    assert.deepEqual(stray, []);
+  });
+
+  // The same iPad after an update to a Safari that can write: the library in
+  // IndexedDB must still be the one shown, not a fresh, empty filesystem.
+  await test("a library already in IndexedDB is kept over an empty OPFS", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.evaluate(`
+      const { IndexedDbBackend } = window.orangey.backends;
+      const idb = await IndexedDbBackend.open();
+      await idb.write("kept.orangey.json", JSON.stringify({ format: "orangey", version: 1, randomizer: {
+        id: "kept", type: "list", name: "Kept", view: "wheel",
+        created: new Date().toISOString(), modified: new Date().toISOString(),
+        items: [{ id: "i1", label: "A", weight: 1 }] } }));
+      idb.close();
+    `);
+    await open(page);
+    assert.equal(await page.evaluate(`return window.orangey.state.library.backend.kind`), "idb");
+    const names = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
+    assert.deepEqual(names, ["Kept"]);
+  });
+
   await test("the layout is two-pane on a desktop and tabbed on a phone", async (page) => {
     await open(page, "", { fresh: true });
     await page.setViewport(1280, 900);
@@ -823,7 +878,8 @@ async function main() {
     assert.ok(offset < 8, `the number sits ${offset.toFixed(1)} px from the middle of the die`);
 
     // The two embedded fonts load, and each goes where it belongs: the dice
-    // numbers and the dice total in Young Serif, the wordmark in Arapey.
+    // numbers and the dice total in Young Serif, the wordmark, the page and
+    // a button in Arapey, and only a wheel's slice labels in the system font.
     const type = await page.evaluate(`
       await document.fonts.ready;
       const family = (sel) => getComputedStyle(document.querySelector(sel)).fontFamily;
@@ -833,6 +889,9 @@ async function main() {
         dieValue: family(".die-value"),
         total: family(".result-panel.is-dice .result-value"),
         brand: family(".brand"),
+        body: family("body"),
+        button: family("button"),
+        caption: family(".die-caption"),
       };
     `);
     assert.equal(type.textLoaded, true, "Arapey did not load");
@@ -840,6 +899,14 @@ async function main() {
     assert.match(type.dieValue, /^"?Orangey Dice/);
     assert.match(type.total, /^"?Orangey Dice/);
     assert.match(type.brand, /^"?Orangey Text/);
+    assert.match(type.body, /^"?Orangey Text/);
+    assert.match(type.button, /^"?Orangey Text/);
+    assert.match(type.caption, /^"?Orangey Text/);
+    const slices = await createList(page, "Slices", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
+    await open(page, `#/r/${encodeURIComponent(slices)}`);
+    await page.waitForFunction(`document.querySelector(".wheel-label")`);
+    const label = await page.evaluate(`return getComputedStyle(document.querySelector(".wheel-label")).fontFamily`);
+    assert.ok(!label.includes("Orangey"), `wheel labels are set in ${label}; they belong in the system font`);
   });
 
   await test("J drag-and-drop and the wizard report agree with the fixture", async (page) => {

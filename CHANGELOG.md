@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+- **iPhone and iPad on iOS 18 get a library.** Safari 18 — and every browser
+  on iOS 18, since they all run on its engine — has a private filesystem that
+  can be listed but not written to. Orangey chose it, and then every write
+  failed: no starters, no new wheel, no import, and on a first visit a page
+  that never got past "Loading…". Browser storage is now checked with a real
+  write before it is trusted, and where that fails the library lives in
+  IndexedDB, which those browsers do have. A library already in IndexedDB is
+  kept when the browser later gains a writable filesystem (iOS 26), so an
+  update does not hide it.
+- **Files show up in the iPad's picker.** The Import page's file chooser named
+  its file types by extension only, which iOS turns into a picker with the
+  `.orangey.json` and `.zip` files greyed out. It now names the types too.
+- **Import several files at once.** The file chooser and the drop target take
+  any number of files, and a single `.orangey.json` lands in the folder
+  chosen on the page rather than always at the top level.
+- **Arapey everywhere.** The whole interface is now set in Arapey — text,
+  buttons, tables, settings, the die captions — with two exceptions: the
+  labels on wheel slices stay in the system font, and the numbers on dice
+  stay in Young Serif. Arapey reads smaller than the system font at the same
+  size, so the body and the small labels each gained a pixel. Arapey has no
+  bold; headings and answers stay unfaked, the small interface weights keep
+  the browser's.
+- **Roll buttons line up on a board.** Every cell in a row is as tall as the
+  tallest and its Roll sits at the bottom, so the buttons run in a line
+  whatever each cell shows above them.
+- **The editor fits a phone.** The outcome table scrolls sideways inside its
+  card, as it was meant to; before, the card grew to the table's width and
+  the right half of the editor was off the screen.
+- The Import page no longer shows an empty card under "Nothing to import
+  yet". The README screenshots are retaken with the new type.
+- **A create that fails says so.** New wheel, new folder and the starters
+  used to fail silently when storage refused the write; there is now a
+  message with the reason, and the app opens regardless.
+
 ## 0.5.0 — the first release
 
 The first public release of Orangey. Everything below this section was

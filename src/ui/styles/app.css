@@ -5,7 +5,7 @@ html, body { height: 100%; }
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.45;
   color: var(--ink);
   background: var(--bg);
@@ -78,7 +78,7 @@ body {
     padding: 10px 4px 12px;
     color: var(--ink-soft);
     font: inherit;
-    font-size: 12px;
+    font-size: 13px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -134,8 +134,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-size: 13px; }
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--gap); }
-.field-label { font-size: 13px; color: var(--ink-soft); font-weight: 550; }
-.field-hint { font-size: 12px; color: var(--ink-faint); }
+.field-label { font-size: 14px; color: var(--ink-soft); font-weight: 550; }
+.field-hint { font-size: 13px; color: var(--ink-faint); }
 /* A setting that is only ever on or off: the box sits beside its label, not
    above it like the sliders. */
 .feel-toggle { flex-direction: row; align-items: center; cursor: pointer; }
@@ -151,7 +151,7 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .bag-line { justify-content: flex-end; margin: 4px 0 2px; min-height: 28px; }
 .bag-line[hidden] { display: none; }
 .home-shortcuts[hidden] { display: none; }
-.home-shortcuts h2 { font-size: 15px; margin: 0 0 6px; }
+.home-shortcuts h2 { font-size: 16px; margin: 0 0 6px; }
 .shortcut-group + .shortcut-group { margin-top: 12px; }
 /* input.roll-count, not .roll-count: the general rule for number inputs sets
    width: 100% and outranks a bare class, which pushed the field onto a line
@@ -161,7 +161,7 @@ input.roll-count { width: 56px; }
 .slices-field[hidden] { display: none; }
 .spacer { flex: 1; }
 .muted { color: var(--ink-soft); }
-.faint { color: var(--ink-faint); font-size: 13px; }
+.faint { color: var(--ink-faint); font-size: 14px; }
 .card {
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -229,7 +229,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 /* The detail line arrives with the first roll, so its room is kept from the
    start; the seed line only when a seed is set. */
 .result-detail { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); min-height: 1.35em; }
-.result-meta { font-size: 13px; color: var(--ink-faint); }
+.result-meta { font-size: 14px; color: var(--ink-faint); }
 .result-panel.seeded .result-meta { min-height: 1.35em; }
 .result-value.is-max { color: var(--ok); }
 .result-value.is-min { color: var(--error); }
@@ -315,7 +315,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 }
 .die-slot:not(.rolling) .die-value { opacity: 1; }
 .die-caption {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
   min-height: 1.2em;
@@ -397,17 +397,17 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .tree-row.drop-target, .tree-holder.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--accent-soft); }
 .tree-row.dragging { opacity: 0.4; }
 .library-head { margin-bottom: 8px; }
-.library-title { margin: 0; font-size: 15px; }
+.library-title { margin: 0; font-size: 16px; }
 .library-foot { margin-top: 12px; }
 .storage-badge {
-  font-size: 12px; padding: 3px 9px; min-height: 26px; border-radius: 999px;
+  font-size: 13px; padding: 3px 9px; min-height: 26px; border-radius: 999px;
   border-color: var(--border); color: var(--ink-soft); background: var(--bg-sunken);
 }
 .storage-badge.memory { color: #fff; background: var(--error); border-color: var(--error); }
 .storage-badge.fsa { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
 .notice {
   background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 8px 10px;
-  border-radius: var(--radius-sm); font-size: 13px; margin: 8px 0; line-height: 1.5;
+  border-radius: var(--radius-sm); font-size: 14px; margin: 8px 0; line-height: 1.5;
 }
 .notice.danger { background: #fde4e4; border-left-color: var(--error); color: #6b1f1f; }
 .menu {
@@ -422,12 +422,12 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .folder-pick { max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px; }
 .tree-row .glyph { width: 18px; text-align: center; flex: none; }
 .tree-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-row .count { margin-left: auto; color: var(--ink-faint); font-size: 12px; }
+.tree-row .count { margin-left: auto; color: var(--ink-faint); font-size: 13px; }
 .tree ul { margin: 0; padding-left: 14px; border-left: 1px solid var(--border); }
 .tree-file { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; }
 .tree-file .tree-row { flex: 1; min-width: 0; }
 
-.search-hit .why { color: var(--ink-faint); font-size: 12px; }
+.search-hit .why { color: var(--ink-faint); font-size: 13px; }
 
 /* ---- outcome table -------------------------------------------------------- */
 
@@ -436,7 +436,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
    sliver you cannot read, and the wrapper scrolls instead. */
 .outcomes { width: 100%; min-width: 900px; border-collapse: collapse; }
 .outcomes th {
-  text-align: left; font-size: 12px; color: var(--ink-soft); font-weight: 600;
+  text-align: left; font-size: 13px; color: var(--ink-soft); font-weight: 600;
   padding: 4px 6px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-raised);
 }
 .outcomes td { padding: 2px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -446,7 +446,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .outcomes tr.dragging { opacity: 0.4; }
 .outcomes tr.drop-target td { border-top: 2px solid var(--accent); }
 .outcomes .handle { cursor: grab; color: var(--ink-faint); user-select: none; width: 22px; text-align: center; }
-.outcomes .pct { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 13px; width: 58px; text-align: right; }
+.outcomes .pct { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 14px; width: 58px; text-align: right; }
 .outcomes input[type="text"], .outcomes input[type="number"] { min-height: 32px; padding: 4px 7px; }
 .outcomes .weight-cell input { width: 68px; text-align: right; font-variant-numeric: tabular-nums; }
 .outcomes .label-cell { min-width: 150px; }
@@ -457,7 +457,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 /* ---- the Orangey tag on an outcome ---------------------------------------- */
 
 .reaction-control {
-  min-height: 30px; min-width: 56px; padding: 2px 8px; font-size: 13px;
+  min-height: 30px; min-width: 56px; padding: 2px 8px; font-size: 14px;
   border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--ink-faint);
 }
 .reaction-control.reaction-cheer { color: var(--ink); background: color-mix(in oklab, var(--accent) 22%, transparent); border-color: transparent; }
@@ -498,10 +498,10 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .swatch.auto { position: relative; }
 .swatch.auto::after {
   content: "A"; position: absolute; inset: 0; display: grid; place-items: center;
-  font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.85); text-shadow: 0 0 2px rgba(0,0,0,0.6);
+  font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.85); text-shadow: 0 0 2px rgba(0,0,0,0.6);
 }
 .swatch-groups { max-height: 56vh; overflow: auto; padding-right: 4px; }
-.swatch-group-title { margin: 10px 0 4px; font-size: 12px; }
+.swatch-group-title { margin: 10px 0 4px; font-size: 13px; }
 .swatch-grid { display: flex; flex-wrap: wrap; gap: 5px; }
 .swatch-grid button { width: 28px; height: 28px; border-radius: 7px; padding: 0; min-height: 0; border: 1px solid rgba(0,0,0,0.12); }
 .swatch-grid button:hover { transform: scale(1.12); }
@@ -509,11 +509,18 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 .swatch-grid button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 
 .editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--pad); align-items: start; }
-@media (max-width: 900px) { .editor-layout { grid-template-columns: 1fr; } }
+/* minmax(0, 1fr), not 1fr: the outcome table has a minimum width and scrolls
+   inside .table-scroll, but a plain 1fr track is at least as wide as its
+   content, so on a phone the whole card grew to the table's width instead. */
+@media (max-width: 900px) { .editor-layout { grid-template-columns: minmax(0, 1fr); } }
 .table-scroll { max-height: 62vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
 
 /* ---- misc ----------------------------------------------------------------- */
 
+/* The settings and preview cards are made once and filled as there is
+   something to say; until then they are empty, and an empty card is a
+   rounded blank under the page. */
+.importer > .card:empty { display: none; }
 .report { font-family: var(--mono); font-size: 13px; line-height: 1.7; white-space: pre-wrap; margin: 0; }
 .report .ok { color: var(--ok); }
 .report .warn { color: var(--warn); }
@@ -528,13 +535,13 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
 
 .history-list { list-style: none; margin: 0; padding: 0; }
 .history-list li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.history-list .when { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-size: 12px; flex: none; }
+.history-list .when { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-size: 13px; flex: none; }
 .history-list .what { flex: 1; min-width: 0; }
 .history-list .what .name { font-weight: 600; }
 .history-list .what .detail { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
 /* The dice behind an answer and the roll that led to it: under the headline,
    quieter than it, one line each. */
-.history-list .what .roll-note { display: block; font-size: 12px; color: var(--ink-faint); }
+.history-list .what .roll-note { display: block; font-size: 13px; color: var(--ink-faint); }
 .history-list .what .roll-parts { font-family: var(--mono); }
 
 /* Full-screen result, for a link clicked from a slide or a projector.
@@ -623,7 +630,7 @@ body.presenting .leave-presenting:focus-visible { opacity: 1; }
 .scheme-ocean .scheme-swatch { background: linear-gradient(90deg, #f3f9fd 0 60%, #3fa7e0 60% 100%); }
 .scheme-berry .scheme-swatch { background: linear-gradient(90deg, #fff5f8 0 60%, #e8679a 60% 100%); }
 
-.animate-toggle { font-size: 13px; }
+.animate-toggle { font-size: 14px; }
 .feel-card .feel-section { margin-top: 8px; }
 
 .link-dialog input[type="text"] { font-family: var(--mono); font-size: 12px; }
@@ -633,7 +640,7 @@ body.presenting .leave-presenting:focus-visible { opacity: 1; }
   border-left: 3px solid var(--warn);
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .sr-only {
@@ -735,8 +742,14 @@ body.presenting .result-picture { max-height: 40vh; }
 }
 .board-grid.board-empty { display: none; }
 .cell-holder { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg-raised); }
+/* Every cell in a row is as tall as the tallest, and its Roll sits at the
+   bottom, so the buttons line up across the board whatever each cell shows —
+   a percentage line, a dice breakdown, or nothing yet. */
+.board-grid > .cell-holder, .board-grid > .chain-link.board-chain { display: flex; flex-direction: column; }
+.board-grid > .cell-holder > .cell, .board-grid > .chain-link.board-chain > .cell { flex: 1 0 auto; }
+.board-grid .cell-roll, .board-grid .chain-roll { margin-top: auto; }
 .cell-holder.dragging { opacity: 0.5; }
-.cell-name { font-size: 15px; margin: 0 0 6px; }
+.cell-name { font-size: 16px; margin: 0 0 6px; }
 .cell-stage { display: grid; place-items: center; min-height: 120px; }
 .cell-remove { position: absolute; top: 6px; right: 6px; padding: 2px 8px; line-height: 1; }
 /* Taking a randomizer off the board is an edit; in play mode there is no ✕ to
@@ -745,6 +758,7 @@ body.presenting .result-picture { max-height: 40vh; }
 .board-editing .cell-holder { cursor: grab; }
 .cell-missing { color: var(--ink-soft); }
 .cell-roll { width: 100%; margin-top: 8px; }
+.board-grid > .cell-holder > .cell, .board-grid > .chain-link.board-chain > .cell { margin-bottom: 8px; }
 /* Opened by an outcome's link, not part of the board: dashed, so it reads as
    something that will go away rather than something that was put there. */
 .board-grid > .chain-link.board-chain { position: relative; margin: 0; padding: 10px; box-shadow: none; border-style: dashed; }
@@ -827,7 +841,7 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .chain-strip:empty { display: none; }
 .chain-icon { display: flex; align-items: baseline; gap: 8px; max-width: 240px; }
 .chain-icon-name { font-weight: 600; }
-.chain-icon-answer { color: var(--ink-faint); font-size: 13px; }
+.chain-icon-answer { color: var(--ink-faint); font-size: 14px; }
 .chain-icon-name,
 .chain-icon-answer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -836,19 +850,19 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .home-screen-notice p { margin: 0 0 8px; }
 
 /* ---- type ------------------------------------------------------------------
-   Arapey for what is read as a name or an answer, Young Serif for the numbers
-   on dice. Buttons, tables, settings and wheel labels stay in the system font:
-   small, dense or on strong colour, they read better there. Neither font has
-   a bold, and a browser-thickened one looked heavy, so none is faked. */
+   Arapey is the page's font (--font on body), Young Serif the numbers on
+   dice, and the system font only the labels on wheel slices, which are
+   small, dense and on strong colour. Arapey has no bold. Headings, names and
+   answers are large enough to carry themselves, so nothing is faked there; the
+   small interface weights — a primary button, the selected row, a field label
+   — keep their browser-thickened bold, which at those sizes reads as
+   emphasis rather than as a heavier face. */
 h1, h2, h3, .brand, .board-name, .cell-name,
 .result-panel:not(.is-dice) .result-value {
-  font-family: var(--font-text);
   font-synthesis: none;
 }
 .die, .die-value, .result-panel.is-dice .result-value {
   font-family: var(--font-dice);
   font-synthesis: none;
 }
-/* The caption under each die stays in the system font: the dice font's
-   digits are old-style, and at 12px a 1 or a 2 is too small to read. */
-.die-caption { font-family: var(--font); }
+.wheel-label { font-family: var(--font-ui); }
