@@ -105,7 +105,7 @@ button:hover { background: var(--bg-sunken); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; }
 button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
-button.danger-primary { background: var(--error); border-color: var(--error); color: #fff; }
+button.danger-primary { background: var(--error); border-color: var(--error); color: var(--error-ink); }
 button.ghost { border-color: transparent; background: none; }
 button.ghost:hover { background: var(--bg-sunken); }
 button.danger { color: var(--error); }
@@ -470,7 +470,7 @@ input.quick-offer, input.offer-input { width: 56px; }
   font-size: 13px; padding: 3px 9px; min-height: 26px; border-radius: 999px;
   border-color: var(--border); color: var(--ink-soft); background: var(--bg-sunken);
 }
-.storage-badge.memory { color: #fff; background: var(--error); border-color: var(--error); }
+.storage-badge.memory { color: var(--error-ink); background: var(--error); border-color: var(--error); }
 .storage-badge.fsa { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
 .notice {
   background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 8px 10px;
@@ -565,7 +565,7 @@ input.quick-offer, input.offer-input { width: 56px; }
 .swatch.auto { position: relative; }
 .swatch.auto::after {
   content: "A"; position: absolute; inset: 0; display: grid; place-items: center;
-  font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.85); text-shadow: 0 0 2px rgba(0,0,0,0.6);
+  font-size: 11px; font-weight: 700; color: var(--auto-ink, rgba(255,255,255,0.85));
 }
 .swatch-groups { max-height: 56vh; overflow: auto; padding-right: 4px; }
 .swatch-group-title { margin: 10px 0 4px; font-size: 13px; }
@@ -702,6 +702,33 @@ body.presenting .leave-presenting:focus-visible { opacity: 1; }
 .scheme-meadow .scheme-swatch { background: linear-gradient(90deg, #f4fbf3 0 60%, #5cc46a 60% 100%); }
 .scheme-ocean .scheme-swatch { background: linear-gradient(90deg, #f3f9fd 0 60%, #3fa7e0 60% 100%); }
 .scheme-berry .scheme-swatch { background: linear-gradient(90deg, #fff5f8 0 60%, #e8679a 60% 100%); }
+/* Your own: painted inline from the saved theme; dashed until there is one. */
+.scheme-custom:disabled .scheme-swatch { background: none; border: 1px dashed var(--border-strong); }
+.theme-warning { margin-top: 8px; }
+
+/* The theme card. Each preview box carries the derived tokens as inline
+   custom properties, so everything inside it is painted as the app would be. */
+.theme-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 10px 0; }
+.theme-wheel-fields { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.colour-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.colour-field-label { font-size: 14px; color: var(--ink-soft); }
+.colour-field-inputs { flex-wrap: nowrap; }
+.colour-picker { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-raised); flex: none; }
+input.colour-hex { width: 100%; min-width: 0; max-width: 110px; font-family: var(--mono); font-size: 15px; }
+.theme-previews { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin: 10px 0; }
+.theme-preview { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.theme-preview[hidden] { display: none; }
+.theme-preview-caption { margin: 0 0 8px; font-weight: 600; }
+.theme-preview-row { align-items: center; flex-wrap: wrap; }
+.theme-preview-sample { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; flex: 1; min-width: 150px; }
+.theme-preview-sample p { margin: 0 0 6px; }
+.theme-moved { margin: 8px 0 0; }
+.theme-problems { margin: 6px 0 10px; padding-left: 18px; }
+.theme-problems[hidden] { display: none; }
+/* A wheel's own palette in the editor. */
+.palette-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.palette-fields[hidden] { display: none; }
+.palette-problems { margin: 0 0 12px; padding-left: 18px; }
 
 .animate-toggle { font-size: 14px; }
 .feel-card .feel-section { margin-top: 8px; }

@@ -2375,6 +2375,59 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
+  // Your own theme: typed in Settings, checked as it is typed, applied to the
+  // whole app and its wheels, kept over a reload, and gone without a trace
+  // when a built-in scheme is chosen. A wheel's own palette then wins over
+  // whatever the theme is.
+  await test("AE your own theme paints the app and its wheels, suggests a readable version, and a wheel's own palette wins", async (page) => {
+    await open(page, "#/settings", { fresh: true });
+    await page.waitForFunction(`document.querySelector(".theme-card")`);
+    const setHex = async (key, hex) => page.type(`.theme-card [data-field="${key}"] .colour-hex`, hex);
+    const failing = () => page.evaluate(`return [...document.querySelectorAll(".theme-problems li.warning")].map((li) => li.textContent)`);
+    const readable = { bg: "#1b2230", ink: "#e8e2d6", accent: "#e0862f", wheel0: "#c2412f", wheel1: "#d9a441", wheel2: "#3d7c8a", wheel3: "#6b8e4e" };
+    for (const [key, hex] of Object.entries(readable)) await setHex(key, hex);
+    assert.deepEqual(await failing(), []);
+    await page.click(".use-theme");
+    await page.waitForFunction(`document.documentElement.dataset.scheme === "custom"`);
+
+    // Grey text on this ground fails, and the suggestion is a readable one.
+    await setHex("ink", "#888888");
+    await page.waitForFunction(`document.querySelector(".theme-suggestion") && !document.querySelector(".theme-suggestion").hidden`);
+    assert.ok((await failing()).some((line) => line.startsWith("Text on the background")));
+    await page.click(".use-suggestion");
+    await page.waitForFunction(`getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() !== "#888888"`);
+
+    await setHex("ink", readable.ink);
+    await page.click(".use-theme");
+    const bg = () => page.evaluate(`return getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()`);
+    await page.waitForFunction(`getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() === "#e8e2d6"`);
+    assert.equal(await bg(), "#1b2230");
+
+    // The theme's wheel colours are every wheel's, and a reload keeps them.
+    const path = await createList(page, "Weather", [{ label: "Rain", weight: 1 }, { label: "Sun", weight: 1 }, { label: "Fog", weight: 1 }]);
+    const firstSlice = () => page.evaluate(`return document.querySelector('.wheel-rotor path[data-index="0"]').getAttribute("fill")`);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector('.wheel-rotor path[data-index="0"]')`);
+    assert.equal(await firstSlice(), "#c2412f");
+    assert.equal(await bg(), "#1b2230");
+
+    // A built-in scheme takes every inline token away with it.
+    await page.evaluate(`await window.orangey.state.savePrefs({ scheme: "night" })`);
+    assert.equal(await page.evaluate(`return document.documentElement.style.getPropertyValue("--bg")`), "");
+
+    // A wheel's own palette, set in its editor, wins over the scheme's.
+    await open(page, `#/edit/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".palette-own")`);
+    await page.click(".palette-own");
+    for (const [i, hex] of ["#111111", "#eeeeee", "#3d7c8a"].entries()) await page.type(`[data-field="palette${i}"] .colour-hex`, hex);
+    await page.evaluate(`await window.orangey.state.library.flush()`);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector('.wheel-rotor path[data-index="0"]')`);
+    assert.equal(await firstSlice(), "#111111");
+    assert.equal(await page.evaluate(`return document.documentElement.dataset.scheme`), "night");
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
   // Tonight's dice and a quick wheel go on a board without editing it: they
   // roll with Roll all, come back after a reload, and either close or are
   // saved — saving puts them on the board for good. The board file is only

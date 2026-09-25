@@ -113,6 +113,7 @@ export function createPlayView(
           items: () => inPlay(),
           id: () => randomizer.id,
           slices: () => (randomizer.type === "list" ? randomizer.slices : undefined),
+          colours: () => state.wheelColours(randomizer.type === "list" ? randomizer.palette : undefined),
           onActivate: () => void doRoll(),
         });
         stage.append(wheel.el);

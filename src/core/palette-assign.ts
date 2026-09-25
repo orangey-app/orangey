@@ -112,7 +112,15 @@ export interface WheelColours {
  * one at the end recolours at most the last slice. A colour the user chose is
  * never moved; if two of those clash, the clash is reported, not hidden.
  */
-export function assignWheelColours(fixed: (string | null | undefined)[], cyclic = true): WheelColours {
+export function assignWheelColours(
+  fixed: (string | null | undefined)[],
+  cyclic = true,
+  // Your own theme or a wheel's own palette: three in turn, then the spare.
+  // The constants stay as they are; a different set is passed in.
+  colours: readonly string[] = [...WHEEL_COLOURS, WHEEL_SPARE],
+): WheelColours {
+  const cycle = colours.slice(0, 3);
+  const spare = colours[3] ?? WHEEL_SPARE;
   const n = fixed.length;
   const chosen: string[] = [];
   for (let i = 0; i < n; i++) {
@@ -125,9 +133,9 @@ export function assignWheelColours(fixed: (string | null | undefined)[], cyclic 
     if (i > 0) neighbours.push(toCandidate(chosen[i - 1]));
     if (i + 1 < n && fixed[i + 1]) neighbours.push(toCandidate(fixed[i + 1]!));
     if (cyclic && n > 2 && i === n - 1) neighbours.push(toCandidate(chosen[0]));
-    const turn = WHEEL_COLOURS[i % WHEEL_COLOURS.length];
-    const others = [1, 2].map((k) => WHEEL_COLOURS[(i + k) % WHEEL_COLOURS.length]);
-    const pick = [turn, WHEEL_SPARE, ...others].find((hex) => neighbours.every((nb) => distinct(toCandidate(hex), nb)));
+    const turn = cycle[i % cycle.length];
+    const others = [1, 2].map((k) => cycle[(i + k) % cycle.length]);
+    const pick = [turn, spare, ...others].find((hex) => neighbours.every((nb) => distinct(toCandidate(hex), nb)));
     chosen.push(pick ?? turn);
   }
   return { colors: chosen, clashes: findClashes(chosen, cyclic) };

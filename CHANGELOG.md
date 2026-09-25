@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Your own theme.** Settings has a card for making one: a background, a
+  text colour, an accent and the wheel's colours, with the rest worked out
+  from those and a live preview. Every pair that would be hard to read is
+  listed with its contrast as you pick, and the closest readable version is
+  shown beside yours — the same hues, lighter or darker as needed — to use
+  instead, or not. It becomes a sixth scheme and travels in the settings
+  file; a settings file from before leaves it alone. The error, warning and
+  success colours follow it too: the same red, amber and green, lightened or
+  darkened until they read on its background.
+- **A wheel's own colours.** In a wheel's editor, Colours: This wheel's gives
+  it three colours of its own (and a spare, if you like), over the theme's.
+  They are part of the wheel, so they go with it in its file and in a link.
 - **Dice and quick wheels on a board, just for now.** A board has a box for
   dice (`3d20`, anything the notation takes) and a Quick wheel button. Each
   adds a dashed cell after the board's own: it rolls with Roll all, a quick

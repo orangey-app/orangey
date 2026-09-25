@@ -30,6 +30,8 @@
   --ok: #3f9c5a;
   --warn: #d38b1f;
   --error: #d64545;
+  /* Text on an error-coloured fill. Your own theme derives it; built-ins use white. */
+  --error-ink: #ffffff;
 
   --radius: 14px;
   --radius-sm: 9px;

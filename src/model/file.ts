@@ -31,7 +31,7 @@ const RANDOMIZER_KEY_ORDER = [
   "feel", "created", "modified", "items", "entries",
   // Appended, never inserted (P10): files written before a key existed keep
   // their exact bytes when saved again.
-  "offer",
+  "offer", "palette",
 ];
 const ITEM_KEY_ORDER = ["id", "label", "weight", "disabled", "description", "color", "reaction", "image", "goesTo", "metadata", "imageData"];
 

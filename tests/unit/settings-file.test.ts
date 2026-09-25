@@ -43,6 +43,17 @@ describe("settings file", () => {
     // My colours come back normalised: the hash added, the hex lower-cased.
     assert.deepEqual(back.colours, [{ name: "Campaign red", hex: "#b3202a" }]);
     assert.equal(serializeSettings(back), text, "the file did not survive a second round trip");
+
+    // Your own theme travels, at the end of the file (P17), and comes back
+    // canonical; a file from 0.5 has none, and loads as it always did.
+    const theme = { name: "Night market", bg: "#1B2230", ink: "#e8e2d6", accent: "#e0862f", wheel: ["#c2412f", "#d9a441", "#3d7c8a", "#6b8e4e"] };
+    const withTheme = serializeSettings(portableSettings({ ...prefs(), scheme: "custom", customScheme: theme as never }));
+    assert.deepEqual(Object.keys(JSON.parse(withTheme).settings).at(-1), "customScheme");
+    const themed = parseSettings(withTheme);
+    assert.equal(themed.scheme, "custom");
+    assert.deepEqual(themed.customScheme, { ...theme, bg: "#1b2230" });
+    assert.equal(parseSettings(text).customScheme, undefined);
+    assert.throws(() => parseSettings(text.replace('"ocean"', '"custom"')), /your own theme/);
   });
 
   test("a corrupt or unwelcome file is refused, and the message names the part at fault", () => {

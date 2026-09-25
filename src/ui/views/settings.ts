@@ -27,6 +27,9 @@ import { SINGLE_FILE_NAME, isSingleFile, releasesUrl } from "../single.ts";
 import { storageAdvice, storageEnv } from "../../storage/fsdir.ts";
 import { askToPersist, canUseFolder, describeStorage, exportLibraryZip, isPersisted, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import type { View } from "../view.ts";
+import { createThemeCard, describeThemeProblem } from "../components/themecard.ts";
+import { deriveTheme, themeProblems } from "../../core/theme.ts";
+import { normalizeCustomScheme } from "../../model/settings-file.ts";
 
 const PREVIEW_ITEMS = ["Goblin patrol", "Merchant", "Wolf pack", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
 
@@ -35,6 +38,9 @@ export function createSettingsView(): View {
 
   const previewWheel = createWheel({ items: () => PREVIEW_ITEMS, id: () => "settings-preview", size: 220 });
   previewWheel.el.classList.add("wheel-small");
+  // Made once and kept: it holds a draft being typed, which a rebuild of the
+  // page would throw away along with the focus.
+  const themeCard = createThemeCard(() => render());
   const previewTray = createDiceTray();
   const previewCoin = createCoin();
   let previewMascot: Mascot | null = null;
@@ -88,9 +94,13 @@ export function createSettingsView(): View {
                 h("span", { class: "scheme-name", text: label }),
                 h("span", { class: "faint", text: blurb }),
               )),
+            customSchemeCard(),
           ),
+          customSchemeWarning(),
         ),
       ),
+
+      themeCard,
 
       storageCard(),
 
@@ -198,6 +208,44 @@ export function createSettingsView(): View {
     }
   }
 
+  /* ---- your own theme ------------------------------------------------------- */
+
+  /**
+   * The sixth card: your own theme, painted from what is saved rather than
+   * from a class like the built-in ones. It can be chosen once there is one.
+   */
+  function customSchemeCard(): HTMLElement {
+    const saved = normalizeCustomScheme(state.prefs.customScheme);
+    const t = saved ? deriveTheme(saved) : null;
+    return h("button", {
+      type: "button",
+      class: "scheme-card scheme-custom",
+      "aria-pressed": state.prefs.scheme === "custom" ? "true" : "false",
+      disabled: saved ? null : "",
+      onclick: () => {
+        if (!saved) return;
+        void state.savePrefs({ scheme: "custom" });
+        render();
+      },
+    },
+      h("span", {
+        class: "scheme-swatch",
+        style: t ? `background: linear-gradient(90deg, ${t["--bg"]} 0 60%, ${t["--accent"]} 60% 100%)` : "",
+      }),
+      h("span", { class: "scheme-name", text: saved ? saved.name : "Your own" }),
+      h("span", { class: "faint", text: saved ? "Your own theme" : "Make one below" }),
+    );
+  }
+
+  /** Chosen with its problems ("Use mine anyway"): the warning stays where the choice is made. */
+  function customSchemeWarning(): HTMLElement | null {
+    if (state.prefs.scheme !== "custom") return null;
+    const saved = normalizeCustomScheme(state.prefs.customScheme);
+    const failing = saved ? themeProblems(saved).filter((p) => !p.note) : [];
+    if (failing.length === 0) return null;
+    return h("p", { class: "warning theme-warning", text: `Your theme is in use with ${failing.length === 1 ? "a problem" : `${failing.length} problems`}: ${failing.map(describeThemeProblem).join("; ")}.` });
+  }
+
   /* ---- my colours ----------------------------------------------------------- */
 
   function coloursCard(): HTMLElement {
@@ -223,7 +271,7 @@ export function createSettingsView(): View {
     const full = colours.length >= MAX_CUSTOM_COLOURS;
     return h("div", { class: "card colours-card" },
       h("h2", { text: "My colours" }),
-      h("p", { class: "faint", text: "Colours you add here join the top of the colour picker in every editor. The automatic colours a wheel gets when you have not chosen any stay with the built-in palette, which is checked for contrast and for neighbours that can be told apart." }),
+      h("p", { class: "faint", text: "Colours you add here join the top of the colour picker in every editor. The automatic colours a wheel gets when you have not chosen any come from the colour scheme — your own theme's wheel colours when that is in use — and are checked for contrast and for neighbours that can be told apart." }),
       colours.length
         ? h("div", { class: "my-colours" },
             ...colours.map((c) =>

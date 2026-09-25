@@ -239,6 +239,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   --ok: #3f9c5a;
   --warn: #d38b1f;
   --error: #d64545;
+  /* Text on an error-coloured fill. Your own theme derives it; built-ins use white. */
+  --error-ink: #ffffff;
 
   --radius: 14px;
   --radius-sm: 9px;
@@ -460,7 +462,7 @@ button:hover { background: var(--bg-sunken); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; }
 button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
-button.danger-primary { background: var(--error); border-color: var(--error); color: #fff; }
+button.danger-primary { background: var(--error); border-color: var(--error); color: var(--error-ink); }
 button.ghost { border-color: transparent; background: none; }
 button.ghost:hover { background: var(--bg-sunken); }
 button.danger { color: var(--error); }
@@ -825,7 +827,7 @@ input.quick-offer, input.offer-input { width: 56px; }
   font-size: 13px; padding: 3px 9px; min-height: 26px; border-radius: 999px;
   border-color: var(--border); color: var(--ink-soft); background: var(--bg-sunken);
 }
-.storage-badge.memory { color: #fff; background: var(--error); border-color: var(--error); }
+.storage-badge.memory { color: var(--error-ink); background: var(--error); border-color: var(--error); }
 .storage-badge.fsa { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
 .notice {
   background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 8px 10px;
@@ -920,7 +922,7 @@ input.quick-offer, input.offer-input { width: 56px; }
 .swatch.auto { position: relative; }
 .swatch.auto::after {
   content: "A"; position: absolute; inset: 0; display: grid; place-items: center;
-  font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.85); text-shadow: 0 0 2px rgba(0,0,0,0.6);
+  font-size: 11px; font-weight: 700; color: var(--auto-ink, rgba(255,255,255,0.85));
 }
 .swatch-groups { max-height: 56vh; overflow: auto; padding-right: 4px; }
 .swatch-group-title { margin: 10px 0 4px; font-size: 13px; }
@@ -1057,6 +1059,33 @@ body.presenting .leave-presenting:focus-visible { opacity: 1; }
 .scheme-meadow .scheme-swatch { background: linear-gradient(90deg, #f4fbf3 0 60%, #5cc46a 60% 100%); }
 .scheme-ocean .scheme-swatch { background: linear-gradient(90deg, #f3f9fd 0 60%, #3fa7e0 60% 100%); }
 .scheme-berry .scheme-swatch { background: linear-gradient(90deg, #fff5f8 0 60%, #e8679a 60% 100%); }
+/* Your own: painted inline from the saved theme; dashed until there is one. */
+.scheme-custom:disabled .scheme-swatch { background: none; border: 1px dashed var(--border-strong); }
+.theme-warning { margin-top: 8px; }
+
+/* The theme card. Each preview box carries the derived tokens as inline
+   custom properties, so everything inside it is painted as the app would be. */
+.theme-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 10px 0; }
+.theme-wheel-fields { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.colour-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.colour-field-label { font-size: 14px; color: var(--ink-soft); }
+.colour-field-inputs { flex-wrap: nowrap; }
+.colour-picker { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-raised); flex: none; }
+input.colour-hex { width: 100%; min-width: 0; max-width: 110px; font-family: var(--mono); font-size: 15px; }
+.theme-previews { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin: 10px 0; }
+.theme-preview { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.theme-preview[hidden] { display: none; }
+.theme-preview-caption { margin: 0 0 8px; font-weight: 600; }
+.theme-preview-row { align-items: center; flex-wrap: wrap; }
+.theme-preview-sample { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; flex: 1; min-width: 150px; }
+.theme-preview-sample p { margin: 0 0 6px; }
+.theme-moved { margin: 8px 0 0; }
+.theme-problems { margin: 6px 0 10px; padding-left: 18px; }
+.theme-problems[hidden] { display: none; }
+/* A wheel's own palette in the editor. */
+.palette-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.palette-fields[hidden] { display: none; }
+.palette-problems { margin: 0 0 12px; padding-left: 18px; }
 
 .animate-toggle { font-size: 14px; }
 .feel-card .feel-section { margin-top: 8px; }
@@ -1896,6 +1925,7 @@ function sourceFor(seed                           )               {
 
                                                   
                                                               
+                                                     
 
                                
              
@@ -1940,8 +1970,14 @@ function sourceFor(seed                           )               {
                   
                                                              
                          
-                       
+                                                                           
                  
+     
+                                                                        
+                                                                       
+                                                     
+     
+                              
                                                                            
                           
                                                                             
@@ -3014,6 +3050,13 @@ const OUTCOME_REACTIONS = ["cheer", "wince"]         ;
                                   
      
                  
+     
+                                                                             
+                                                                             
+                                                                           
+                  
+     
+                     
  
 
                                                         
@@ -3126,6 +3169,13 @@ function validateRandomizer(v         , check = new Check(), path = "randomizer"
       if (o.withoutReplacement !== undefined) check.boolean(`${path}.withoutReplacement`, o.withoutReplacement);
       if (o.slices !== undefined) check.oneOf(`${path}.slices`, o.slices, SLICE_CONTENTS);
       if (o.offer !== undefined) check.number(`${path}.offer`, o.offer, { min: OFFER_MIN, max: OFFER_MAX, integer: true });
+      if (o.palette !== undefined && check.array(`${path}.palette`, o.palette)) {
+        const colours = o.palette             ;
+        if (colours.length < 3 || colours.length > 4) check.fail(`${path}.palette`, "three colours in turn and an optional spare");
+        colours.forEach((c, i) => {
+          if (!isHex(c)) check.fail(`${path}.palette[${i}]`, "expected a colour like #a33a30");
+        });
+      }
       if (check.array(`${path}.items`, o.items, 1)) {
         (o.items             ).forEach((it, i) => validateItem(it, check, `${path}.items[${i}]`));
       }
@@ -3248,7 +3298,7 @@ const RANDOMIZER_KEY_ORDER = [
   "feel", "created", "modified", "items", "entries",
   // Appended, never inserted (P10): files written before a key existed keep
   // their exact bytes when saved again.
-  "offer",
+  "offer", "palette",
 ];
 const ITEM_KEY_ORDER = ["id", "label", "weight", "disabled", "description", "color", "reaction", "image", "goesTo", "metadata", "imageData"];
 
@@ -5564,6 +5614,500 @@ function starters()            {
   ];
 }
 
+// ---- src/core/palette-assign.ts ----------------------------------
+/**
+ * Assigning colours to outcomes (plan C8.3).
+ *
+ * Requirements, in priority order:
+ *   1. two segments that touch never look alike — including the wrap-around
+ *      pair, because a wheel is a cycle and the last slice touches the first;
+ *   2. the assignment is stable, so the same wheel shows the same colours on
+ *      every reload and a GM can say "the red one";
+ *   3. it looks like a wheel people already know: primary colours in turn.
+ *      (It used to be a hashed walk through a 71-colour pool, which read as
+ *      random to anyone who had not seen it before.)
+ *
+ * An explicitly chosen colour always wins and is never moved.
+ */
+
+
+
+/**
+ * Thresholds. T was set from the palette's own distance distribution: with a
+ * muted pool the median pair sits near 0.18, so a bar of 0.15 rejects the
+ * pairs that actually read as "the same colour twice" while still leaving
+ * roughly two thirds of the pool available at every step. A higher bar looked
+ * better on paper and forced the wheel to alternate between extremes.
+ */
+const DEFAULT_THRESHOLDS = {
+  /** Minimum OKLab distance between touching segments. */
+  T: 0.15,
+  /** Minimum hue separation (degrees) for two colourful neighbours... */
+  hue: 25,
+  /** ...unless their lightness differs by at least this much. */
+  lightness: 0.12,
+  /** Chroma below which a colour counts as neutral and the hue rule is moot. */
+  neutralChroma: 0.04,
+  /** Distance required after simulating deuteranopia, as a fraction of T. */
+  cvdFactor: 0.6,
+}         ;
+
+                                                   
+
+                                 
+              
+               
+                 
+                                                    
+             
+ 
+
+function toCandidate(hex        )                 {
+  const oklab = hexToOklab(hex);
+  return {
+    hex,
+    oklab,
+    chroma: chroma(oklab),
+    cvd: rgbToOklab(simulateDeuteranopia(hexToRgb(hex))),
+  };
+}
+
+/**
+ * Are these two safe to put side by side?
+ *
+ * Two colours pass when they are far enough apart overall AND, if both are
+ * colourful, they differ clearly in hue or clearly in lightness — that second
+ * clause is what rejects "two dark blues" that a plain distance check lets
+ * through. The same test is then repeated through a deuteranopia simulation at
+ * a lower bar, which is what stops a red/green pair that is obvious to most
+ * people and identical to some.
+ */
+function distinct(a                , b                , t             = DEFAULT_THRESHOLDS, scale = 1)          {
+  const T = t.T * scale;
+  if (deltaE(a.oklab, b.oklab) < T) return false;
+  if (a.chroma > t.neutralChroma && b.chroma > t.neutralChroma) {
+    const hueOk = hueDifference(a.oklab, b.oklab) >= t.hue;
+    const lightOk = Math.abs(a.oklab.L - b.oklab.L) >= t.lightness;
+    if (!hueOk && !lightOk) return false;
+  }
+  if (deltaE(a.cvd, b.cvd) < T * t.cvdFactor) return false;
+  return true;
+}
+
+/**
+ * The wheel's colours: red, yellow and blue in turn, the way a wheel at a
+ * table or on a game show is painted, so a wheel reads as a wheel to anyone.
+ * Green is the spare, for the one slice that cannot take its turn's colour.
+ */
+const WHEEL_COLOURS = ["#e31f26", "#fcb315", "#006eb8"]         ;
+const WHEEL_SPARE = "#008842";
+
+                               
+                                                                  
+                   
+                                                                                  
+                              
+ 
+
+/**
+ * Colour every outcome that has no colour of its own.
+ *
+ * Slice i takes the cycle's colour for i. When that would look like a
+ * neighbour — the last slice of a 4-, 7- or 10-outcome wheel meets the first,
+ * which is also red, or the user has coloured a slice next to it — it takes
+ * the spare instead, then either other cycle colour. Deterministic from the
+ * positions alone: the same outcomes always get the same colours, and adding
+ * one at the end recolours at most the last slice. A colour the user chose is
+ * never moved; if two of those clash, the clash is reported, not hidden.
+ */
+function assignWheelColours(
+  fixed                               ,
+  cyclic = true,
+  // Your own theme or a wheel's own palette: three in turn, then the spare.
+  // The constants stay as they are; a different set is passed in.
+  colours                    = [...WHEEL_COLOURS, WHEEL_SPARE],
+)               {
+  const cycle = colours.slice(0, 3);
+  const spare = colours[3] ?? WHEEL_SPARE;
+  const n = fixed.length;
+  const chosen           = [];
+  for (let i = 0; i < n; i++) {
+    const own = fixed[i];
+    if (own) {
+      chosen.push(own);
+      continue;
+    }
+    const neighbours                   = [];
+    if (i > 0) neighbours.push(toCandidate(chosen[i - 1]));
+    if (i + 1 < n && fixed[i + 1]) neighbours.push(toCandidate(fixed[i + 1] ));
+    if (cyclic && n > 2 && i === n - 1) neighbours.push(toCandidate(chosen[0]));
+    const turn = cycle[i % cycle.length];
+    const others = [1, 2].map((k) => cycle[(i + k) % cycle.length]);
+    const pick = [turn, spare, ...others].find((hex) => neighbours.every((nb) => distinct(toCandidate(hex), nb)));
+    chosen.push(pick ?? turn);
+  }
+  return { colors: chosen, clashes: findClashes(chosen, cyclic) };
+}
+
+function findClashes(colors          , cyclic         , t = DEFAULT_THRESHOLDS, scale = 1)                     {
+  const cands = colors.map(toCandidate);
+  const out                     = [];
+  const last = cyclic ? colors.length : colors.length - 1;
+  for (let i = 0; i < last; i++) {
+    const j = (i + 1) % colors.length;
+    if (i === j) continue;
+    if (!distinct(cands[i], cands[j], t, scale)) out.push([i, j]);
+  }
+  return out;
+}
+
+// ---- src/core/theme.ts -------------------------------------------
+/**
+ * Your own theme: four choices in, every colour the app paints with out.
+ *
+ * A person picks a background, a text colour, an accent and the wheel's
+ * colours; the thirteen tokens a scheme defines are derived from those, the
+ * way the built-in schemes relate theirs — borders are the background moved
+ * toward the text, faint text is the text moved toward the background, and so
+ * on. Pure and DOM-free (P20): the settings screen and `state.applyTheme()`
+ * call it, and it is tested under `node --test`.
+ *
+ * Readability is checked, not assumed. `themeProblems` names every pair that
+ * fails and which of the four inputs to move; `fixTheme` proposes the closest
+ * readable version — the same hues, each nudged in lightness as little as
+ * will do — which the person may take or leave.
+ */
+
+
+
+
+                               
+                                                                     
+               
+             
+              
+                 
+                                                            
+                                          
+ 
+
+const THEME_NAME_MAX = 40;
+
+/** The custom properties a scheme defines, in `ui/styles/tokens.css`. */
+const THEME_TOKENS = [
+  "--bg", "--bg-raised", "--bg-sunken", "--border", "--border-strong",
+  "--ink", "--ink-soft", "--ink-faint",
+  "--accent", "--accent-ink", "--accent-soft", "--accent-strong",
+  "--shadow",
+  "--ok", "--warn", "--error", "--error-ink",
+]         ;
+                                                       
+
+/** The input a problem is solved by moving. */
+                                                                                             
+
+                               
+                                                      
+               
+                                                                          
+                 
+                               
+                 
+                                               
+                  
+                                                             
+                       
+     
+                                                                            
+                                                                          
+     
+              
+ 
+
+const WHITE_HEX = "#ffffff";
+const BLACK_HEX = "#000000";
+
+/** Is this a dark background? The one white text reads better on. */
+function isDark(bg        )          {
+  const rgb = hexToRgb(bg);
+  return contrastRatio(rgb, hexToRgb(WHITE_HEX)) > contrastRatio(rgb, hexToRgb(BLACK_HEX));
+}
+
+function ratio(a        , b        )         {
+  return contrastRatio(hexToRgb(a), hexToRgb(b));
+}
+
+/**
+ * The thirteen tokens, from the four choices.
+ *
+ * Raised surfaces are lighter and sunken ones darker on either kind of ground,
+ * as in both Orangey and Night; how far differs, because a light page wants
+ * nearly white cards and a dark one only a slightly lifted shade. The
+ * proportions are the built-in schemes' own, measured: borders 12 % and 28 %
+ * toward the text, soft and faint text 25 % and 50 % toward the background.
+ */
+function deriveTheme(s              )                             {
+  const dark = isDark(s.bg);
+  const { r, g, b } = hexToRgb(s.ink);
+  const shade = (a        ) => `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`;
+  const raised = mix(s.bg, WHITE_HEX, dark ? 0.06 : 0.75);
+  const sunken = mix(s.bg, BLACK_HEX, dark ? 0.17 : 0.04);
+  // Warnings and errors are read on the page, on cards and on sunken panels.
+  const surfaces = [s.bg, raised, sunken];
+  const lighter = hexToOklab(s.ink).L > hexToOklab(s.bg).L;
+  const error = statusColour(STATUS_BASE["--error"], surfaces, lighter);
+  return {
+    "--bg": s.bg,
+    "--bg-raised": raised,
+    "--bg-sunken": sunken,
+    "--border": mix(s.bg, s.ink, 0.12),
+    "--border-strong": mix(s.bg, s.ink, 0.28),
+    "--ink": s.ink,
+    "--ink-soft": mix(s.ink, s.bg, 0.25),
+    "--ink-faint": mix(s.ink, s.bg, 0.5),
+    "--accent": s.accent,
+    "--accent-ink": labelFor(s.accent).ink,
+    "--accent-soft": mix(s.accent, s.bg, 0.75),
+    "--accent-strong": mix(s.accent, s.ink, 0.1),
+    // Night's shadow is black and deeper, Orangey's the text colour and
+    // faint: a light "shadow" on a dark page would read as a glow.
+    "--shadow": dark
+      ? "0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35)"
+      : `0 1px 2px ${shade(0.08)}, 0 6px 18px ${shade(0.07)}`,
+    "--ok": statusColour(STATUS_BASE["--ok"], surfaces, lighter),
+    "--warn": statusColour(STATUS_BASE["--warn"], surfaces, lighter),
+    "--error": error,
+    // A danger button is filled with the error colour, and its label must
+    // read on that too: a red lightened for a dark page takes dark ink.
+    "--error-ink": labelFor(error).ink,
+  };
+}
+
+/** The built-in status colours, whose hues a theme keeps. */
+const STATUS_BASE = { "--ok": "#3f9c5a", "--warn": "#d38b1f", "--error": "#d64545" }         ;
+/** Status colours are read as text — "Clear", a warning, a failed import — so they need what body text needs. */
+const STATUS_RATIO = 4.5;
+
+/**
+ * A status colour that reads on every surface of this theme.
+ *
+ * The same green, amber and red as the built-in schemes, kept exactly where
+ * they already read, and otherwise moved in lightness just far enough — the
+ * way the theme's own text lies from the page, lighter or darker, since that
+ * is the side known to read. A red is still a red; it is only never lost on a
+ * strong background of its own kind.
+ */
+function statusColour(base        , surfaces                   , lighter         )         {
+  const worst = (hex        ) => Math.min(...surfaces.map((s) => ratio(hex, s)));
+  let best = base;
+  let hex = base;
+  for (let k = 0; k < 60 && worst(hex) < STATUS_RATIO; k++) {
+    const next = withLightness(hex, hexToOklab(hex).L + (lighter ? 0.01 : -0.01));
+    if (next === hex) break;
+    hex = next;
+    if (worst(hex) > worst(best)) best = hex;
+  }
+  return worst(hex) >= STATUS_RATIO ? hex : best;
+}
+
+/** The contrast a wheel colour's label reaches with whichever ink suits it. */
+function labelRatio(fill        )         {
+  return labelFor(fill, 0, 0).ratio;
+}
+
+/** Wheel colours a label is read on need this much, like large text. */
+const WHEEL_LABEL_RATIO = 3;
+
+/**
+ * The wheel's colours on their own, for the theme and for a wheel's own
+ * palette alike.
+ *
+ * The three in turn must each carry a readable label and be told apart from
+ * the one after it, including the third from the first — a wheel is a cycle.
+ * The spare only ever stands in between the third and the first, when the
+ * turn's own colour would look like a neighbour; if it looks like one of
+ * those, the colour assigner skips it there, so that is a note, not a fault.
+ */
+function wheelProblems(wheel                   )                 {
+  const out                 = [];
+  const names = ["Wheel 1", "Wheel 2", "Wheel 3", "Spare"];
+  wheel.forEach((hex, i) => {
+    const got = labelRatio(hex);
+    if (got < WHEEL_LABEL_RATIO) {
+      out.push({ pair: `Labels on ${names[i]}`, ratio: got, needs: WHEEL_LABEL_RATIO, fix: `wheel${i}`               });
+    }
+  });
+  const cands = wheel.map(toCandidate);
+  for (const [i, j] of [[0, 1], [1, 2], [2, 0]]         ) {
+    // Move the later of the pair, and for the wrap-around the third: the first
+    // colour is the one a wheel is most recognised by.
+    if (!distinct(cands[i], cands[j], DEFAULT_THRESHOLDS)) {
+      const moved = j === 0 ? i : j;
+      const other = moved === i ? j : i;
+      out.push({ pair: `${names[i]} and ${names[j]} look alike`, fix: `wheel${moved}`              , against: `wheel${other}`               });
+    }
+  }
+  if (cands.length > 3) {
+    for (const i of [2, 0]) {
+      if (!distinct(cands[3], cands[i], DEFAULT_THRESHOLDS)) {
+        out.push({ pair: `Spare and ${names[i]} look alike`, fix: "wheel3", against: `wheel${i}`              , note: true });
+      }
+    }
+  }
+  return out;
+}
+
+/** Every pair that matters, with its numbers. An empty list is a readable theme. */
+function themeProblems(s              )                 {
+  const t = deriveTheme(s);
+  const out                 = [];
+  const need = (pair        , a        , b        , needs        , fix            ) => {
+    const got = ratio(a, b);
+    if (got < needs) out.push({ pair, ratio: got, needs, fix });
+  };
+  need("Text on the background", t["--ink"], t["--bg"], 4.5, "ink");
+  need("Soft text on the background", t["--ink-soft"], t["--bg"], 4.5, "ink");
+  need("Faint text on the background", t["--ink-faint"], t["--bg"], 3, "ink");
+  need("Button text on the accent", t["--accent-ink"], t["--accent"], 4.5, "accent");
+  // Not checked: the accent against the page. Every built-in light scheme
+  // would fail 3 : 1 there (Orangey's orange on cream is about 2), and a
+  // button is known by its text, which the line above checks.
+  return [...out, ...wheelProblems(s.wheel)];
+}
+
+// ---- the suggestion ---------------------------------------------------------
+
+/** A colour at this lightness, same hue; chroma comes down only if the colour would not exist. */
+function withLightness(hex        , L        )         {
+  const lab = hexToOklab(hex);
+  const target        = { L: Math.min(1, Math.max(0, L)), a: lab.a, b: lab.b };
+  for (let k = 0; k < 24; k++) {
+    const rgb = oklabToRgb(target);
+    const inside = [rgb.r, rgb.g, rgb.b].every((v) => v >= -0.0005 && v <= 1.0005);
+    if (inside) return rgbToHex(rgb);
+    target.a *= 0.9;
+    target.b *= 0.9;
+  }
+  return rgbToHex(oklabToRgb(target));
+}
+
+function getInput(s              , key            )         {
+  return key.startsWith("wheel") ? s.wheel[Number(key.slice(5))] : s[key                           ];
+}
+
+function setInput(s              , key            , hex        )               {
+  if (!key.startsWith("wheel")) return { ...s, [key]: hex };
+  const wheel = [...s.wheel]                         ;
+  wheel[Number(key.slice(5))] = hex;
+  return { ...s, wheel };
+}
+
+/** Is this particular problem still there? Found again by what it says, since the numbers move. */
+function stillFails(s              , p              )          {
+  return themeProblems(s).some((q) => q.pair === p.pair && !q.note);
+}
+
+/**
+ * The ways out of a problem, tried in order from where the scheme stands; the
+ * first that clears it is taken. Each way is a sequence of moves: the text
+ * away from the background, and only if that is not enough the background
+ * away from the text; a colour towards the extreme its label is not, or else
+ * the other way, because a colour already near white cannot get lighter.
+ */
+function waysOut(s              , p              )                                        {
+  const L = (hex        ) => hexToOklab(hex).L;
+  const STEP = 0.02;
+  if (p.fix === "ink") {
+    const up = L(s.ink) >= L(s.bg) ? STEP : -STEP;
+    return [[{ key: "ink", step: up }], [{ key: "ink", step: up }, { key: "bg", step: -up }]];
+  }
+  const own = getInput(s, p.fix);
+  let first        ;
+  if (p.fix === "accent" || p.ratio !== undefined) {
+    first = labelFor(own).ink === WHITE_HEX ? -STEP : STEP;
+  } else {
+    // Two wheel colours alike: away from the other one's lightness.
+    const partner = getInput(s, p.against ?? p.fix);
+    first = L(own) >= L(partner) ? STEP : -STEP;
+  }
+  return [[{ key: p.fix, step: first }], [{ key: p.fix, step: -first }]];
+}
+
+/** How many real problems a scheme has; notes do not count. */
+function failing(s              )         {
+  return themeProblems(s).filter((q) => !q.note).length;
+}
+
+/**
+ * Follow one way out, at most 30 steps a move, and stop at the first point
+ * where this problem is gone and nothing new has gone wrong. A wheel colour
+ * nudged clear of one neighbour can land on the other; stopping there would
+ * only hand the next pass a problem to undo this one. If no such point comes,
+ * the first point where this problem is gone will do.
+ */
+function walk(s              , p              , way                                     )               {
+  const before = failing(s);
+  let scheme = s;
+  let cleared                      = null;
+  for (const { key, step } of way) {
+    for (let k = 0; k < 30; k++) {
+      if (!stillFails(scheme, p)) {
+        cleared ??= scheme;
+        if (failing(scheme) < before) return scheme;
+      }
+      const hex = getInput(scheme, key);
+      const next = withLightness(hex, hexToOklab(hex).L + step);
+      if (next === hex) break;
+      scheme = setInput(scheme, key, next);
+    }
+    if (!stillFails(scheme, p) && failing(scheme) < before) return scheme;
+  }
+  return cleared ?? scheme;
+}
+
+const MOVED_WORDS                             = {
+  bg: "Background",
+  ink: "Text",
+  accent: "Accent",
+  wheel0: "Wheel 1",
+  wheel1: "Wheel 2",
+  wheel2: "Wheel 3",
+  wheel3: "Spare",
+};
+
+/**
+ * The closest readable version of a scheme: the suggestion shown beside the
+ * person's own when theirs fails.
+ *
+ * Every hue is kept. For each problem the named colour's lightness moves away
+ * from what it is measured against, 0.02 at a time and at most 30 steps; only
+ * if that is not enough does the other colour of the pair move. Chroma gives
+ * way only where a lighter or darker version of a colour cannot exist. It
+ * runs until nothing is left or a pass changes nothing, and says what moved.
+ */
+function fixTheme(s              )                                            {
+  let scheme = s;
+  for (let pass = 0; pass < 8; pass++) {
+    const problems = themeProblems(scheme).filter((p) => !p.note);
+    if (problems.length === 0) break;
+    const before = JSON.stringify(scheme);
+    for (const p of problems) {
+      if (!stillFails(scheme, p)) continue;
+      const tries = waysOut(scheme, p).map((way) => walk(scheme, p, way));
+      // The way that leaves least wrong; the first of them on a tie.
+      scheme = tries.reduce((a, b) => (failing(b) < failing(a) ? b : a));
+    }
+    if (JSON.stringify(scheme) === before) break;
+  }
+  const keys               = ["bg", "ink", "accent", "wheel0", "wheel1", "wheel2", "wheel3"];
+  const words = keys.filter((key) => getInput(s, key) !== getInput(scheme, key)).map((key) => {
+    const was = hexToOklab(getInput(s, key)).L;
+    const now = hexToOklab(getInput(scheme, key)).L;
+    return `${MOVED_WORDS[key]} ${now > was ? "lightened" : "darkened"}`;
+  });
+  return { scheme, moved: words };
+}
+
 // ---- src/model/settings-file.ts ----------------------------------
 /**
  * The `.orangey-settings.json` file: the settings worth carrying to another
@@ -5579,6 +6123,7 @@ function starters()            {
  * key order, unknown keys refused rather than guessed at (settings are small
  * and a typo should be told, not silently dropped).
  */
+
 
 
 
@@ -5603,6 +6148,8 @@ const MAX_COLOUR_NAME = 40;
                       
                                    
                           
+                                                                                   
+                              
  
 
                                
@@ -5611,9 +6158,10 @@ const MAX_COLOUR_NAME = 40;
                              
  
 
-const KEY_ORDER                             = ["scheme", "feel", "seed", "reducedMotionOverridden", "colours"];
+// Appended to, never reordered (P17): a file written by 0.5 loads unchanged.
+const KEY_ORDER                             = ["scheme", "feel", "seed", "reducedMotionOverridden", "colours", "customScheme"];
 
-const SCHEMES = ["system", "orangey", "night", "meadow", "ocean", "berry"]         ;
+const SCHEMES = ["system", "orangey", "night", "meadow", "ocean", "berry", "custom"]         ;
 
 /** Pick the portable part out of whatever preferences object the app holds. */
 function portableSettings(prefs   
@@ -5622,19 +6170,23 @@ function portableSettings(prefs
                        
                                     
                            
+                              
  )                   {
+  const custom = normalizeCustomScheme(prefs.customScheme);
   return {
-    scheme: prefs.scheme ?? "system",
+    // "custom" with nothing to apply would be refused on the way back in.
+    scheme: prefs.scheme === "custom" && !custom ? "system" : prefs.scheme ?? "system",
     feel: normalizeFeel(prefs.feel),
     seed: prefs.seed ?? null,
     reducedMotionOverridden: prefs.reducedMotionOverridden ?? false,
     colours: normalizeColours(prefs.colours),
+    ...(custom ? { customScheme: custom } : {}),
   };
 }
 
 function serializeSettings(settings                  )         {
   const ordered                          = {};
-  for (const k of KEY_ORDER) ordered[k] = settings[k];
+  for (const k of KEY_ORDER) if (settings[k] !== undefined) ordered[k] = settings[k];
   const file               = { format: SETTINGS_FORMAT, version: SETTINGS_VERSION, settings: ordered                                };
   return `${JSON.stringify(file, null, 2)}\n`;
 }
@@ -5675,6 +6227,10 @@ function parseSettings(text        )                   {
       if (!isHex(cc.hex)) check.fail(`${p}.hex`, "expected a colour like #a33a30");
     });
   }
+  if (s.customScheme !== undefined) checkCustomScheme(check, s.customScheme);
+  if (s.scheme === "custom" && s.customScheme === undefined) {
+    check.fail("settings.scheme", "says to use your own theme, but the file has none");
+  }
   for (const k of Object.keys(s)) if (!(KEY_ORDER            ).includes(k)) check.fail(`settings.${k}`, "not a setting Orangey knows");
   if (!check.ok) throw new ValidationError(check.issues);
 
@@ -5685,6 +6241,45 @@ function parseSettings(text        )                   {
     seed: (s.seed                             ) ?? null,
     reducedMotionOverridden: (s.reducedMotionOverridden                       ) ?? false,
     colours: normalizeColours(s.colours                              ),
+    ...(s.customScheme !== undefined ? { customScheme: normalizeCustomScheme(s.customScheme) } : {}),
+  };
+}
+
+function checkCustomScheme(check       , raw         )       {
+  const p = "settings.customScheme";
+  if (!check.object(p, raw)) return;
+  const c = raw                           ;
+  check.string(`${p}.name`, c.name, { min: 1, max: THEME_NAME_MAX });
+  for (const key of ["bg", "ink", "accent"]         ) {
+    if (!isHex(c[key])) check.fail(`${p}.${key}`, "expected a colour like #a33a30");
+  }
+  if (check.array(`${p}.wheel`, c.wheel)) {
+    const wheel = c.wheel             ;
+    if (wheel.length !== 4) check.fail(`${p}.wheel`, "three wheel colours and a spare");
+    wheel.forEach((w, i) => {
+      if (!isHex(w)) check.fail(`${p}.wheel[${i}]`, "expected a colour like #a33a30");
+    });
+  }
+}
+
+/** A colour as the app writes it: lower-case, six digits, with its #. */
+function canonicalHex(hex        )         {
+  return rgbToHex(hexToRgb(hex));
+}
+
+/** A theme that can be applied as it stands, or undefined when there is none. */
+function normalizeCustomScheme(raw         )                           {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const c = raw                           ;
+  const wheel = Array.isArray(c.wheel) ? c.wheel : [];
+  if (!isHex(c.bg) || !isHex(c.ink) || !isHex(c.accent) || wheel.length !== 4 || !wheel.every(isHex)) return undefined;
+  const name = typeof c.name === "string" && c.name.trim() ? c.name.trim().slice(0, THEME_NAME_MAX) : "My theme";
+  return {
+    name,
+    bg: canonicalHex(c.bg),
+    ink: canonicalHex(c.ink),
+    accent: canonicalHex(c.accent),
+    wheel: wheel.map((w) => canonicalHex(w          ))                         ,
   };
 }
 
@@ -5782,6 +6377,8 @@ function onMascotEvent(target             , handler                             
 
 
                                                          
+
+
 
 
 
@@ -6028,10 +6625,37 @@ class AppState {
     void this.library.refresh().catch(() => {});
   }
 
+  /**
+   * The one place theme colours are set. A built-in scheme is an attribute and
+   * a block in tokens.css; your own is the same attribute plus every derived
+   * token set on the page itself — and choosing anything else takes those
+   * off again, so switching back to Night leaves nothing of it behind.
+   */
   applyTheme()       {
     const root = document.documentElement;
-    if (!this.prefs.scheme || this.prefs.scheme === "system") root.removeAttribute("data-scheme");
-    else root.setAttribute("data-scheme", this.prefs.scheme);
+    const custom = this.prefs.scheme === "custom" ? normalizeCustomScheme(this.prefs.customScheme) : undefined;
+    if (custom) {
+      root.setAttribute("data-scheme", "custom");
+      for (const [token, value] of Object.entries(deriveTheme(custom))) root.style.setProperty(token, value);
+      return;
+    }
+    for (const token of THEME_TOKENS) root.style.removeProperty(token);
+    // "custom" with nothing saved behind it (a damaged store) follows the system.
+    const scheme = this.prefs.scheme === "custom" ? "system" : this.prefs.scheme;
+    if (!scheme || scheme === "system") root.removeAttribute("data-scheme");
+    else root.setAttribute("data-scheme", scheme);
+  }
+
+  /**
+   * The colours a wheel is painted in: its own palette, padded with the
+   * spare it would otherwise have; else your theme's; else the built-in red,
+   * yellow and blue with green to spare.
+   */
+  wheelColours(palette                    )           {
+    const custom = this.prefs.scheme === "custom" ? normalizeCustomScheme(this.prefs.customScheme) : undefined;
+    const base = custom ? [...custom.wheel] : [...WHEEL_COLOURS, WHEEL_SPARE];
+    if (palette && palette.length >= 3) return [palette[0], palette[1], palette[2], palette[3] ?? base[3]];
+    return base;
   }
 
   async savePrefs(patch                )                {
@@ -6064,7 +6688,12 @@ class AppState {
   async importSettings(text        )                {
     const s = parseSettings(text);
     this.resetSeedSequence();
-    await this.savePrefs({ scheme: s.scheme, feel: s.feel, seed: s.seed, reducedMotionOverridden: s.reducedMotionOverridden, colours: s.colours });
+    // A file without a theme of its own (every file from 0.5) leaves the one
+    // saved on this device alone: it can still be chosen again.
+    await this.savePrefs({
+      scheme: s.scheme, feel: s.feel, seed: s.seed, reducedMotionOverridden: s.reducedMotionOverridden, colours: s.colours,
+      customScheme: s.customScheme ?? this.prefs.customScheme,
+    });
   }
 
   /** The source the next roll should use: seeded when a seed is set. */
@@ -6903,145 +7532,6 @@ function tryParse(input        )                                                
   }
 }
 
-// ---- src/core/palette-assign.ts ----------------------------------
-/**
- * Assigning colours to outcomes (plan C8.3).
- *
- * Requirements, in priority order:
- *   1. two segments that touch never look alike — including the wrap-around
- *      pair, because a wheel is a cycle and the last slice touches the first;
- *   2. the assignment is stable, so the same wheel shows the same colours on
- *      every reload and a GM can say "the red one";
- *   3. it looks like a wheel people already know: primary colours in turn.
- *      (It used to be a hashed walk through a 71-colour pool, which read as
- *      random to anyone who had not seen it before.)
- *
- * An explicitly chosen colour always wins and is never moved.
- */
-
-
-
-/**
- * Thresholds. T was set from the palette's own distance distribution: with a
- * muted pool the median pair sits near 0.18, so a bar of 0.15 rejects the
- * pairs that actually read as "the same colour twice" while still leaving
- * roughly two thirds of the pool available at every step. A higher bar looked
- * better on paper and forced the wheel to alternate between extremes.
- */
-const DEFAULT_THRESHOLDS = {
-  /** Minimum OKLab distance between touching segments. */
-  T: 0.15,
-  /** Minimum hue separation (degrees) for two colourful neighbours... */
-  hue: 25,
-  /** ...unless their lightness differs by at least this much. */
-  lightness: 0.12,
-  /** Chroma below which a colour counts as neutral and the hue rule is moot. */
-  neutralChroma: 0.04,
-  /** Distance required after simulating deuteranopia, as a fraction of T. */
-  cvdFactor: 0.6,
-}         ;
-
-                                                   
-
-                                 
-              
-               
-                 
-                                                    
-             
- 
-
-function toCandidate(hex        )                 {
-  const oklab = hexToOklab(hex);
-  return {
-    hex,
-    oklab,
-    chroma: chroma(oklab),
-    cvd: rgbToOklab(simulateDeuteranopia(hexToRgb(hex))),
-  };
-}
-
-/**
- * Are these two safe to put side by side?
- *
- * Two colours pass when they are far enough apart overall AND, if both are
- * colourful, they differ clearly in hue or clearly in lightness — that second
- * clause is what rejects "two dark blues" that a plain distance check lets
- * through. The same test is then repeated through a deuteranopia simulation at
- * a lower bar, which is what stops a red/green pair that is obvious to most
- * people and identical to some.
- */
-function distinct(a                , b                , t             = DEFAULT_THRESHOLDS, scale = 1)          {
-  const T = t.T * scale;
-  if (deltaE(a.oklab, b.oklab) < T) return false;
-  if (a.chroma > t.neutralChroma && b.chroma > t.neutralChroma) {
-    const hueOk = hueDifference(a.oklab, b.oklab) >= t.hue;
-    const lightOk = Math.abs(a.oklab.L - b.oklab.L) >= t.lightness;
-    if (!hueOk && !lightOk) return false;
-  }
-  if (deltaE(a.cvd, b.cvd) < T * t.cvdFactor) return false;
-  return true;
-}
-
-/**
- * The wheel's colours: red, yellow and blue in turn, the way a wheel at a
- * table or on a game show is painted, so a wheel reads as a wheel to anyone.
- * Green is the spare, for the one slice that cannot take its turn's colour.
- */
-const WHEEL_COLOURS = ["#e31f26", "#fcb315", "#006eb8"]         ;
-const WHEEL_SPARE = "#008842";
-
-                               
-                                                                  
-                   
-                                                                                  
-                              
- 
-
-/**
- * Colour every outcome that has no colour of its own.
- *
- * Slice i takes the cycle's colour for i. When that would look like a
- * neighbour — the last slice of a 4-, 7- or 10-outcome wheel meets the first,
- * which is also red, or the user has coloured a slice next to it — it takes
- * the spare instead, then either other cycle colour. Deterministic from the
- * positions alone: the same outcomes always get the same colours, and adding
- * one at the end recolours at most the last slice. A colour the user chose is
- * never moved; if two of those clash, the clash is reported, not hidden.
- */
-function assignWheelColours(fixed                               , cyclic = true)               {
-  const n = fixed.length;
-  const chosen           = [];
-  for (let i = 0; i < n; i++) {
-    const own = fixed[i];
-    if (own) {
-      chosen.push(own);
-      continue;
-    }
-    const neighbours                   = [];
-    if (i > 0) neighbours.push(toCandidate(chosen[i - 1]));
-    if (i + 1 < n && fixed[i + 1]) neighbours.push(toCandidate(fixed[i + 1] ));
-    if (cyclic && n > 2 && i === n - 1) neighbours.push(toCandidate(chosen[0]));
-    const turn = WHEEL_COLOURS[i % WHEEL_COLOURS.length];
-    const others = [1, 2].map((k) => WHEEL_COLOURS[(i + k) % WHEEL_COLOURS.length]);
-    const pick = [turn, WHEEL_SPARE, ...others].find((hex) => neighbours.every((nb) => distinct(toCandidate(hex), nb)));
-    chosen.push(pick ?? turn);
-  }
-  return { colors: chosen, clashes: findClashes(chosen, cyclic) };
-}
-
-function findClashes(colors          , cyclic         , t = DEFAULT_THRESHOLDS, scale = 1)                     {
-  const cands = colors.map(toCandidate);
-  const out                     = [];
-  const last = cyclic ? colors.length : colors.length - 1;
-  for (let i = 0; i < last; i++) {
-    const j = (i + 1) % colors.length;
-    if (i === j) continue;
-    if (!distinct(cands[i], cands[j], t, scale)) out.push([i, j]);
-  }
-  return out;
-}
-
 // ---- src/ui/components/wheel.ts ----------------------------------
 /**
  * The wheel.
@@ -7058,6 +7548,7 @@ function findClashes(colors          , cyclic         , t = DEFAULT_THRESHOLDS, 
  * The spin is fitted to a result that has already been decided, so skipping is
  * always safe and the wheel can never disagree with the announcement.
  */
+
 
 
 
@@ -7116,6 +7607,12 @@ function measureWheelLabel(text        , fontSize        )         {
                 
                                                                   
                                           
+     
+                                                                             
+                                                                              
+                                                               
+     
+                                    
  
 
 function createWheel(opts              )            {
@@ -7144,7 +7641,7 @@ function createWheel(opts              )            {
 
   function computeColors()       {
     const items = opts.items();
-    colorByIndex = assignWheelColours(items.map((i) => i.color ?? null)).colors;
+    colorByIndex = assignWheelColours(items.map((i) => i.color ?? null), true, opts.colours?.() ?? state.wheelColours()).colors;
   }
 
   /**
@@ -10369,6 +10866,7 @@ function createCell(
       onActivate: () => void roller.roll(),
       size: 260,
       slices: () => (randomizer                                         ).slices,
+      colours: () => state.wheelColours((randomizer                                         ).palette),
     });
     stage.append(wheel.el);
   } else if (randomizer.type === "dice") {
@@ -11020,6 +11518,7 @@ function createPlayView(
           items: () => inPlay(),
           id: () => randomizer.id,
           slices: () => (randomizer.type === "list" ? randomizer.slices : undefined),
+          colours: () => state.wheelColours(randomizer.type === "list" ? randomizer.palette : undefined),
           onActivate: () => void doRoll(),
         });
         stage.append(wheel.el);
@@ -13267,6 +13766,235 @@ function glyphFor(node             )         {
   }
 }
 
+// ---- src/ui/components/colourfield.ts ----------------------------
+/**
+ * One colour, chosen two ways: the browser's colour picker, and its hex typed
+ * beside it.
+ *
+ * A colour input is awkward on a phone and cannot be pasted into, so the hex
+ * field has to work on its own; the two stay in step. Used by the theme card
+ * in Settings and by a wheel's own palette in the editor, so the two look and
+ * behave the same.
+ */
+
+
+
+
+                              
+                  
+                  
+                         
+ 
+
+/**
+ * @param key       names the field for tests and styles (`data-field`)
+ * @param onChange  told each time the field holds a whole, valid colour
+ */
+function createColourField(label        , key        , initial        , onChange                       , small = false)              {
+  let current = colourFieldHex(initial);
+  const picker = h("input", { type: "color", value: current, class: "colour-picker", "aria-label": `${label}, picker` });
+  const hex = h("input", {
+    type: "text", value: current, class: "colour-hex", spellcheck: "false", maxlength: "7",
+    "aria-label": `${label}, as a hex colour`,
+  });
+
+  picker.addEventListener("input", () => {
+    current = colourFieldHex(picker.value);
+    hex.value = current;
+    hex.removeAttribute("aria-invalid");
+    onChange(current);
+  });
+  hex.addEventListener("input", () => {
+    const typed = hex.value.trim();
+    const full = typed.startsWith("#") ? typed : `#${typed}`;
+    // Three digits are a colour too, but half-typed six are not: only a
+    // complete one is taken, and a wrong one is marked, not guessed at.
+    if (!isHex(full)) {
+      hex.setAttribute("aria-invalid", "true");
+      return;
+    }
+    hex.removeAttribute("aria-invalid");
+    current = colourFieldHex(full);
+    picker.value = current;
+    onChange(current);
+  });
+
+  const el = h("label", { class: `colour-field${small ? " small" : ""}`, dataset: { field: key } },
+    h("span", { class: "colour-field-label", text: label }),
+    h("span", { class: "row tight colour-field-inputs" }, picker, hex),
+  );
+  return {
+    el,
+    value: () => current,
+    set(next) {
+      current = colourFieldHex(next);
+      picker.value = current;
+      hex.value = current;
+      hex.removeAttribute("aria-invalid");
+    },
+  };
+}
+
+/** Lower-case, six digits: what a colour input gives back and what files hold. */
+function colourFieldHex(hex        )         {
+  return rgbToHex(hexToRgb(hex));
+}
+
+// ---- src/ui/components/themecard.ts ------------------------------
+/**
+ * The "Your own theme" card in Settings.
+ *
+ * Four choices — background, text, accent, the wheel's colours — and a live
+ * preview painted with everything derived from them. Readability is checked
+ * as you pick: every pair that fails is listed with its numbers, and beside
+ * your version the closest readable one appears, same hues, nudged as little
+ * as will do. Either can be used; yours only with the warning left in view.
+ *
+ * It keeps its own draft and redraws only itself while you type — the rest of
+ * Settings is rebuilt on other changes, which would take the focus from the
+ * field under your fingers. Saving goes through `state.savePrefs`, and so
+ * through `state.applyTheme()`, the one place theme colours are set.
+ */
+
+
+
+
+
+
+
+
+
+const THEME_PREVIEW_ITEMS = ["Goblins", "Merchant", "Wolves", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
+
+/** Where a first theme starts: the Orangey scheme's own colours, to change from. */
+const THEME_START               = {
+  name: "My theme",
+  bg: "#fff8ef",
+  ink: "#253122",
+  accent: "#f3a257",
+  wheel: [WHEEL_COLOURS[0], WHEEL_COLOURS[1], WHEEL_COLOURS[2], WHEEL_SPARE],
+};
+
+/** One problem as a line: the pair, and its numbers when it has any. */
+function describeThemeProblem(p              )         {
+  const numbers = p.ratio !== undefined && p.needs !== undefined ? ` — ${(Math.floor(p.ratio * 10) / 10).toFixed(1)} : 1, needs ${p.needs}` : "";
+  return `${p.note ? "Note: " : ""}${p.pair}${numbers}`;
+}
+
+function createThemeCard(onApplied            )              {
+  let draft               = structuredClone(state.prefs.customScheme ?? THEME_START);
+
+  const nameInput = h("input", { type: "text", value: draft.name, maxlength: String(THEME_NAME_MAX), class: "theme-name", "aria-label": "Theme name" });
+  nameInput.addEventListener("input", () => {
+    draft = { ...draft, name: nameInput.value.trim() || "My theme" };
+  });
+
+  const field = (label        , key                         ) =>
+    createColourField(label, key, draft[key], (hex) => {
+      draft = { ...draft, [key]: hex };
+      update();
+    });
+  const wheelField = (label        , i               ) =>
+    createColourField(label, `wheel${i}`, draft.wheel[i], (hex) => {
+      const wheel = [...draft.wheel]                         ;
+      wheel[i] = hex;
+      draft = { ...draft, wheel };
+      update();
+    }, true);
+  const fields = {
+    bg: field("Background", "bg"),
+    ink: field("Text", "ink"),
+    accent: field("Accent", "accent"),
+    wheel: [wheelField("Wheel 1", 0), wheelField("Wheel 2", 1), wheelField("Wheel 3", 2), wheelField("Spare", 3)],
+  };
+
+  /** A preview box painted with a scheme: the tokens set on the box, so everything inside uses them. */
+  function preview(caption        , extraClass        ) {
+    let shown = draft;
+    const box = h("div", { class: `theme-preview ${extraClass}` });
+    const wheel = createWheel({ items: () => THEME_PREVIEW_ITEMS, id: () => `theme-${extraClass}`, size: 150, colours: () => shown.wheel });
+    wheel.el.classList.add("wheel-small");
+    const note = h("p", { class: "faint theme-moved" });
+    setChildren(box,
+      h("p", { class: "theme-preview-caption", text: caption }),
+      h("div", { class: "row theme-preview-row" },
+        wheel.el,
+        h("div", { class: "theme-preview-sample" },
+          h("p", { text: "The answer is read here." }),
+          h("p", { class: "faint", text: "Faint text, like a roll's details." }),
+          h("button", { type: "button", class: "primary", tabindex: "-1", text: "Roll" }),
+        ),
+      ),
+      note,
+    );
+    return {
+      box,
+      paint(s              , moved           = []) {
+        shown = s;
+        for (const [token, value] of Object.entries(deriveTheme(s))) box.style.setProperty(token, value);
+        note.textContent = moved.length ? `${moved.join(", ")}.` : "";
+        wheel.refresh();
+      },
+    };
+  }
+
+  const mine = preview("Yours", "theme-mine");
+  const suggestion = preview("Closest readable version", "theme-suggestion");
+  const problemsList = h("ul", { class: "theme-problems" });
+  const actions = h("div", { class: "row tight theme-actions" });
+  let suggested                      = null;
+
+  function use(s              )       {
+    draft = structuredClone(s);
+    void state.savePrefs({ customScheme: draft, scheme: "custom" }).then(onApplied);
+    syncFields();
+    update();
+  }
+
+  function syncFields()       {
+    fields.bg.set(draft.bg);
+    fields.ink.set(draft.ink);
+    fields.accent.set(draft.accent);
+    draft.wheel.forEach((hex, i) => fields.wheel[i].set(hex));
+    nameInput.value = draft.name;
+  }
+
+  function update()       {
+    const problems = themeProblems(draft);
+    const failing = problems.filter((p) => !p.note);
+    setChildren(problemsList, ...problems.map((p) => h("li", { class: p.note ? "faint" : "warning", text: describeThemeProblem(p) })));
+    problemsList.hidden = problems.length === 0;
+    mine.paint(draft);
+    if (failing.length) {
+      const fixed = fixTheme(draft);
+      suggested = fixed.scheme;
+      suggestion.paint(fixed.scheme, fixed.moved);
+      suggestion.box.hidden = false;
+      setChildren(actions,
+        button("Use the suggestion", () => suggested && use(suggested), { class: "primary use-suggestion" }),
+        button("Use mine anyway", () => use(draft), { class: "ghost use-mine" }),
+      );
+    } else {
+      suggested = null;
+      suggestion.box.hidden = true;
+      setChildren(actions, button("Use this theme", () => use(draft), { class: "primary use-theme" }));
+    }
+  }
+
+  const card = h("div", { class: "card theme-card" },
+    h("h2", { text: "Your own theme" }),
+    h("p", { class: "faint", text: "Pick a background, a text colour, an accent and the wheel's colours; the rest is worked out from them. Anything hard to read is listed as you go, with the closest readable version beside yours." }),
+    h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
+    h("div", { class: "theme-fields" }, fields.bg.el, fields.ink.el, fields.accent.el),
+    h("div", { class: "theme-fields theme-wheel-fields" }, ...fields.wheel.map((f) => f.el)),
+    h("div", { class: "theme-previews" }, mine.box, suggestion.box),
+    problemsList,
+    actions,
+  );
+  update();
+  return card;
+}
+
 // ---- src/model/draft.ts ------------------------------------------
 /**
  * Is this draft one the app could read back?
@@ -13933,6 +14661,10 @@ function sectionFor(type        )                                               
                                                                                                                        
 
 
+
+
+
+
                                        
                                                             
 
@@ -14090,6 +14822,7 @@ function createListEditor(node             , initial                , from      
     items: () => model.items,
     id: () => model.id,
     slices: () => model.slices,
+    colours: () => state.wheelColours(model.palette),
     onActivate: () => void rollNow(),
   });
   const result = createResultPanel("Try it");
@@ -14155,11 +14888,76 @@ function createListEditor(node             , initial                , from      
           saveNow();
           renderViewToggle();
           renderSlicesToggle();
+          renderPalette();
         }, { "aria-pressed": model.view === v ? "true" : "false" }),
       ),
     );
   };
   renderViewToggle();
+
+  // A wheel's own colours, over the theme's. Three in turn and an optional
+  // spare, chosen with the same fields as the theme card; the same check runs
+  // on them, and its findings are shown, not enforced — as with an outcome's
+  // own colour, a clash the person chose is reported, not refused.
+  const paletteGroup = h("div", { class: "segmented palette-toggle", role: "group", "aria-label": "Slice colours" });
+  const paletteField = h("div", { class: "row tight palette-field" }, h("span", { class: "faint", text: "Colours" }), paletteGroup);
+  const paletteFields = h("div", { class: "palette-fields" });
+  const paletteProblems = h("ul", { class: "palette-problems" });
+  const setPalette = (next                      )       => {
+    model = { ...model, palette: next };
+    if (!next) delete (model                          ).palette;
+    save();
+    renderPaletteProblems();
+    renderRows();
+  };
+  const renderPaletteProblems = ()       => {
+    // The spare is the theme's unless this wheel has its own; a note about
+    // someone else's colour is not this editor's business.
+    const problems = model.palette
+      ? wheelProblems(state.wheelColours(model.palette)).filter((p) => !p.note || (model.palette?.length ?? 0) > 3)
+      : [];
+    setChildren(paletteProblems, ...problems.map((p) => h("li", { class: p.note ? "faint" : "warning", text: describeThemeProblem(p) })));
+    paletteProblems.hidden = problems.length === 0;
+  };
+  const renderPalette = ()       => {
+    const own = model.palette !== undefined;
+    paletteField.hidden = model.view !== "wheel";
+    setChildren(paletteGroup,
+      button("Theme's", () => { setPalette(undefined); renderPalette(); }, { "aria-pressed": own ? "false" : "true", class: "palette-theme" }),
+      button("This wheel's", () => {
+        if (!model.palette) setPalette(state.wheelColours().slice(0, 3));
+        renderPalette();
+      }, { "aria-pressed": own ? "true" : "false", class: "palette-own" }),
+    );
+    paletteFields.hidden = !own || model.view !== "wheel";
+    if (!own || !model.palette) {
+      setChildren(paletteFields);
+      renderPaletteProblems();
+      return;
+    }
+    const current = model.palette;
+    const colour = (label        , i        , value        ) =>
+      createColourField(label, `palette${i}`, value, (hex) => {
+        const next = [...(model.palette ?? current)];
+        next[i] = hex;
+        setPalette(next);
+      }, true).el;
+    const spareBox = h("input", { type: "checkbox", class: "palette-spare-toggle", checked: current.length > 3, "aria-label": "This wheel has its own spare colour" });
+    spareBox.addEventListener("change", () => {
+      const base = (model.palette ?? current).slice(0, 3);
+      setPalette(spareBox.checked ? [...base, state.wheelColours()[3]] : base);
+      renderPalette();
+    });
+    setChildren(paletteFields,
+      colour("Wheel 1", 0, current[0]),
+      colour("Wheel 2", 1, current[1]),
+      colour("Wheel 3", 2, current[2]),
+      current.length > 3
+        ? h("div", {}, colour("Spare", 3, current[3]), h("label", { class: "row tight faint" }, spareBox, "Own spare"))
+        : h("label", { class: "row tight faint palette-spare" }, spareBox, "Own spare (else the theme's)"),
+    );
+    renderPaletteProblems();
+  };
 
   // What a slice with a picture shows. Offered only where it changes
   // something — a wheel with at least one picture — and written to the file
@@ -14374,7 +15172,9 @@ function createListEditor(node             , initial                , from      
     const swatch = h("button", {
       class: `swatch${item.color ? "" : " auto"}`,
       type: "button",
-      style: { background: item.color ?? autoColor },
+      // The "A" on an automatic swatch in whichever ink reads on that colour:
+      // white vanished on a pale theme's wheel colours.
+      style: `background: ${item.color ?? autoColor}; --auto-ink: ${labelFor(item.color ?? autoColor).ink}`,
       title: item.color ? `Colour ${item.color}` : "Automatic colour",
       "aria-label": item.color ? `Colour, currently ${item.color}` : "Colour, currently automatic",
     });
@@ -14697,7 +15497,9 @@ function createListEditor(node             , initial                , from      
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, offerField, slicesField, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, offerField, paletteField, slicesField, h("div", { class: "spacer" }), filterInput),
+        paletteFields,
+        paletteProblems,
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),
@@ -14715,6 +15517,7 @@ function createListEditor(node             , initial                , from      
   );
 
   renderRows();
+  renderPalette();
 
   // Leaving a field is the moment a person expects their change to be safe,
   // and it is rare enough to write on. Typing is not.
@@ -17126,6 +17929,9 @@ function releasesUrl()         {
 
                                        
 
+
+
+
 const PREVIEW_ITEMS = ["Goblin patrol", "Merchant", "Wolf pack", "Dragon", "Nothing", "Storm"].map((l) => makeItem(l, 1));
 
 function createSettingsView()       {
@@ -17133,6 +17939,9 @@ function createSettingsView()       {
 
   const previewWheel = createWheel({ items: () => PREVIEW_ITEMS, id: () => "settings-preview", size: 220 });
   previewWheel.el.classList.add("wheel-small");
+  // Made once and kept: it holds a draft being typed, which a rebuild of the
+  // page would throw away along with the focus.
+  const themeCard = createThemeCard(() => render());
   const previewTray = createDiceTray();
   const previewCoin = createCoin();
   let previewMascot                = null;
@@ -17186,9 +17995,13 @@ function createSettingsView()       {
                 h("span", { class: "scheme-name", text: label }),
                 h("span", { class: "faint", text: blurb }),
               )),
+            customSchemeCard(),
           ),
+          customSchemeWarning(),
         ),
       ),
+
+      themeCard,
 
       storageCard(),
 
@@ -17296,6 +18109,44 @@ function createSettingsView()       {
     }
   }
 
+  /* ---- your own theme ------------------------------------------------------- */
+
+  /**
+   * The sixth card: your own theme, painted from what is saved rather than
+   * from a class like the built-in ones. It can be chosen once there is one.
+   */
+  function customSchemeCard()              {
+    const saved = normalizeCustomScheme(state.prefs.customScheme);
+    const t = saved ? deriveTheme(saved) : null;
+    return h("button", {
+      type: "button",
+      class: "scheme-card scheme-custom",
+      "aria-pressed": state.prefs.scheme === "custom" ? "true" : "false",
+      disabled: saved ? null : "",
+      onclick: () => {
+        if (!saved) return;
+        void state.savePrefs({ scheme: "custom" });
+        render();
+      },
+    },
+      h("span", {
+        class: "scheme-swatch",
+        style: t ? `background: linear-gradient(90deg, ${t["--bg"]} 0 60%, ${t["--accent"]} 60% 100%)` : "",
+      }),
+      h("span", { class: "scheme-name", text: saved ? saved.name : "Your own" }),
+      h("span", { class: "faint", text: saved ? "Your own theme" : "Make one below" }),
+    );
+  }
+
+  /** Chosen with its problems ("Use mine anyway"): the warning stays where the choice is made. */
+  function customSchemeWarning()                     {
+    if (state.prefs.scheme !== "custom") return null;
+    const saved = normalizeCustomScheme(state.prefs.customScheme);
+    const failing = saved ? themeProblems(saved).filter((p) => !p.note) : [];
+    if (failing.length === 0) return null;
+    return h("p", { class: "warning theme-warning", text: `Your theme is in use with ${failing.length === 1 ? "a problem" : `${failing.length} problems`}: ${failing.map(describeThemeProblem).join("; ")}.` });
+  }
+
   /* ---- my colours ----------------------------------------------------------- */
 
   function coloursCard()              {
@@ -17321,7 +18172,7 @@ function createSettingsView()       {
     const full = colours.length >= MAX_CUSTOM_COLOURS;
     return h("div", { class: "card colours-card" },
       h("h2", { text: "My colours" }),
-      h("p", { class: "faint", text: "Colours you add here join the top of the colour picker in every editor. The automatic colours a wheel gets when you have not chosen any stay with the built-in palette, which is checked for contrast and for neighbours that can be told apart." }),
+      h("p", { class: "faint", text: "Colours you add here join the top of the colour picker in every editor. The automatic colours a wheel gets when you have not chosen any come from the colour scheme — your own theme's wheel colours when that is in use — and are checked for contrast and for neighbours that can be told apart." }),
       colours.length
         ? h("div", { class: "my-colours" },
             ...colours.map((c) =>

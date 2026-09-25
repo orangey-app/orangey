@@ -58,6 +58,7 @@ two ways.
 | `withoutReplacement` | bag mode: an outcome that has come up cannot come up again until the bag is refilled |
 | `slices` | what a wheel's slice shows when its outcome has a picture: `"pictures"`, `"names"` or `"both"`. Left out means `"pictures"`; slices without a picture always show their name |
 | `offer` | make a choice: a roll draws this many different outcomes (2 to 12) and the player picks one, which is the outcome. Left out, a roll lands on one outcome. Where fewer can come up — a bag nearly empty — it offers what there is |
+| `palette` | the wheel's own slice colours: three in turn and an optional spare, as `"#rrggbb"` strings. Left out means the theme's colours; with three, the theme's spare. An outcome's own `color` still wins |
 
 **Where the bag's state is kept.** The flag above says the randomizer is a
 bag; it does not say what has been drawn out of it. That list lives in the

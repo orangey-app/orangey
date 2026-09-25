@@ -15,6 +15,7 @@
  */
 
 import { assignWheelColours } from "../../core/palette-assign.ts";
+import { state } from "../state.ts";
 import { isRollable } from "../../core/weighted.ts";
 import { labelFor } from "../../core/color.ts";
 import {
@@ -83,6 +84,12 @@ export interface WheelOptions {
   size?: number;
   /** What a slice with a picture shows; left out, the picture. */
   slices?: () => SliceContent | undefined;
+  /**
+   * The colours slices take when their outcome has none of its own: three in
+   * turn and a spare. Left out, the theme's (`state.wheelColours()`); a wheel
+   * with its own palette passes `state.wheelColours(palette)`.
+   */
+  colours?: () => readonly string[];
 }
 
 export function createWheel(opts: WheelOptions): WheelView {
@@ -111,7 +118,7 @@ export function createWheel(opts: WheelOptions): WheelView {
 
   function computeColors(): void {
     const items = opts.items();
-    colorByIndex = assignWheelColours(items.map((i) => i.color ?? null)).colors;
+    colorByIndex = assignWheelColours(items.map((i) => i.color ?? null), true, opts.colours?.() ?? state.wheelColours()).colors;
   }
 
   /**

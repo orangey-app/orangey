@@ -14,7 +14,9 @@ import type { Randomizer } from "../model/randomizer.ts";
 import { newId } from "../model/randomizer.ts";
 import { DEFAULT_FEEL, normalizeFeel, prefersReducedMotion, type FeelSettings } from "./feel.ts";
 import { starters } from "../model/starters.ts";
-import { normalizeColours, parseSettings, portableSettings, serializeSettings, type CustomColour } from "../model/settings-file.ts";
+import { normalizeColours, normalizeCustomScheme, parseSettings, portableSettings, serializeSettings, type CustomColour } from "../model/settings-file.ts";
+import { deriveTheme, THEME_TOKENS } from "../core/theme.ts";
+import { WHEEL_COLOURS, WHEEL_SPARE } from "../core/palette-assign.ts";
 import type { Outcome } from "./roll.ts";
 import { emitMascotEvent, type MascotEvent } from "./mascot/events.ts";
 
@@ -257,10 +259,37 @@ class AppState {
     void this.library.refresh().catch(() => {});
   }
 
+  /**
+   * The one place theme colours are set. A built-in scheme is an attribute and
+   * a block in tokens.css; your own is the same attribute plus every derived
+   * token set on the page itself — and choosing anything else takes those
+   * off again, so switching back to Night leaves nothing of it behind.
+   */
   applyTheme(): void {
     const root = document.documentElement;
-    if (!this.prefs.scheme || this.prefs.scheme === "system") root.removeAttribute("data-scheme");
-    else root.setAttribute("data-scheme", this.prefs.scheme);
+    const custom = this.prefs.scheme === "custom" ? normalizeCustomScheme(this.prefs.customScheme) : undefined;
+    if (custom) {
+      root.setAttribute("data-scheme", "custom");
+      for (const [token, value] of Object.entries(deriveTheme(custom))) root.style.setProperty(token, value);
+      return;
+    }
+    for (const token of THEME_TOKENS) root.style.removeProperty(token);
+    // "custom" with nothing saved behind it (a damaged store) follows the system.
+    const scheme = this.prefs.scheme === "custom" ? "system" : this.prefs.scheme;
+    if (!scheme || scheme === "system") root.removeAttribute("data-scheme");
+    else root.setAttribute("data-scheme", scheme);
+  }
+
+  /**
+   * The colours a wheel is painted in: its own palette, padded with the
+   * spare it would otherwise have; else your theme's; else the built-in red,
+   * yellow and blue with green to spare.
+   */
+  wheelColours(palette?: readonly string[]): string[] {
+    const custom = this.prefs.scheme === "custom" ? normalizeCustomScheme(this.prefs.customScheme) : undefined;
+    const base = custom ? [...custom.wheel] : [...WHEEL_COLOURS, WHEEL_SPARE];
+    if (palette && palette.length >= 3) return [palette[0], palette[1], palette[2], palette[3] ?? base[3]];
+    return base;
   }
 
   async savePrefs(patch: Partial<Prefs>): Promise<void> {
@@ -293,7 +322,12 @@ class AppState {
   async importSettings(text: string): Promise<void> {
     const s = parseSettings(text);
     this.resetSeedSequence();
-    await this.savePrefs({ scheme: s.scheme, feel: s.feel, seed: s.seed, reducedMotionOverridden: s.reducedMotionOverridden, colours: s.colours });
+    // A file without a theme of its own (every file from 0.5) leaves the one
+    // saved on this device alone: it can still be chosen again.
+    await this.savePrefs({
+      scheme: s.scheme, feel: s.feel, seed: s.seed, reducedMotionOverridden: s.reducedMotionOverridden, colours: s.colours,
+      customScheme: s.customScheme ?? this.prefs.customScheme,
+    });
   }
 
   /** The source the next roll should use: seeded when a seed is set. */

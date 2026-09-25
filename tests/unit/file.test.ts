@@ -50,6 +50,10 @@ describe("the file format", () => {
     assert.equal(parsed.items[0].reaction, undefined);
     assert.equal(parsed.slices, "both");
     assert.deepEqual((parsed as { feel?: unknown }).feel, { wheel: { turns: 3, settleDegrees: 20 } });
+    assert.equal(parsed.palette, undefined, "a wheel with the theme's colours carries none of its own");
+    const painted = serialize(wrap({ ...sample(), palette: ["#111111", "#eeeeee", "#3d7c8a", "#6b8e4e"] } as ListRandomizer));
+    assert.equal(serialize(parseFile(painted).file), painted, "a wheel's own colours did not come back byte for byte");
+    assert.deepEqual((parseFile(painted).file.randomizer as ListRandomizer).palette, ["#111111", "#eeeeee", "#3d7c8a", "#6b8e4e"]);
 
     for (const type of ["list", "dice", "coin", "number"] as const) {
       const empty = serialize(wrap(emptyRandomizer(type, `A ${type}`)));
@@ -85,6 +89,8 @@ describe("the file format", () => {
       ["a list with nothing in it", doctored((d) => (d.randomizer.items = [])), /items/],
       ["slices that show something unheard of", doctored((d) => (d.randomizer.slices = "sideways")), /randomizer\.slices/],
       ["an offer of one, which is no choice", doctored((d) => (d.randomizer.offer = 1)), /randomizer\.offer/],
+      ["a palette of two colours", doctored((d) => (d.randomizer.palette = ["#111111", "#222222"])), /randomizer\.palette/],
+      ["a palette colour that is not one", doctored((d) => (d.randomizer.palette = ["#111111", "#222222", "teal"])), /randomizer\.palette\[2\]/],
       ["feel that is not an object", doctored((d) => (d.randomizer.feel = "fast")), /feel/],
       ["one face reaction for a two-faced coin", serialize(wrap({ ...emptyRandomizer("coin", "Fate"), faceReactions: ["cheer"] } as never)), /faceReactions/],
     ];

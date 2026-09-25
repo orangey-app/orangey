@@ -37,6 +37,9 @@ describe("a randomizer inside a link", () => {
     assert.deepEqual(after.feel, before.feel, "the author's spin travels with the wheel");
     const offering = (await decodeRandomizer(await encodeRandomizer({ ...before, offer: 3 }))) as ListRandomizer;
     assert.equal(offering.offer, 3, "a wheel that offers a choice still offers it at the other end");
+    const painted = (await decodeRandomizer(await encodeRandomizer({ ...before, palette: ["#111111", "#eeeeee", "#3d7c8a"] }))) as ListRandomizer;
+    assert.deepEqual(painted.palette, ["#111111", "#eeeeee", "#3d7c8a"], "a wheel's own colours are part of its look, so the link carries them");
+    assert.equal(after.palette, undefined, "a wheel without its own colours does not gain any");
     assert.deepEqual(
       after.items.map((i) => [i.label, i.weight, i.color ?? null, i.reaction ?? null, i.disabled ?? false]),
       before.items.map((i) => [i.label, i.weight, i.color ?? null, i.reaction ?? null, i.disabled ?? false]),

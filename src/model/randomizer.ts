@@ -101,6 +101,13 @@ export interface ListRandomizer extends RandomizerBase {
    * one outcome as it always has.
    */
   offer?: number;
+  /**
+   * The wheel's own slice colours, overriding the theme's: three in turn and
+   * an optional spare (the theme's when left out). Part of the wheel's look,
+   * so it travels in its file and in a link. An outcome's own colour still
+   * wins over it.
+   */
+  palette?: string[];
 }
 
 export interface DiceRandomizer extends RandomizerBase {
@@ -213,6 +220,13 @@ export function validateRandomizer(v: unknown, check = new Check(), path = "rand
       if (o.withoutReplacement !== undefined) check.boolean(`${path}.withoutReplacement`, o.withoutReplacement);
       if (o.slices !== undefined) check.oneOf(`${path}.slices`, o.slices, SLICE_CONTENTS);
       if (o.offer !== undefined) check.number(`${path}.offer`, o.offer, { min: OFFER_MIN, max: OFFER_MAX, integer: true });
+      if (o.palette !== undefined && check.array(`${path}.palette`, o.palette)) {
+        const colours = o.palette as unknown[];
+        if (colours.length < 3 || colours.length > 4) check.fail(`${path}.palette`, "three colours in turn and an optional spare");
+        colours.forEach((c, i) => {
+          if (!isHex(c)) check.fail(`${path}.palette[${i}]`, "expected a colour like #a33a30");
+        });
+      }
       if (check.array(`${path}.items`, o.items, 1)) {
         (o.items as unknown[]).forEach((it, i) => validateItem(it, check, `${path}.items[${i}]`));
       }

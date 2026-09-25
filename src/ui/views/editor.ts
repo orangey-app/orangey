@@ -10,6 +10,10 @@
 import { displayPercents, isRollable } from "../../core/weighted.ts";
 import type { CoinRandomizer, ListItem, ListRandomizer, OutcomeReaction, Randomizer } from "../../model/randomizer.ts";
 import { makeItem, newId, OFFER_MAX, OFFER_MIN } from "../../model/randomizer.ts";
+import { labelFor } from "../../core/color.ts";
+import { wheelProblems } from "../../core/theme.ts";
+import { createColourField } from "../components/colourfield.ts";
+import { describeThemeProblem } from "../components/themecard.ts";
 import { draftProblem } from "../../model/draft.ts";
 import type { View } from "../view.ts";
 import type { LibraryNode } from "../../storage/library.ts";
@@ -168,6 +172,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     items: () => model.items,
     id: () => model.id,
     slices: () => model.slices,
+    colours: () => state.wheelColours(model.palette),
     onActivate: () => void rollNow(),
   });
   const result = createResultPanel("Try it");
@@ -233,11 +238,76 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
           saveNow();
           renderViewToggle();
           renderSlicesToggle();
+          renderPalette();
         }, { "aria-pressed": model.view === v ? "true" : "false" }),
       ),
     );
   };
   renderViewToggle();
+
+  // A wheel's own colours, over the theme's. Three in turn and an optional
+  // spare, chosen with the same fields as the theme card; the same check runs
+  // on them, and its findings are shown, not enforced — as with an outcome's
+  // own colour, a clash the person chose is reported, not refused.
+  const paletteGroup = h("div", { class: "segmented palette-toggle", role: "group", "aria-label": "Slice colours" });
+  const paletteField = h("div", { class: "row tight palette-field" }, h("span", { class: "faint", text: "Colours" }), paletteGroup);
+  const paletteFields = h("div", { class: "palette-fields" });
+  const paletteProblems = h("ul", { class: "palette-problems" });
+  const setPalette = (next: string[] | undefined): void => {
+    model = { ...model, palette: next };
+    if (!next) delete (model as { palette?: string[] }).palette;
+    save();
+    renderPaletteProblems();
+    renderRows();
+  };
+  const renderPaletteProblems = (): void => {
+    // The spare is the theme's unless this wheel has its own; a note about
+    // someone else's colour is not this editor's business.
+    const problems = model.palette
+      ? wheelProblems(state.wheelColours(model.palette)).filter((p) => !p.note || (model.palette?.length ?? 0) > 3)
+      : [];
+    setChildren(paletteProblems, ...problems.map((p) => h("li", { class: p.note ? "faint" : "warning", text: describeThemeProblem(p) })));
+    paletteProblems.hidden = problems.length === 0;
+  };
+  const renderPalette = (): void => {
+    const own = model.palette !== undefined;
+    paletteField.hidden = model.view !== "wheel";
+    setChildren(paletteGroup,
+      button("Theme's", () => { setPalette(undefined); renderPalette(); }, { "aria-pressed": own ? "false" : "true", class: "palette-theme" }),
+      button("This wheel's", () => {
+        if (!model.palette) setPalette(state.wheelColours().slice(0, 3));
+        renderPalette();
+      }, { "aria-pressed": own ? "true" : "false", class: "palette-own" }),
+    );
+    paletteFields.hidden = !own || model.view !== "wheel";
+    if (!own || !model.palette) {
+      setChildren(paletteFields);
+      renderPaletteProblems();
+      return;
+    }
+    const current = model.palette;
+    const colour = (label: string, i: number, value: string) =>
+      createColourField(label, `palette${i}`, value, (hex) => {
+        const next = [...(model.palette ?? current)];
+        next[i] = hex;
+        setPalette(next);
+      }, true).el;
+    const spareBox = h("input", { type: "checkbox", class: "palette-spare-toggle", checked: current.length > 3, "aria-label": "This wheel has its own spare colour" });
+    spareBox.addEventListener("change", () => {
+      const base = (model.palette ?? current).slice(0, 3);
+      setPalette(spareBox.checked ? [...base, state.wheelColours()[3]] : base);
+      renderPalette();
+    });
+    setChildren(paletteFields,
+      colour("Wheel 1", 0, current[0]),
+      colour("Wheel 2", 1, current[1]),
+      colour("Wheel 3", 2, current[2]),
+      current.length > 3
+        ? h("div", {}, colour("Spare", 3, current[3]), h("label", { class: "row tight faint" }, spareBox, "Own spare"))
+        : h("label", { class: "row tight faint palette-spare" }, spareBox, "Own spare (else the theme's)"),
+    );
+    renderPaletteProblems();
+  };
 
   // What a slice with a picture shows. Offered only where it changes
   // something — a wheel with at least one picture — and written to the file
@@ -452,7 +522,9 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     const swatch = h("button", {
       class: `swatch${item.color ? "" : " auto"}`,
       type: "button",
-      style: { background: item.color ?? autoColor },
+      // The "A" on an automatic swatch in whichever ink reads on that colour:
+      // white vanished on a pale theme's wheel colours.
+      style: `background: ${item.color ?? autoColor}; --auto-ink: ${labelFor(item.color ?? autoColor).ink}`,
       title: item.color ? `Colour ${item.color}` : "Automatic colour",
       "aria-label": item.color ? `Colour, currently ${item.color}` : "Colour, currently automatic",
     });
@@ -775,7 +847,9 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       h("div", { class: "card" },
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Name" }), nameInput),
         h("label", { class: "field" }, h("span", { class: "field-label", text: "Description" }), descInput),
-        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, offerField, slicesField, h("div", { class: "spacer" }), filterInput),
+        h("div", { class: "row", style: { marginBottom: "12px" } }, viewToggle, bagField, offerField, paletteField, slicesField, h("div", { class: "spacer" }), filterInput),
+        paletteFields,
+        paletteProblems,
         h("div", { class: "table-scroll" }, table),
         bulkBar,
         h("div", { class: "gap-s" }, footer),
@@ -793,6 +867,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   );
 
   renderRows();
+  renderPalette();
 
   // Leaving a field is the moment a person expects their change to be safe,
   // and it is rare enough to write on. Typing is not.

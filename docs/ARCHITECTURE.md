@@ -86,6 +86,30 @@ that forgets this puts two red slices together at twelve o'clock on a 4-, 7-
 or 10-outcome wheel. That slice, and any slice next to a colour the user chose,
 takes the spare green instead.
 
+Those four colours are a default, not a constant: `assignWheelColours` takes
+them as an argument, and `state.wheelColours(palette?)` decides which — a
+wheel's own `palette` (padded with the spare it would otherwise have), else
+your own theme's, else the built-in red, yellow, blue and green. The wheel
+component asks for them through its `colours` option; nothing mutates
+`WHEEL_COLOURS`.
+
+**Your own theme is derived, and set in one place.** `src/core/theme.ts` turns
+four choices into the thirteen tokens of `tokens.css`, in the proportions the
+built-in schemes use, and checks the pairs that must be readable
+(`themeProblems`, with `wheelProblems` shared with a wheel's own palette).
+`fixTheme` is the suggestion: each failing colour's OKLab lightness moved away
+from what it is measured against, hue kept, until nothing fails. Only
+`state.applyTheme()` sets the tokens — inline on `<html>` for "custom", and
+removed again for anything else. The accent is not checked against the page:
+every built-in light scheme would fail that, and a button is known by its
+text, whose contrast with the accent is checked. `--ok`, `--warn` and
+`--error` keep the built-in green, amber and red where those already read at
+4.5 : 1 on the page, cards and sunken panels, and are otherwise moved in
+lightness, toward the side the theme's text is on, until they do (or as far
+as the text itself gets, on the rare mid-tone ground where even black or
+white falls short); `--error-ink` is the label on an error-filled button.
+The mascot keeps his own colours (P14).
+
 **Fonts are built in.** `scripts/build.mjs` embeds `assets/fonts/` as data:
 URLs in the CSS, each face with its licence in a comment, so the single file
 stays one file and nothing is fetched. `--font-text` (Arapey) is for names,

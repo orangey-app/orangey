@@ -132,6 +132,14 @@ goes away; the dice fly in from one point, scatter, and land in order. All of
 it adjustable in Settings with a preview beside each control. Five colour
 schemes, from the brand's warm cream and orange to Night on the brand black.
 
+**Your own theme.** Pick a background, a text colour, an accent and the
+wheel's colours in Settings; everything else — cards, borders, faint text,
+button ink — is worked out from them, and a preview shows the result. Anything
+hard to read is listed with its contrast as you pick, and the closest readable
+version appears beside yours: the same hues, nudged as little as will do. A
+wheel can also have colours of its own, set in its editor; those travel with
+it, in its file and in a link.
+
 **Orangey himself.** The mascot can sit by the result — or stay out of the
 way until something happens. A maximum roll makes him cheer, a minimum makes
 him wince, and so does a slide link that points at a wheel this browser does
@@ -145,7 +153,7 @@ exactly the drawing.
 **Your colours, your settings.** Add colours of your own to the palette — from
 Settings or straight from the colour picker — and they come first in every
 picker. Save all your settings (scheme, feel, Orangey, seed, colours) as one
-small file and load it on another device.
+small file and load it on another device. Your own theme travels in it too.
 
 **Everything stays here.** No account, no telemetry, no analytics, no
 third-party requests. After the page loads, Orangey makes no network requests

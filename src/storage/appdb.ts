@@ -8,6 +8,7 @@
 
 import type { FeelSettings } from "../ui/feel.ts";
 import type { CustomColour } from "../model/settings-file.ts";
+import type { CustomScheme } from "../core/theme.ts";
 
 export interface HistoryEntry {
   id: string;
@@ -52,8 +53,14 @@ export interface Prefs {
   seeded: boolean;
   /** Animation switched off from the play screen for now. */
   animationsOff: boolean;
-  /** Colour scheme. */
+  /** Colour scheme: a built-in one, "system", or "custom" for your own. */
   scheme: string;
+  /**
+   * Your own theme, once one has been made. Kept when another scheme is
+   * chosen, so it can be chosen again. Not `theme`: that key was a 0.3
+   * setting and may still sit in stored prefs (P22).
+   */
+  customScheme?: CustomScheme;
   /** Colours the user added to the palette; offered in the colour cell. */
   colours: CustomColour[];
   /** The one-time Add to Home Screen notice has been seen and dismissed. */
