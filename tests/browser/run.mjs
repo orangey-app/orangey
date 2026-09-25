@@ -2375,6 +2375,61 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
+  // Tonight's dice and a quick wheel go on a board without editing it: they
+  // roll with Roll all, come back after a reload, and either close or are
+  // saved — saving puts them on the board for good. The board file is only
+  // touched by the save.
+  await test("AG a board takes dice and a quick wheel for now, keeps them over a reload, and saves one onto the board", async (page) => {
+    await open(page, "", { fresh: true });
+    const boardPath = await page.evaluate(`
+      const { state } = window.orangey;
+      state.setFeel({ motion: "instant" });
+      const now = new Date().toISOString();
+      await state.library.create("", { id: "weather", type: "list", name: "Weather", view: "wheel", created: now, modified: now,
+        items: [{ id: "r", label: "Rain", weight: 1 }, { id: "s", label: "Sun", weight: 1 }] });
+      return await state.library.create("", { id: "tonight", type: "board", name: "Tonight", entries: [{ id: "weather", name: "Weather" }], created: now, modified: now });
+    `);
+    await open(page, `#/r/${encodeURIComponent(boardPath)}`);
+    await page.waitForFunction(`document.querySelector(".board-dice")`);
+
+    await page.type(".board-dice", "3d20");
+    await page.key("Enter");
+    await page.click(".board-quick-wheel");
+    await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 2`);
+    await page.type(".cell-temp .temp-options", "Goblins\nBandits | 2");
+    await page.waitForFunction(`document.querySelector(".cell-temp .wheel-svg")`);
+
+    await page.click(".roll-all");
+    await page.waitForFunction(`window.orangey.state.history.length === 3`);
+    assert.deepEqual(
+      (await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName)`)).sort(),
+      ["3d20", "Quick wheel", "Weather"],
+    );
+    // Not part of the board until saved.
+    const entries = () => page.evaluate(`return window.orangey.state.library.findById("tonight").randomizer.entries.map((e) => e.name)`);
+    assert.deepEqual(await entries(), ["Weather"]);
+
+    // A phone that locks and reloads the tab still has them, text and all.
+    await open(page, `#/r/${encodeURIComponent(boardPath)}`);
+    await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 2`);
+    assert.equal(await page.evaluate(`return document.querySelector(".cell-temp .temp-options").value`), "Goblins\nBandits | 2");
+
+    // Save keeps the wheel: in the library, and on the board where it stood in.
+    await page.click(".cell-temp:has(.temp-options) .temp-save");
+    await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 1`);
+    await page.waitForFunction(`window.orangey.state.library.findById("tonight").randomizer.entries.length === 2`);
+    assert.deepEqual(await entries(), ["Weather", "Quick wheel"]);
+
+    // The ✕ closes the dice, and they stay closed.
+    await page.click(".cell-temp .temp-close");
+    await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 0`);
+    await open(page, `#/r/${encodeURIComponent(boardPath)}`);
+    await page.waitForFunction(`document.querySelectorAll(".board-grid .cell").length === 2`);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".cell-temp").length`), 0);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
   // ---- report --------------------------------------------------------------
 
   await browser.close();

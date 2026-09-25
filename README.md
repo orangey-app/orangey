@@ -39,7 +39,10 @@ in your library like anything else, and it points at your randomizers rather
 than copying them, so editing a table updates every board it is on. Share… on
 a board gives you a link that opens it here, and a download that packs the
 board together with everything on it — that archive is how a board goes to
-someone else.
+someone else. For something needed just tonight, the box above the cells
+takes dice (`3d20`) and **Quick wheel** makes a wheel typed in its own cell:
+both sit on the board until you close them, without changing it, and
+**Save to library** keeps one and puts it on the board for good.
 
 ## Try it
 

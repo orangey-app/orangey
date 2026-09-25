@@ -868,6 +868,26 @@ body.presenting .cell .result-slot { font-size: clamp(24px, 4vw, 54px); }
    fit rather than pushing the button off the bottom. */
 body.presenting .board .home-bar,
 body.presenting .board .cell-remove { display: none; }
+/* On a projector the table sees the cells, not the box that makes them. */
+body.presenting .board-quickbar,
+body.presenting .temp-head .temp-save,
+body.presenting .temp-editor { display: none; }
+
+/* Temporary cells: a quick wheel or a dice expression beside the board's own,
+   for tonight. Dashed, so it reads as not part of the board, and with a ✕ that
+   is always there — closing one does not change the board. */
+.board-quickbar { margin: 4px 0 10px; }
+input.board-dice { width: 140px; }
+.cell-temp { border-style: dashed; border-color: var(--border-strong); }
+.board-grid > .cell-temp > .temp-body { flex: 1 0 auto; }
+.board-grid > .cell-temp > .temp-roll { margin-top: auto; }
+.board-grid > .cell-temp > .temp-body > .cell { margin-bottom: 8px; }
+.temp-head { margin: -4px 0 4px; }
+.temp-head .temp-close, .temp-head .temp-save { padding: 2px 8px; line-height: 1.2; }
+.temp-editor { margin-bottom: 6px; }
+.temp-editor summary { cursor: pointer; }
+.temp-editor .quick-options { min-height: 4.5em; margin: 4px 0; }
+.temp-empty { text-align: center; margin: 24px 0; }
 body.presenting .board-card { display: flex; flex-direction: column; min-height: 0; height: 100vh; }
 body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 

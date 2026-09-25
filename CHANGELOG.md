@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Dice and quick wheels on a board, just for now.** A board has a box for
+  dice (`3d20`, anything the notation takes) and a Quick wheel button. Each
+  adds a dashed cell after the board's own: it rolls with Roll all, a quick
+  wheel's options are typed in its cell, a reload keeps them, and ✕ closes
+  one. None of it changes the board; **Save to library** keeps one and puts
+  it on the board for good.
 - **Rolls made in a chain show under the wheel.** A randomizer opened by an
   outcome was recorded in History, but the Recent rolls panel under the
   wheel (and under a board) only listed the wheel's own rolls, so the second

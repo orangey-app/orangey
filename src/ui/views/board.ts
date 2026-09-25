@@ -10,7 +10,10 @@
  * leaves a gap, which the board says plainly instead of quietly shrinking.
  */
 
-import { BOARD_LIMIT, touch, type BoardRandomizer, type Randomizer } from "../../model/randomizer.ts";
+import { BOARD_LIMIT, emptyRandomizer, newId, nowIso, OFFER_MAX, OFFER_MIN, touch, type BoardRandomizer, type DiceRandomizer, type ListRandomizer, type Randomizer } from "../../model/randomizer.ts";
+import { tryParse } from "../../core/dice/grammar.ts";
+import { parseQuickOptions, quickText } from "../../import/quick.ts";
+import { BOARD_TEMP_LIMIT, loadBoardTemps, saveBoardTemps, type TempRandomizer } from "../board-temps.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { button, h, isTyping, openDialog, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
@@ -44,6 +47,8 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   let chains = new Map<string, { links: ChainLink[]; els: HTMLElement[] }>();
   /** Roll all answers every question afresh, so it follows no links. */
   let rollingAll = false;
+  /** Tonight's temporary cells (see "temporary cells" below); up here because Recent rolls reads it. */
+  let temps: TempRandomizer[] = [];
 
   function landed(entryId: string, el: HTMLElement, randomizer: Randomizer, outcome: Outcome): void {
     const chain = chains.get(entryId);
@@ -120,6 +125,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     ids: () => [...new Set([
       ...board.entries.map((e) => e.id),
       ...[...chains.values()].flatMap((c) => c.links.filter((l) => l.found).map((l) => l.id)),
+      ...temps.map((t) => t.id),
     ])],
     scopeName: () => "this board",
   });
@@ -146,12 +152,12 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
       holder = wrap(entry, cell.el, cellRollButton(cell, "ghost cell-roll"));
       chains.set(entry.id, { links: [{ id: randomizer.id, name: randomizer.name, from: "", found: true }], els: [holder] });
       return holder;
-    }));
-    grid.classList.toggle("board-empty", resolved.length === 0);
+    }), ...temps.map((t) => tempView(t).holder));
+    grid.classList.toggle("board-empty", resolved.length === 0 && temps.length === 0);
     count.textContent = resolved.length === 0
       ? "Nothing on this board yet — press Add to put something on it."
       : `${resolved.length} randomizer${resolved.length === 1 ? "" : "s"}`;
-    rollAll.disabled = cells.length === 0;
+    rollAll.disabled = cells.length === 0 && temps.length === 0;
     built = signature();
     recent.refresh();
   }
@@ -251,14 +257,17 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
    * tonight's answers in one go, not to watch a sequence.
    */
   async function rollEverything(): Promise<void> {
-    if (cells.some((c) => c.rolling)) {
-      for (const cell of cells) cell.skip();
+    // Tonight's temporary cells are on the table too, so Roll all rolls them.
+    const all = [...cells, ...tempCells()];
+    if (all.some((c) => c.rolling)) {
+      for (const cell of all) cell.skip();
       return;
     }
+    if (all.length === 0) return;
     rollAll.textContent = "Skip";
     rollingAll = true;
     try {
-      await Promise.all(cells.map((cell) => cell.roll()));
+      await Promise.all(all.map((cell) => cell.roll()));
     } finally {
       rollingAll = false;
     }
@@ -342,6 +351,183 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     void addEntry(dropped);
   });
 
+  // ---- temporary cells ----------------------------------------------------
+
+  /**
+   * A dice expression or a quick wheel for tonight, beside the board's own
+   * cells without being part of the board (see board-temps.ts). Each has a ✕
+   * that is always there — closing one is not a change to the board — and
+   * "Save to library", which saves it and puts it on the board for good.
+   */
+  /** Built once per temporary cell and kept, so a board redraw keeps its answer. */
+  const tempViews = new Map<string, { holder: HTMLElement; cell: () => CellView | null }>();
+
+  const tempCells = (): CellView[] =>
+    temps.map((t) => tempViews.get(t.id)?.cell() ?? null).filter((c): c is CellView => c !== null);
+
+  /**
+   * Stored on every change, keystrokes included. It is one small record, and
+   * a write held back for a pause in the typing was lost whenever the page
+   * went away inside that pause: a write begun while a page unloads does not
+   * reliably finish.
+   */
+  function storeTemps(): void {
+    void saveBoardTemps(board.id, temps);
+  }
+
+  function addTemp(t: TempRandomizer): void {
+    if (temps.length >= BOARD_TEMP_LIMIT) {
+      state.toast(`A board holds at most ${BOARD_TEMP_LIMIT} temporary cells. Close one, or save it to your library.`);
+      return;
+    }
+    temps = [...temps, t];
+    storeTemps();
+    render();
+  }
+
+  function closeTemp(id: string): void {
+    temps = temps.filter((t) => t.id !== id);
+    tempViews.delete(id);
+    storeTemps();
+    render();
+  }
+
+  /** Save it to the library, and put it on the board where it was standing in. */
+  async function keepTemp(id: string): Promise<void> {
+    const t = temps.find((x) => x.id === id);
+    if (!t) return;
+    if (t.type === "list" && t.items.length === 0) {
+      state.toast("Type at least one option before saving the wheel.");
+      return;
+    }
+    const taken = state.library.findById(t.id) !== null;
+    const saved = { ...t, id: taken ? newId() : t.id, modified: nowIso() };
+    await state.library.create("", saved);
+    temps = temps.filter((x) => x.id !== id);
+    tempViews.delete(id);
+    storeTemps();
+    if (board.entries.length >= BOARD_LIMIT) {
+      state.toast(`Saved “${saved.name}” to your library. The board already holds ${BOARD_LIMIT}, so it is not on it.`);
+      render();
+      return;
+    }
+    state.toast(`Saved “${saved.name}” to your library and put it on this board`);
+    await save({ ...board, entries: [...board.entries, { id: saved.id, name: saved.name }] });
+  }
+
+  function tempView(t: TempRandomizer): { holder: HTMLElement; cell: () => CellView | null } {
+    const existing = tempViews.get(t.id);
+    if (existing) return existing;
+
+    const close = button("✕", () => closeTemp(t.id), { class: "ghost temp-close", "aria-label": `Close ${t.name}` });
+    const keep = button("Save to library", () => void keepTemp(t.id), { class: "ghost temp-save" });
+    const body = h("div", { class: "temp-body" });
+    const roll = h("div", { class: "temp-roll" });
+    let cell: CellView | null = null;
+
+    /** The cell for the randomizer as it stands; a wheel with nothing typed has none yet. */
+    const build = (r: TempRandomizer): void => {
+      cell = r.type === "list" && r.items.length === 0 ? null : createCell(r);
+      setChildren(body, cell ? cell.el : h("p", { class: "faint temp-empty", text: "Type the options above, one per line." }));
+      setChildren(roll, cell ? cellRollButton(cell, "ghost cell-roll") : null);
+    };
+
+    let editor: HTMLElement | null = null;
+    if (t.type === "list") {
+      // The options live in the cell, so the wheel can be changed at any
+      // time, as the one on the home screen can.
+      const area = h("textarea", {
+        class: "quick-options temp-options", rows: "3", spellcheck: "false",
+        placeholder: "Goblins\nBandits | 2\nNothing x3", "aria-label": "Options, one per line",
+      });
+      area.value = quickText(t.items);
+      const offer = h("input", {
+        type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "quick-offer",
+        "aria-label": "Offer this many to choose from", placeholder: "–",
+        value: t.offer !== undefined ? String(t.offer) : "",
+      });
+      let frame = 0;
+      const update = (): void => {
+        const raw = offer.value.trim();
+        const n = Number(raw);
+        const ok = raw !== "" && Number.isInteger(n) && n >= OFFER_MIN && n <= OFFER_MAX;
+        if (raw !== "" && !ok) offer.setAttribute("aria-invalid", "true");
+        else offer.removeAttribute("aria-invalid");
+        const at = temps.findIndex((x) => x.id === t.id);
+        if (at < 0) return;
+        const next: ListRandomizer = { ...(temps[at] as ListRandomizer), items: parseQuickOptions(area.value), modified: nowIso() };
+        if (ok) next.offer = n;
+        else delete next.offer;
+        temps = temps.map((x, i) => (i === at ? next : x));
+        storeTemps();
+        // Redrawn once a frame, and never under a spin: a roll in the air
+        // finishes on the wheel it started on.
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => {
+          if (cell?.rolling) return;
+          build(next);
+          recent.refresh();
+        });
+      };
+      area.addEventListener("input", update);
+      offer.addEventListener("input", update);
+      editor = h("details", { class: "temp-editor", open: t.items.length === 0 },
+        h("summary", { class: "faint", text: "Options" }),
+        area,
+        h("label", { class: "row tight faint" }, "Offer", offer, "to choose from"),
+      );
+      if (t.items.length === 0) requestAnimationFrame(() => area.focus({ preventScroll: false }));
+    }
+
+    build(t);
+    const holder = h("div", { class: "cell-holder cell-temp", "data-temp": t.id },
+      h("div", { class: "row tight temp-head" },
+        h("span", { class: "faint temp-tag", text: "Just for now" }),
+        h("span", { class: "spacer" }),
+        keep,
+        close,
+      ),
+      editor,
+      body,
+      roll,
+    );
+    const view = { holder, cell: () => cell };
+    tempViews.set(t.id, view);
+    return view;
+  }
+
+  // The bar that makes them: a dice box and a quick wheel, nothing more.
+  const diceBox = h("input", {
+    type: "text", class: "board-dice", placeholder: "3d20", spellcheck: "false",
+    "aria-label": "Dice to put on the board for now",
+  });
+  const diceError = h("span", { class: "faint board-dice-error" });
+  diceBox.addEventListener("input", () => {
+    const v = diceBox.value.trim();
+    const parsed = v ? tryParse(v) : null;
+    diceError.textContent = parsed && !parsed.ok ? parsed.error.message : "";
+    if (parsed && !parsed.ok) diceBox.setAttribute("aria-invalid", "true");
+    else diceBox.removeAttribute("aria-invalid");
+  });
+  diceBox.addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key !== "Enter") return;
+    e.preventDefault();
+    const parsed = tryParse(diceBox.value.trim());
+    if (!parsed.ok) return;
+    const expression = parsed.expression.normalized;
+    const dice = { ...emptyRandomizer("dice", expression), expression } as DiceRandomizer;
+    addTemp(dice);
+    diceBox.value = "";
+  });
+  const quickBar = h("div", { class: "row tight board-quickbar" },
+    diceBox,
+    button("Quick wheel", () => {
+      const now = nowIso();
+      addTemp({ id: newId(), type: "list", name: "Quick wheel", view: "wheel", items: [], created: now, modified: now });
+    }, { class: "quick-wheel-toggle board-quick-wheel" }),
+    diceError,
+  );
+
   const el = h("div", { class: "board" },
     h("div", { class: "row home-bar" },
       button("← Home", () => navigate("#/"), { class: "ghost home-button" }),
@@ -352,6 +538,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
       heading,
       board.description ? h("p", { class: "faint", text: board.description }) : count,
       board.description ? count : null,
+      quickBar,
       grid,
       rollAll,
     ),
@@ -367,9 +554,10 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   function signature(): string {
     return resolve()
       .map(({ entry, randomizer }) => `${entry.id}:${randomizer ? randomizer.modified : "gone"}`)
-      .join("|");
+      .join("|") + `|temps:${temps.map((t) => t.id).join(",")}`;
   }
   let built = "";
+  let destroyed = false;
   function renderIfChanged(): void {
     if (signature() === built) {
       recent.refresh();
@@ -381,6 +569,12 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   // A randomizer edited elsewhere, or deleted, changes what a board shows.
   const unsubscribe = state.subscribe(() => renderIfChanged(), ["library", "history"]);
   render();
+  // Tonight's temporary cells come back from the app database a moment later.
+  void loadBoardTemps(board.id).then((stored) => {
+    if (destroyed || stored.length === 0) return;
+    temps = stored;
+    render();
+  });
   setEditing(editing);
   if (params.present) present(true);
   if (params.roll) requestAnimationFrame(() => void rollEverything());
@@ -388,6 +582,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   return {
     el,
     destroy() {
+      destroyed = true;
       document.removeEventListener("keydown", onKey);
       unsubscribe();
       if (isPresenting()) present(false);
