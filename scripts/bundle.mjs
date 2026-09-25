@@ -13,7 +13,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { stripTypeScriptTypes } from "node:module";
 
 const IMPORT_RE = /^[ \t]*import\s+(?:([\s\S]*?)\s+from\s+)?["']([^"']+)["'];?[ \t]*$/gm;
@@ -42,7 +42,9 @@ export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
     if (modules.has(file)) return;
     modules.set(file, null); // placeholder, marks "in progress"
 
-    const source = readFileSync(file, "utf8");
+    // A Windows checkout may hand us CRLF; the bundle is LF whatever the
+    // machine, so the same source always builds the same bytes.
+    const source = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
     let stripped;
     try {
       stripped = stripTypeScriptTypes(source, { mode: "strip" });
@@ -93,8 +95,12 @@ export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
 
   load(entry);
 
+  // Forward slashes in the section headers on every platform: they are part
+  // of the committed orangey.html, which otherwise changed on every line of
+  // this kind whenever the other operating system built it.
+  const label = (file) => relative(root, file).split(sep).join("/");
   const code = order
-    .map((file) => `\n// ---- ${relative(root, file)} ${"-".repeat(Math.max(0, 60 - relative(root, file).length))}\n${modules.get(file).trim()}\n`)
+    .map((file) => `\n// ---- ${label(file)} ${"-".repeat(Math.max(0, 60 - label(file).length))}\n${modules.get(file).trim()}\n`)
     .join("");
   return { code, files: order.slice() };
 }

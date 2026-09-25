@@ -28,9 +28,16 @@ const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).ver
  * font, so each licence goes in, in full, as a comment beside its face.
  * See assets/fonts/README.md for what each file is and how it was made.
  */
+/**
+ * A text file as the build uses it: LF line endings whatever the checkout has,
+ * so orangey.html and the cache name in sw.js come out byte for byte the same
+ * on Windows and Linux.
+ */
+const readText = (path) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+
 const fontFace = (family, file, licence, extra = "") => {
   const data = readFileSync(join(root, "assets/fonts", file)).toString("base64");
-  const notice = readFileSync(join(root, "assets/fonts", licence), "utf8").trim();
+  const notice = readText(join(root, "assets/fonts", licence)).trim();
   return `/* ${family}: ${file}\n\n${notice}\n*/\n@font-face { font-family: "${family}"; src: url(data:font/woff;base64,${data}) format("woff"); font-display: block;${extra} }`;
 };
 const fonts = [
@@ -39,7 +46,7 @@ const fonts = [
   fontFace("Orangey Dice", "youngserif-digits.woff", "OFL-YoungSerif.txt", " unicode-range: U+0030-0039, U+002B, U+2212, U+0021;"),
 ].join("\n");
 
-const css = [fonts, ...["src/ui/styles/tokens.css", "src/ui/styles/app.css"].map((f) => readFileSync(join(root, f), "utf8"))]
+const css = [fonts, ...["src/ui/styles/tokens.css", "src/ui/styles/app.css"].map((f) => readText(join(root, f)))]
   .join("\n");
 
 const js = bundle(join(root, "src/main.ts"), { root });
