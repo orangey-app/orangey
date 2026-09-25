@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+A quick wheel typed at the table, wheels that offer a choice, a theme of
+your own and a wheel's own colours, and dice and quick wheels on a board.
 
 - **Your own theme.** Settings has a card for making one: a background, a
   text colour, an accent and the wheel's colours, with the rest worked out
