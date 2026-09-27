@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 Picking from a list, a wheel's weights changed where it is played, several
-randomizers onto a board at once, a library that scrolls on its own, and a
-library as one readable text file.
+randomizers onto a board at once, a library that scrolls on its own, a
+library as one readable text file, and a ZIP import that keeps its links.
 
 - **Pick from a list.** A list shown as a list is now a column of buttons,
   one per outcome with its odds: press one and it is the answer, as if it had
