@@ -22,7 +22,7 @@ import type { LibraryNode } from "../../storage/library.ts";
 import { basename, parent } from "../../storage/paths.ts";
 import { regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
 import { LibraryService } from "../../storage/library.ts";
-import { canUseFolder, describeStorage, exportBoardZip, exportLibraryZip, portableRandomizer, stopUsingFolder, useFolder } from "../storage-actions.ts";
+import { canUseFolder, describeStorage, exportBoardZip, exportLibraryFile, exportLibraryZip, portableRandomizer, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import { askConfirm, askFolder, askText, button, download, h, iconButton, openMenu, setChildren, type MenuItem } from "../dom.ts";
 import { state } from "../state.ts";
 import { LIBRARY_PATHS_TYPE } from "../dragpaths.ts";
@@ -118,8 +118,14 @@ export function createLibraryView(): View {
       setChildren(selectionBar);
       return;
     }
+    const exporter: HTMLButtonElement = button("Export…", () => void exportLibraryFile({
+      paths: selection(),
+      defaultName: "My library",
+      opener: exporter,
+    }), { class: "ghost export-selection", title: "Export the selection as a text file" });
     setChildren(selectionBar,
       h("span", { class: "grow", text: `${count} selected — drag ${count === 1 ? "it" : "them"} onto a board in edit mode.` }),
+      exporter,
       button("Clear", () => clearSelection(), { class: "ghost clear-selection" }),
     );
   }
@@ -166,6 +172,16 @@ export function createLibraryView(): View {
   function openStorageMenu(anchor: HTMLElement): void {
     const items: MenuItem[] = [
       { label: "Export library as ZIP", onSelect: () => void exportLibraryZip() },
+      // Readable text, for pasting into a post: no pictures, links kept.
+      {
+        label: "Export library as a text file…",
+        onSelect: () => void exportLibraryFile({
+          paths: state.library.files().map((n) => n.path),
+          folders: state.library.folders().map((f) => f.path),
+          defaultName: "My library",
+          opener: anchor,
+        }),
+      },
     ];
     if (canUseFolder()) {
       items.push({ label: "Use a folder on this computer…", onSelect: () => void openFolder() });
@@ -395,6 +411,18 @@ export function createLibraryView(): View {
       { label: "New folder here", onSelect: () => void newFolder(node.path) },
       { label: "Rename…", onSelect: () => void renameNode(node, anchor), separator: true },
       { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
+      {
+        label: "Export folder as a text file…",
+        onSelect: () => void exportLibraryFile({
+          paths: state.library.files(node).map((n) => n.path),
+          // The folder arrives as itself, not inside the folders above it.
+          base: parent(node.path),
+          folders: state.library.folders().filter((f) => f.path === node.path || f.path.startsWith(`${node.path}/`))
+            .map((f) => (parent(node.path) ? f.path.slice(parent(node.path).length + 1) : f.path)),
+          defaultName: node.name,
+          opener: anchor,
+        }),
+      },
       { label: "Delete folder…", onSelect: () => void confirmDelete(node, anchor), danger: true, separator: true },
     ], node.name);
   }

@@ -12,8 +12,9 @@ import { IMAGE_DIR, LibraryService } from "../storage/library.ts";
 import { canPickFolder, forgetFolder, pickFolder } from "../storage/fsdir.ts";
 import { imageBytes, imageDataUrl, imageStoredName, putImageData } from "../storage/images.ts";
 import { createZip, type ZipEntry } from "../storage/zip.ts";
-import { parent } from "../storage/paths.ts";
-import { askConfirm, downloadBytes } from "./dom.ts";
+import { parent, segments } from "../storage/paths.ts";
+import { LIBRARY_FILE_SUFFIX, planExport, serializeLibrary } from "../storage/libraryfile.ts";
+import { askConfirm, askText, download, downloadBytes } from "./dom.ts";
 import { state } from "./state.ts";
 
 
@@ -255,5 +256,51 @@ export async function exportLibraryZip(): Promise<void> {
   state.toast(
     `Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}` +
       `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}`,
+  );
+}
+
+/**
+ * Chosen randomizers as one plain-text library file, for a forum post or a
+ * friend (see `storage/libraryfile.ts`): the whole library, a folder, or a
+ * selection. The name is asked each time — it names the file and travels
+ * inside it — starting from `defaultName`.
+ *
+ * `base` comes off the front of the chosen paths (a folder's parent, so the
+ * folder arrives as itself); `folders` are carried even when empty. What the
+ * chosen ones link to comes along, and the toast says so, along with the
+ * pictures that were left out.
+ */
+export async function exportLibraryFile(opts: {
+  paths: readonly string[];
+  defaultName: string;
+  base?: string;
+  folders?: readonly string[];
+  opener?: HTMLElement | null;
+}): Promise<void> {
+  const name = (await askText("Export as a library file", {
+    label: "Name", value: opts.defaultName, confirm: "Export", opener: opts.opener,
+  }))?.trim();
+  if (!name) return;
+  const sources = state.library.files().map((n) => ({ path: n.path, randomizer: n.randomizer ?? undefined }));
+  const plan = planExport(sources, opts.paths, opts.base ?? "");
+  if (plan.entries.length === 0) {
+    state.toast("There is nothing there to export.");
+    return;
+  }
+  // Every folder on the way to a randomizer, and the empty ones asked for:
+  // the file says what the tree is rather than leaving it to be inferred.
+  const folders = new Set(opts.folders ?? []);
+  for (const entry of plan.entries) {
+    const parts = segments(parent(entry.path));
+    for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
+  }
+  folders.delete("");
+  const text = serializeLibrary(name, new Date().toISOString(), [...folders].sort(), plan.entries);
+  download(`${slugify(name)}${LIBRARY_FILE_SUFFIX}`, text, "application/json");
+  const count = plan.entries.length;
+  state.toast(
+    `Exported ${count} randomizer${count === 1 ? "" : "s"}` +
+      `${plan.linked ? `, ${plan.linked} of them because something chosen goes to ${plan.linked === 1 ? "it" : "them"}` : ""}.` +
+      `${plan.pictures ? ` ${plan.pictures} picture${plan.pictures === 1 ? " was" : "s were"} left out; the ZIP export keeps pictures.` : ""}`,
   );
 }

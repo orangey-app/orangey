@@ -236,8 +236,11 @@ remembered next time. On an iPhone or iPad no browser can use a folder, and
 Safari clears the storage of a site left unopened for about a week: add
 Orangey to your Home Screen and export a ZIP now and then. The same badge
 exports the whole tree as a ZIP, and the Import page takes that ZIP back,
-along with spreadsheets and single `.orangey.json` files. Randomizers can be
-dragged between folders.
+along with spreadsheets and single `.orangey.json` files. To share tables in
+a forum post, export the library, a folder or a selection as a text file
+(`.orangey-library.json`): it keeps the folders and the links between
+randomizers, leaves the pictures out, and can be pasted straight into the
+Import page. Randomizers can be dragged between folders.
 
 The format is documented in [docs/FORMAT.md](docs/FORMAT.md); there are
 examples in [`examples/`](examples).

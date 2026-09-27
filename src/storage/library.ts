@@ -8,10 +8,11 @@
  * app database, not in the user's files.
  */
 
-import { FILE_SUFFIX, fileNameFor, parseFile, serialize, wrap } from "../model/file.ts";
+import { FILE_SUFFIX, fileNameFor, parseFile, serialize, wrap, type OrangeyFile } from "../model/file.ts";
 import { newId, type Randomizer } from "../model/randomizer.ts";
 import { ValidationError } from "../model/validate.ts";
 import { basename, join, naturalCompare, parent, sanitizeName, segments } from "./paths.ts";
+import { relink } from "./libraryfile.ts";
 
 export interface Entry {
   name: string;
@@ -484,6 +485,91 @@ export class LibraryService {
         await this.backend.write(join(folder, fileNameFor(copy.name, taken)), serialize(wrap(copy)));
         result.added++;
       }
+    }
+    await this.refresh();
+    return result;
+  }
+
+  /**
+   * A library file's randomizers, into `into`, keeping the links between them.
+   *
+   * Two passes. The first settles where each one goes and under what id,
+   * asking about a path that is already taken: Skip keeps what is here (and
+   * the file's links to it now mean this one), Replace writes over it but
+   * keeps its id (so boards and links already pointing at it still work),
+   * Keep both writes a copy beside it under a new id. An arrival whose id is
+   * used elsewhere gets a new one too. The second pass rewrites every "Goes
+   * to" and board entry through those changes and writes the files, so a
+   * wheel in the file still reaches the table the file gave it.
+   */
+  async importLibrary(
+    entries: readonly { path: string; file: OrangeyFile }[],
+    folders: readonly string[],
+    into: string,
+    onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
+  ): Promise<{ added: number; replaced: number; skipped: number }> {
+    await this.flush();
+    const result = { added: 0, replaced: 0, skipped: 0 };
+    // The image store owns a folder at the top; a library's own folder of
+    // that name is moved aside rather than mixed into it.
+    const place = (path: string) => {
+      const full = join(into, path);
+      const [first, ...rest] = segments(full);
+      return first?.toLowerCase() === IMAGE_DIR ? join(`${first} folder`, ...rest) : full;
+    };
+    const ids = new Map<string, string>();
+    const claimed = new Set<string>();
+    const planned = new Set<string>();
+    const writes: { path: string; file: OrangeyFile }[] = [];
+    const idFor = (fileId: string, id: string) => {
+      if (!ids.has(fileId)) ids.set(fileId, id);
+      claimed.add(id);
+    };
+
+    for (const entry of entries) {
+      const path = place(entry.path);
+      const r = entry.file.randomizer;
+      const here = this.find(path);
+      if (here?.kind === "file" || planned.has(path.toLowerCase())) {
+        const answer = await onCollision(path);
+        if (answer === "skip") {
+          if (here?.randomizer) idFor(r.id, here.randomizer.id);
+          result.skipped++;
+          continue;
+        }
+        if (answer === "replace" && here?.kind === "file") {
+          const keep = here.randomizer?.id ?? r.id;
+          idFor(r.id, keep);
+          writes.push({ path, file: { ...entry.file, randomizer: { ...r, id: keep } } });
+          planned.add(path.toLowerCase());
+          result.replaced++;
+          continue;
+        }
+        const folder = parent(path);
+        const taken = [
+          ...(this.find(folder)?.children ?? []).map((c) => c.name),
+          ...[...planned].filter((p) => parent(p) === folder.toLowerCase()).map(basename),
+        ];
+        const copy = join(folder, fileNameFor(r.name, taken));
+        const id = newId();
+        idFor(r.id, id);
+        writes.push({ path: copy, file: { ...entry.file, randomizer: { ...r, id } } });
+        planned.add(copy.toLowerCase());
+        result.added++;
+        continue;
+      }
+      const id = this.findById(r.id) || claimed.has(r.id) ? newId() : r.id;
+      idFor(r.id, id);
+      writes.push({ path, file: { ...entry.file, randomizer: { ...r, id } } });
+      planned.add(path.toLowerCase());
+      result.added++;
+    }
+
+    for (const folder of folders) await this.backend.mkdir(place(folder));
+    for (const w of writes) {
+      const folder = parent(w.path);
+      if (folder) await this.backend.mkdir(folder);
+      await this.backend.write(w.path, serialize({ ...w.file, randomizer: relink(w.file.randomizer, ids) }));
     }
     await this.refresh();
     return result;

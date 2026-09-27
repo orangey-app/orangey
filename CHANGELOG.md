@@ -3,7 +3,8 @@
 ## Unreleased
 
 Picking from a list, a wheel's weights changed where it is played, several
-randomizers onto a board at once, and a library that scrolls on its own.
+randomizers onto a board at once, a library that scrolls on its own, and a
+library as one readable text file.
 
 - **Pick from a list.** A list shown as a list is now a column of buttons,
   one per outcome with its odds: press one and it is the answer, as if it had
@@ -32,6 +33,18 @@ randomizers onto a board at once, and a library that scrolls on its own.
   on the board is skipped, a board holds 12 as before, and a toast says what
   was left off. A selection is only for adding to boards: moving and
   deleting are still one at a time. Escape or Clear lets it go.
+- **A library as a text file.** Export the whole library (from the storage
+  badge), a folder (from its menu) or a selection (from the selection bar)
+  as one `<name>.orangey-library.json`: plain text you can read before
+  importing, and paste into a forum post. You are asked for a name, starting
+  from the folder's. Folders come along, empty ones included, and so do the
+  links: whatever an exported wheel's "Goes to" or board points at is
+  exported with it, and on import the links are kept pointing at the right
+  randomizers even when one has to be given a new id. Pictures are left out
+  (the ZIP export still has them). The Import page takes the file dropped on
+  it, or its text pasted into the box, shows what is in it and what could
+  not be read, and asks before writing over anything. The format is in
+  `docs/FORMAT.md`.
 - **The library scrolls by itself.** On a computer the library panel and the
   main screen each have their own scroll bar. A long library used to make the
   whole page long, and scrolling down to reach a randomizer scrolled the

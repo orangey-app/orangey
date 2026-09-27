@@ -101,6 +101,16 @@ dragged row is one of several selected, all of them as JSON under
 `addEntries`, the same path as its Add… window: one save, duplicates and
 boards skipped, the limit kept, and a toast for what was left off.
 
+**A library file keeps its links by rewriting them.** The text export
+(`src/storage/libraryfile.ts`, format in FORMAT.md) carries ids, because
+"Goes to" and board entries are ids. `planExport` follows those links so
+nothing chosen arrives pointing at something left behind, and
+`LibraryService.importLibrary` decides every arrival's path and id first
+(asking about taken paths), then writes each file through `relink` with the
+map of ids it had to change. The ZIP import does not do this: it passes files
+through untouched, so when it has to change an arrival's id, the archive's
+links to it reach the randomizer that was already here instead.
+
 **A pop-out is a second window run by this page.** `src/ui/popout.ts` opens
 a Document Picture-in-Picture window — always on top of other programs, in
 desktop Chrome, Edge and Firefox — and fills it with cells (`createCell`),

@@ -17,6 +17,7 @@ import { readZip, type ZipEntry } from "../../storage/zip.ts";
 import { IMAGE_DIR } from "../../storage/library.ts";
 import { imageIdFromName, restoreImage } from "../../storage/images.ts";
 import { basename } from "../../storage/paths.ts";
+import { isLibraryText, LIBRARY_FILE_SUFFIX, parseLibrary, type ReadLibraryFile } from "../../storage/libraryfile.ts";
 import { absorbImages, missingOnBoards } from "../storage-actions.ts";
 import { appendChildren, button, h, openDialog, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
@@ -41,19 +42,22 @@ export function createImportView(initialText = ""): View {
   let outcome: ImportResult | null = null;
 
   const textarea = h("textarea", {
-    placeholder: "Paste a table here, or drop a .csv, .tsv, .txt or .orangey.json file anywhere on this page",
+    placeholder: "Paste a table or a library file's text here, or drop a .csv, .tsv, .txt, .orangey.json or .orangey-library.json file anywhere on this page",
     "aria-label": "Data to import",
   });
   textarea.value = text;
   // A pasted link is unmistakable, so it is read at once rather than waiting
   // for "Read it" — nobody pastes a link expecting to press a button next.
+  // So is a library file's text, which is what a forum post holds.
   textarea.addEventListener("paste", () => queueMicrotask(() => {
-    if (LINK_PATTERN.test(textarea.value)) analyse();
+    if (LINK_PATTERN.test(textarea.value) || isLibraryText(textarea.value)) analyse();
   }));
   textarea.addEventListener("input", () => {
     if (LINK_PATTERN.test(textarea.value) && !linked && !linkProblem) analyse();
   });
 
+  /** A library file's text, pasted instead of a table: read, or why it could not be. */
+  let pastedLibrary: { read: ReadLibraryFile } | { problem: string } | null = null;
   /** A link with a wheel inside it, pasted instead of a table. */
   let linked: { randomizer: Randomizer; payload: string } | null = null;
   let linkProblem: string | null = null;
@@ -69,6 +73,7 @@ export function createImportView(initialText = ""): View {
     text = textarea.value;
     linked = null;
     linkProblem = null;
+    pastedLibrary = null;
     if (!text.trim()) {
       detection = null;
       outcome = null;
@@ -93,6 +98,17 @@ export function createImportView(initialText = ""): View {
           render();
         },
       );
+      return;
+    }
+    if (isLibraryText(text)) {
+      detection = null;
+      outcome = null;
+      try {
+        pastedLibrary = { read: parseLibrary(text) };
+      } catch (e) {
+        pastedLibrary = { problem: (e as Error).message };
+      }
+      render();
       return;
     }
     if (looksLikeJson(text)) {
@@ -132,6 +148,10 @@ export function createImportView(initialText = ""): View {
     setChildren(preview, );
     if (linked || linkProblem) {
       settings.append(linkCard());
+      return;
+    }
+    if (pastedLibrary) {
+      settings.append(libraryCard(pastedLibrary));
       return;
     }
     if (!outcome) {
@@ -235,6 +255,58 @@ export function createImportView(initialText = ""): View {
     );
   }
 
+  /**
+   * What pasted library text offers: what is in it, what could not be read,
+   * and where it goes. Nothing is written until Import library is pressed.
+   */
+  function libraryCard(pasted: { read: ReadLibraryFile } | { problem: string }): HTMLElement {
+    if ("problem" in pasted) {
+      return h("div", { class: "link-import library-import" },
+        h("h2", { text: "That looks like an Orangey library file, but it could not be read" }),
+        h("p", { class: "faint", text: pasted.problem }),
+        h("p", { class: "faint", text: "A forum can change the quotation marks or cut a long post short. Copy it again, or download the file and drop it here instead." }),
+      );
+    }
+    const { read } = pasted;
+    const count = read.entries.length;
+    const folders = read.folders.length;
+    return h("div", { class: "link-import library-import" },
+      h("h2", { text: `This is an Orangey library: “${read.name}”` }),
+      h("p", { class: "library-summary", text:
+        `${count} randomizer${count === 1 ? "" : "s"}${folders ? ` in ${folders} folder${folders === 1 ? "" : "s"}` : ""}` }),
+      read.failed.length
+        ? h("div", { class: "notice" },
+            h("p", { text: `${read.failed.length} could not be read and will be left out:` }),
+            h("ul", {}, ...read.failed.slice(0, 5).map((f) => h("li", { text: `${f.path}: ${f.message}` }))),
+          )
+        : null,
+      h("p", { class: "faint", text: "Its folders are made inside the one you choose. If something is already at the same place, you are asked whether to replace it, keep both or skip it. Library files never carry pictures." }),
+      h("div", { class: "row gap-l", style: { alignItems: "flex-end" } },
+        h("label", { class: "field" }, h("span", { class: "field-label", text: "Into" }), folderSelect),
+        button("Import library", () => void importLibrary(read, folderSelect.value), { class: "primary import-library", disabled: count === 0 }),
+      ),
+    );
+  }
+
+  /** A library file into the library, pasted or dropped, and a word on how it went. */
+  async function importLibrary(read: ReadLibraryFile, into: string): Promise<void> {
+    const result = await state.library.importLibrary(read.entries, read.folders, into, askCollision);
+    const gaps = missingOnBoards(state.library)
+      .map((b) => `${b.name} is missing ${b.missing.join(", ")}`)
+      .join("; ");
+    state.toast(
+      `Imported ${result.added} from “${read.name}”` +
+        `${result.replaced ? `, replaced ${result.replaced}` : ""}` +
+        `${result.skipped ? `, skipped ${result.skipped}` : ""}` +
+        `${read.failed.length ? `, ${read.failed.length} unreadable` : ""}` +
+        `${gaps ? `. ${gaps}` : ""}`,
+    );
+    if (into && !state.prefs.expandedFolders.includes(into)) {
+      void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, into] });
+    }
+    navigate("#/library");
+  }
+
   function describeLinkType(r: Randomizer): string {
     switch (r.type) {
       case "dice":
@@ -326,6 +398,16 @@ export function createImportView(initialText = ""): View {
       return;
     }
     const content = await file.text();
+    // A library file goes in whole, as a ZIP does; by its content too, since
+    // a download from a forum does not always keep its name.
+    if (file.name.toLowerCase().endsWith(LIBRARY_FILE_SUFFIX) || isLibraryText(content)) {
+      try {
+        await importLibrary(parseLibrary(content), folderSelect.value);
+      } catch (e) {
+        state.toast(`That library file could not be read: ${(e as Error).message}`);
+      }
+      return;
+    }
     if (file.name.toLowerCase().endsWith(FILE_SUFFIX)) {
       try {
         const parsed = parseFile(content);
@@ -375,7 +457,7 @@ export function createImportView(initialText = ""): View {
 
   const dropZone = h("div", { class: "card" },
     h("h2", { text: "Import" }),
-    h("p", { class: "faint", text: "Paste a table of outcomes, or drop a file anywhere on this page: a spreadsheet export (commas, semicolons, tabs, pipes and aligned columns all work), a .orangey.json randomizer, or a library ZIP." }),
+    h("p", { class: "faint", text: "Paste a table of outcomes, or drop a file anywhere on this page: a spreadsheet export (commas, semicolons, tabs, pipes and aligned columns all work), a .orangey.json randomizer, a library file (.orangey-library.json — or paste its text), or a library ZIP." }),
     textarea,
     h("div", { class: "row gap-s" },
       button("Read it", analyse, { class: "primary" }),

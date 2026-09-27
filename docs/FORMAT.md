@@ -150,6 +150,53 @@ A bare randomizer object without the `format` wrapper is accepted, because it
 is a natural thing to paste. The import wizard additionally accepts a JSON
 array of strings or of `{label, weight}` objects.
 
+## A library file
+
+`<name>.orangey-library.json` is a library, or part of one, as a single
+plain-text file — something a person can read before importing it, and paste
+into a forum post. The library's storage badge exports the whole library this
+way, a folder's menu exports that folder, and the selection bar exports what
+is selected. The Import page takes the file dropped on it, or its text
+pasted into its box.
+
+```json
+{
+  "format": "orangey-library",
+  "version": 1,
+  "name": "Forest tables",
+  "exported": "2026-09-27T18:04:11.512Z",
+  "folders": ["Forest", "Forest/Night", "Treasure"],
+  "randomizers": [
+    {
+      "path": "Forest/encounters.orangey.json",
+      "randomizer": { "id": "…", "type": "list", "name": "Encounters", "…": "…" }
+    }
+  ]
+}
+```
+
+- `format` and `version` are the library file's own, separate from a
+  randomizer file's. A version newer than the reader knows is refused rather
+  than guessed at, since a library is written into yours or not at all.
+- `randomizer` is exactly what a `.orangey.json` holds under the same key,
+  checked the same way; one that fails is left out and named, and the rest
+  still import.
+- `path` is where it lives, `/`-separated. Each part is cleaned on the way
+  in as a typed folder name would be, so `..`, drive letters and leading
+  slashes cannot place a file outside the folder being imported into. A
+  path that does not end in `.orangey.json` is given a name from the
+  randomizer's.
+- `folders` lists folders to make, so empty ones arrive too.
+- **Links are kept.** "Goes to" and a board's entries name randomizers by
+  `id`, so ids travel. Exporting brings along everything the chosen ones
+  link to, at its own path. On import, a randomizer whose id is already in
+  use gets a new one, and every link in the file is rewritten to match:
+  Skip points the file's links at what is already there, Replace keeps the
+  existing file's id (so boards that point at it keep working), and Keep
+  both makes a copy under a new id that the file's links follow.
+- **Pictures are never included.** An outcome's `image` and `imageData` are
+  removed on export and ignored on import. The ZIP export keeps pictures.
+
 ## A randomizer inside a link
 
 `#/roll?w=…` carries a whole randomizer in the address instead of naming one

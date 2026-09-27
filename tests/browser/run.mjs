@@ -2795,6 +2795,111 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
+  await test("AK a folder or a selection goes out as one readable library file, and comes back in with its folders and links", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.setViewport(1280, 800);
+    await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const forest = await state.library.createFolder("", "Forest");
+      const treasure = await state.library.createFolder("", "Treasure");
+      await state.library.create(forest, { id: "enc", type: "list", name: "Encounters", view: "wheel", created: now, modified: now,
+        items: [{ id: "a", label: "Dragon", weight: 1, goesTo: "hoard" }, { id: "b", label: "Nothing", weight: 3 }] });
+      await state.library.create(treasure, { id: "hoard", type: "list", name: "Hoard", view: "wheel", created: now, modified: now,
+        items: [{ id: "g", label: "Gold", weight: 1, image: "picture-of-gold" }] });
+      await state.library.create("", { id: "weather", type: "coin", name: "Weather", faces: ["Rain", "Sun"], created: now, modified: now });
+      await state.library.flush();
+      await state.savePrefs({ expandedFolders: [forest, treasure] });
+    `);
+    await open(page, "#/");
+    // Downloads are caught rather than saved: the name, and the text.
+    await page.evaluate(`
+      window.__saved = [];
+      HTMLAnchorElement.prototype.click = function () {
+        const href = this.href;
+        window.__saved.push(fetch(href).then((r) => r.text()).then((text) => ({ name: this.download, text })));
+      };`);
+    const saved = () => page.evaluate(`return await Promise.all(window.__saved)`);
+    const nameDialog = async (value) => {
+      await page.waitForFunction(`document.querySelector("dialog[open] input[type=text]")`);
+      assert.equal(await page.evaluate(`return document.querySelector("dialog[open] input[type=text]").value`), value.expect);
+      await page.evaluate(`
+        document.querySelector("dialog[open] input[type=text]").value = ${JSON.stringify(value.type)};
+        document.querySelector("dialog[open] button[type=submit]").click();`);
+    };
+
+    // A folder, from its menu: named after the folder unless changed, and
+    // what it links to comes along even though it lives elsewhere.
+    await page.waitForFunction(`document.querySelector(".library .folder-row")`);
+    await page.evaluate(`[...document.querySelectorAll(".library .folder-row")].find((r) => r.textContent.includes("Forest"))
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
+    await page.waitForFunction(`[...document.querySelectorAll(".menu-item")].some((m) => m.textContent === "Export folder as a text file…")`);
+    await page.evaluate(`[...document.querySelectorAll(".menu-item")].find((m) => m.textContent === "Export folder as a text file…").click()`);
+    await nameDialog({ expect: "Forest", type: "Forest tables" });
+    await page.waitForFunction(`window.__saved.length === 1`);
+    const [folderFile] = await saved();
+    assert.equal(folderFile.name, "forest-tables.orangey-library.json");
+    const doc = JSON.parse(folderFile.text);
+    assert.equal(doc.format, "orangey-library");
+    assert.equal(doc.name, "Forest tables");
+    assert.deepEqual(doc.randomizers.map((r) => r.path), ["Forest/encounters.orangey.json", "Treasure/hoard.orangey.json"]);
+    assert.ok(!folderFile.text.includes("picture-of-gold"), "a picture reached the text file");
+    assert.ok(folderFile.text.includes("\n  "), "the file is laid out to be read");
+    await page.waitForFunction(`[...document.querySelectorAll(".toast")].some((t) => /1 of them because something chosen goes to it.*1 picture was left out/.test(t.textContent))`);
+
+    // A selection, from the bar the selection shows.
+    await page.evaluate(`
+      for (const name of ["Encounters", "Weather"]) {
+        [...document.querySelectorAll(".library .tree-row")].find((r) => r.textContent.includes(name))
+          .dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+      }`);
+    await page.click(".export-selection");
+    await nameDialog({ expect: "My library", type: "Tonight" });
+    await page.waitForFunction(`window.__saved.length === 2`);
+    const selectionFile = (await saved())[1];
+    assert.equal(selectionFile.name, "tonight.orangey-library.json");
+    assert.deepEqual(JSON.parse(selectionFile.text).randomizers.map((r) => r.path),
+      ["Forest/encounters.orangey.json", "weather.orangey.json", "Treasure/hoard.orangey.json"]);
+
+    // Pasted into a library that has none of it: the tree and the link arrive.
+    await open(page, "#/import", { fresh: true });
+    await page.waitForFunction(`document.querySelector(".importer textarea")`);
+    await page.evaluate(`
+      const area = document.querySelector(".importer textarea");
+      area.value = ${JSON.stringify(folderFile.text)};
+      area.dispatchEvent(new Event("paste", { bubbles: true }));`);
+    await page.waitForFunction(`document.querySelector(".import-library")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".library-summary").textContent`), "2 randomizers in 2 folders");
+    await page.click(".import-library");
+    await page.waitForFunction(`location.hash === "#/library" && window.orangey.state.library.files().length === 2`);
+    const arrived = await page.evaluate(`
+      const { state } = window.orangey;
+      const enc = state.library.find("Forest/encounters.orangey.json").randomizer;
+      return [enc.id, enc.items[0].goesTo, state.library.findById(enc.items[0].goesTo)?.path, enc.items.map((i) => i.weight)];`);
+    assert.deepEqual(arrived, ["enc", "hoard", "Treasure/hoard.orangey.json", [1, 3]]);
+
+    // Dropped as a file on top of itself: Keep both makes copies, and the
+    // copied wheel goes to the copied hoard, not the one already here.
+    await open(page, "#/import");
+    await page.waitForFunction(`document.querySelector(".importer textarea")`);
+    await page.evaluate(`
+      const data = new DataTransfer();
+      data.items.add(new File([${JSON.stringify(folderFile.text)}], "forest-tables.orangey-library.json", { type: "application/json" }));
+      document.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));`);
+    for (let i = 0; i < 2; i++) {
+      await page.waitForFunction(`[...document.querySelectorAll("dialog[open] button")].some((b) => b.textContent === "Keep both")`);
+      await page.evaluate(`[...document.querySelectorAll("dialog[open] button")].find((b) => b.textContent === "Keep both").click()`);
+    }
+    await page.waitForFunction(`window.orangey.state.library.files().length === 4`);
+    const copies = await page.evaluate(`
+      const { state } = window.orangey;
+      const enc = state.library.files().find((f) => f.path.startsWith("Forest/") && f.randomizer.id !== "enc").randomizer;
+      const target = state.library.findById(enc.items[0].goesTo);
+      return [enc.items[0].goesTo === "hoard", target.path.startsWith("Treasure/"), target.randomizer.id === "hoard"];`);
+    assert.deepEqual(copies, [false, true, false]);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
   // ---- report --------------------------------------------------------------
 
   await browser.close();
