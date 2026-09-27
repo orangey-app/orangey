@@ -1688,6 +1688,18 @@ async function main() {
     const names = await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName).sort()`);
     assert.deepEqual(names, ["Encounters", "Weather"]);
 
+    // Full screen, the board fills the window — it used to shrink to one
+    // cell's width, a third of a desktop screen — and the way out is on it.
+    await page.click(".present-button");
+    await page.waitForFunction(`document.body.classList.contains("presenting")`);
+    const fill = await page.evaluate(`return document.querySelector(".board").getBoundingClientRect().width / innerWidth`);
+    assert.ok(fill > 0.95, `the board is ${Math.round(fill * 100)}% of the window's width`);
+    const cellsInRow = await page.evaluate(`return new Set([...document.querySelectorAll(".cell-holder")].map((c) => Math.round(c.getBoundingClientRect().top))).size`);
+    assert.equal(cellsInRow, 1, "two cells fit side by side on a desktop screen");
+    assert.ok(await page.evaluate(`return document.querySelector(".leave-presenting").getBoundingClientRect().width > 0`), "Leave full screen is not visible");
+    await page.click(".leave-presenting");
+    await page.waitForFunction(`!document.body.classList.contains("presenting")`);
+
     // Rolling one cell leaves the other cell's answer where it was.
     const before = shown[1];
     await page.evaluate(`document.querySelectorAll(".cell-holder")[0].querySelector(".wheel-svg").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
@@ -2261,6 +2273,34 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".bag-count").textContent === "3 of 3 left"`);
     await page.click(".roll-button");
     await page.waitForFunction(`document.querySelector(".bag-count").textContent === "2 of 3 left"`);
+
+    // On a board the same bag is drawn from, and the cell says so: its count
+    // and Refill are there, and a drawn outcome leaves the wheel as the next
+    // roll starts. A cell's wheel used to keep every slice until a reload,
+    // and an empty bag on a board could not be refilled from it.
+    const bagId = await page.evaluate(`
+      const { state } = window.orangey;
+      const node = state.library.find(${JSON.stringify(path)});
+      state.library.save(node.path, { ...node.randomizer, view: "wheel" });
+      await state.library.flush();
+      return node.randomizer.id;
+    `);
+    const bagBoard = await createBoard(page, "Bag board", [bagId]);
+    await open(page, `#/r/${encodeURIComponent(bagBoard)}`);
+    await page.waitForFunction(`document.querySelector(".cell .bag-count")?.textContent === "2 of 3 left"`);
+    const slices = () => page.evaluate(`return [...document.querySelectorAll(".cell .wheel-rotor > text")].map((t) => t.textContent)`);
+    assert.equal((await slices()).length, 2, "the cell's wheel leaves out what was drawn before the board opened");
+    await page.click(".cell-roll");
+    await page.waitForFunction(`document.querySelector(".cell .bag-count").textContent === "1 of 3 left"`);
+    const drawnHere = await page.evaluate(`return document.querySelector(".cell .result-value").textContent`);
+    await page.click(".cell-roll");
+    await page.waitForFunction(`document.querySelector(".cell .bag-count").textContent === "0 of 3 left"`);
+    const left = await slices();
+    assert.equal(left.length, 1, `the wheel still shows ${left.join(", ")}`);
+    assert.ok(!left.includes(drawnHere), `${drawnHere} was drawn but is still on the wheel`);
+    await page.click(".cell .refill-bag");
+    await page.waitForFunction(`document.querySelector(".cell .bag-count").textContent === "3 of 3 left"`);
+    assert.equal((await slices()).length, 3, "Refill puts everything back on the wheel");
     assert.deepEqual(page.consoleErrors, []);
   });
 

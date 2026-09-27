@@ -71,11 +71,22 @@ export function packRandomizer(r: Randomizer): Record<string, unknown> {
   return packed;
 }
 
+/**
+ * A board names its randomizers rather than carrying them, so a link could
+ * hold the board and none of what is on it: it is shared as an archive
+ * (Share…). Refused in both directions, so a hand-made link cannot open a
+ * board on a play screen that has nothing it can roll.
+ */
+const BOARD_NOT_IN_LINK = "a board only names its randomizers, so it travels as an archive, not in a link";
+
 /** And back: timestamps and outcome ids made afresh, then validated. */
 export function unpackRandomizer(raw: unknown): Randomizer {
   const check = new Check();
   if (!check.object("link", raw)) throw new ValidationError(check.issues);
   const o = { ...(raw as Record<string, unknown>) };
+  // Said before anything else is checked: whatever else is wrong with it,
+  // this is the reason a board link cannot work.
+  if (o.type === "board") throw new ValidationError([{ path: "link", message: BOARD_NOT_IN_LINK }]);
   const now = nowIso();
   o.created ??= now;
   o.modified ??= now;
@@ -90,6 +101,7 @@ export function unpackRandomizer(raw: unknown): Randomizer {
 
 /** The value that goes after `w=`. */
 export async function encodeRandomizer(r: Randomizer): Promise<string> {
+  if (r.type === "board") throw new ValidationError([{ path: "link", message: BOARD_NOT_IN_LINK }]);
   const json = JSON.stringify(packRandomizer(r));
   const raw = linkEncoder.encode(json);
   const { data, method } = await deflate(raw);

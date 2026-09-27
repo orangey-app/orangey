@@ -915,7 +915,23 @@ input.board-dice { width: 140px; }
 .temp-editor summary { cursor: pointer; }
 .temp-editor .quick-options { min-height: 4.5em; margin: 4px 0; }
 .temp-empty { text-align: center; margin: 24px 0; }
-body.presenting .board-card { display: flex; flex-direction: column; min-height: 0; height: 100vh; }
+/* Full screen a board fills the window, as the play card does. The page is a
+   flex row there, and a board that was not told to grow shrank to its
+   content: a third of a desktop screen, one cell wide. The card loses its
+   frame, and Recent rolls stay behind on the ordinary screen. */
+body.presenting .board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+body.presenting .board-card {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(12px, 3vw, 40px);
+}
+body.presenting .board > .board-card ~ .card { display: none; }
 body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 
 /* ---- an outcome that opens another randomizer ------------------------------

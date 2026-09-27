@@ -18,8 +18,8 @@ import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
 import type { Outcome } from "../roll.ts";
 import type { RollOrigin } from "../../storage/appdb.ts";
-import { bagDrawn, bagLoad } from "../bag.ts";
-import { withoutDrawn } from "../../core/weighted.ts";
+import { bagDrawn, bagLoad, bagRefill } from "../bag.ts";
+import { isRollable, withoutDrawn } from "../../core/weighted.ts";
 import { effectiveFeel } from "../feel.ts";
 
 export interface CellView {
@@ -49,7 +49,7 @@ export function createCell(
         return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
       },
       id: () => randomizer.id,
-      onActivate: () => void roller.roll(),
+      onActivate: () => void rollCell(),
       size: 260,
       slices: () => (randomizer as Extract<Randomizer, { type: "list" }>).slices,
       colours: () => state.wheelColours((randomizer as Extract<Randomizer, { type: "list" }>).palette),
@@ -65,8 +65,35 @@ export function createCell(
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
+  /**
+   * A bag's count and its Refill, as on the play screen. A board is where a
+   * bag is most often played — one draw per scene, over an evening — so an
+   * empty one must be refillable where it is, not only from its own screen.
+   */
+  const bagCount = h("span", { class: "faint bag-count" });
+  const refillButton = button("Refill", () => {
+    bagRefill(randomizer.id);
+    result.clear();
+    wheel?.refresh();
+    updateBagLine();
+  }, { class: "ghost refill-bag" });
+  const bagLine = h("div", { class: "row tight bag-line" }, bagCount, refillButton);
+  bagLine.hidden = true;
+
+  function updateBagLine(): void {
+    if (randomizer.type !== "list" || !randomizer.withoutReplacement) return;
+    const total = randomizer.items.filter(isRollable).length;
+    const left = withoutDrawn(randomizer.items, bagDrawn(randomizer.id)).filter(isRollable).length;
+    bagLine.hidden = false;
+    bagCount.textContent = `${left} of ${total} left`;
+    refillButton.hidden = left === total;
+  }
+
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
-    void bagLoad(randomizer.id).then(() => wheel?.refresh());
+    void bagLoad(randomizer.id).then(() => {
+      wheel?.refresh();
+      updateBagLine();
+    });
   }
 
   const roller = createRoller({
@@ -80,20 +107,36 @@ export function createCell(
     onStart: () => opts.onRoll?.(),
     onLanded: (outcome) => opts.onLanded?.(outcome),
     from: opts.from,
+    // The count changes at the landing; the wheel waits for the next roll, so
+    // the winning slice does not vanish from under the pointer (as on the
+    // play screen).
+    onBagChange: () => updateBagLine(),
     // Several cells can offer at once after Roll all; the keyboard goes to a
     // cell's cards only when it was already in that cell.
     focusOffer: () => el.contains(document.activeElement) || (el.parentElement?.contains(document.activeElement) ?? false),
   });
 
+  /**
+   * Every way of rolling a cell — its button, a click on its wheel, Roll all.
+   * What was drawn last time leaves the wheel now, as the next roll starts,
+   * as on the play screen; without it a cell's wheel kept every slice until
+   * the page was reloaded.
+   */
+  function rollCell(): Promise<void> {
+    wheel?.refresh();
+    return roller.roll();
+  }
+
   const el = h("div", { class: "cell", "data-randomizer": randomizer.id },
     h("h3", { class: "cell-name", text: randomizer.name }),
     stage,
+    bagLine,
     result.el,
   );
 
   return {
     el,
-    roll: () => roller.roll(),
+    roll: rollCell,
     skip: () => roller.skip(),
     get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },

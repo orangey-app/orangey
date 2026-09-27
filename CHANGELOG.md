@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **A bag on a board shows what is left, and refills there.** A wheel that
+  draws without putting back now shows its count and a Refill button in a
+  board's cell, as on its own screen, and a drawn outcome leaves the cell's
+  wheel when the next roll starts. Before, the cell's wheel kept every slice
+  until the page was reloaded, and an empty bag on a board could only be
+  refilled from the wheel's own screen.
+- **A board fills the screen in full screen.** It used to shrink to a single
+  column about a third of the window wide; now it takes the whole window,
+  as a single wheel does. Leave full screen is on the screen too — it had
+  been hidden with the board's top bar, leaving only Escape, which a tablet
+  does not have.
+- **A board cannot go into a link.** A board names its randomizers rather
+  than carrying them, so a link could only ever hold half of it; a hand-made
+  one opened a screen with nothing to roll. It now says why and how a board
+  is shared instead (Share…, as an archive). The file format now documents
+  boards.
+
 ## 0.6.0
 
 A quick wheel typed at the table, wheels that offer a choice, a theme of

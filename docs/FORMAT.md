@@ -111,6 +111,33 @@ described under `reaction` above.
 
 `min`, `max`, `integer`, `inclusiveMax`, `count` (1–1000), `unique`.
 
+### `type: "board"`
+
+Several randomizers on one screen, rolled together or one at a time.
+`entries` lists them in order, at most 12, each as `{ "id", "name" }`: the
+randomizer's `id`, and the name it had when it was put on the board. The id is
+what finds it, so renaming or moving a randomizer does not break the board;
+the name is what the board shows when the randomizer has been deleted. The
+same randomizer cannot be on a board twice, and a board cannot hold another
+board.
+
+```json
+{
+  "id": "…",
+  "type": "board",
+  "name": "Tonight",
+  "entries": [
+    { "id": "5f1c0000-0000-4000-8000-000000000001", "name": "Forest Encounters" },
+    { "id": "…", "name": "Attack roll" }
+  ]
+}
+```
+
+A board carries references, not copies, so it is shared as an archive of the
+board and everything on it (Share… on the board), never inside a link. What a
+bag on a board has drawn, and any dice or quick wheel added to a board just
+for tonight, are kept in the browser like a bag's draws, never in this file.
+
 ## File names
 
 `<slug of the name>.orangey.json`, with `-2`, `-3` appended on a collision.

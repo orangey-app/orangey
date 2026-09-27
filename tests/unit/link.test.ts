@@ -121,5 +121,11 @@ describe("a randomizer inside a link", () => {
     await refuse("not json at all", `0${Buffer.from("not json at all").toString("base64url")}`, /damaged/);
     // An empty wheel would open as a dead end rather than a randomizer.
     await refuse("a wheel with no outcomes", await encodeRandomizer(empty), /items/);
+    // A board names its randomizers rather than carrying them, so it has no
+    // business in a link: refused on the way out, and a hand-made one on the
+    // way in (it used to open a play screen with nothing to roll).
+    const board = emptyRandomizer("board", "Tonight");
+    await assert.rejects(() => encodeRandomizer(board), /travels as an archive/);
+    await refuse("a board", `0${Buffer.from(JSON.stringify(board)).toString("base64url")}`, /travels as an archive/);
   });
 });

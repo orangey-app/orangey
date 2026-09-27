@@ -532,8 +532,11 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     h("div", { class: "row home-bar" },
       button("← Home", () => navigate("#/"), { class: "ghost home-button" }),
       h("span", { class: "spacer" }),
-      addButton, editButton, shareButton, presentButton, exitButton,
+      addButton, editButton, shareButton, presentButton,
     ),
+    // Outside the bar, which full screen hides: inside it, the one visible way
+    // out was hidden with it, and only Escape — no use on a tablet — was left.
+    exitButton,
     h("div", { class: "card board-card" },
       heading,
       board.description ? h("p", { class: "faint", text: board.description }) : count,
