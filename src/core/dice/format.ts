@@ -20,11 +20,8 @@ function termDetail(t: TermResult): string {
 }
 
 /**
- * Is the whole roll a count of successes?
- *
- * Only then does "= 3 successes" make sense. Mixing a success pool with a
- * constant or an ordinary term gives a number that is not a count of
- * anything, so it stays a plain total.
+ * Is the whole roll a count of successes? Only then does "= 3 successes" make
+ * sense; mixed with a constant or an ordinary term it is a plain total.
  */
 function allSuccesses(r: RollResult): boolean {
   return r.terms.length > 0 && r.terms.every((t) => t.successes === true);

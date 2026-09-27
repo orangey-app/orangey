@@ -1,7 +1,6 @@
 /**
- * Colour maths: sRGB <-> OKLab, perceptual distance, WCAG contrast, and a
- * deuteranopia simulation. Everything the palette work in C8 needs, in one
- * dependency-free module.
+ * Colour maths: sRGB <-> OKLab, perceptual distance, WCAG contrast and a
+ * deuteranopia simulation. No dependencies.
  */
 
 export type RGB = { r: number; g: number; b: number }; // 0..1
@@ -111,7 +110,6 @@ const WHITE: RGB = { r: 1, g: 1, b: 1 };
 const BLACK: RGB = { r: 0, g: 0, b: 0 };
 
 export interface LabelChoice {
-  /** The colour to draw the label in. */
   ink: "#ffffff" | "#000000";
   /** The fill to use, possibly nudged in lightness to reach the target. */
   fill: string;

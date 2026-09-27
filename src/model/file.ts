@@ -1,13 +1,7 @@
 /**
- * The .orangey.json file format (plan C3, decision D10).
- *
- * Rules that the round-trip test enforces:
- *   - UTF-8, LF, two-space indent, keys in a fixed order, so Git diffs stay
- *     readable and a file edited by hand does not churn;
- *   - unknown keys are preserved, so a file written by a newer Orangey and
- *     re-saved by an older one does not silently lose information;
- *   - a file whose version is newer than we know opens read-only rather than
- *     being guessed at.
+ * The .orangey.json file format (see docs/FORMAT.md): fixed key order, unknown
+ * keys preserved, and a file from a newer version opens read-only. The
+ * round-trip test enforces these.
  */
 
 import { Check, ValidationError } from "./validate.ts";
@@ -29,8 +23,8 @@ const RANDOMIZER_KEY_ORDER = [
   "id", "type", "name", "description", "tags", "view", "withoutReplacement", "slices",
   "expression", "faces", "faceReactions", "min", "max", "integer", "inclusiveMax", "count", "unique",
   "feel", "created", "modified", "items", "entries",
-  // Appended, never inserted (P10): files written before a key existed keep
-  // their exact bytes when saved again.
+  // The file format is append only: new keys go here, at the end, so older files
+  // keep their exact bytes when saved again.
   "offer", "palette",
 ];
 const ITEM_KEY_ORDER = ["id", "label", "weight", "disabled", "description", "color", "reaction", "image", "goesTo", "metadata", "imageData"];
@@ -76,8 +70,7 @@ export function parseFile(text: string): ParseOutcome {
   const o = doc as Record<string, unknown>;
 
   if (o.format !== FORMAT) {
-    // Be generous about what we accept: a bare randomizer object is a common
-    // thing to paste, and rejecting it on a technicality helps nobody.
+    // A bare randomizer object is a common thing to paste; accept it.
     if (o.type && o.name) return parseFile(serialize({ format: FORMAT, version: FORMAT_VERSION, randomizer: o as unknown as Randomizer }));
     check.fail("file.format", `expected "${FORMAT}"`);
     check.throwIfFailed();
@@ -113,9 +106,8 @@ export function parseFile(text: string): ParseOutcome {
 }
 
 /**
- * Version migrations. Version 1 is the first, so there is nothing to do yet;
- * the chain exists so that adding version 2 is a one-line change here rather
- * than a rewrite of the loader.
+ * Version migrations. Version 1 is the only one, so there is nothing to do
+ * yet; version 2 becomes one more step in this chain.
  */
 export function migrate(randomizer: unknown, fromVersion: number): unknown {
   let r = randomizer;

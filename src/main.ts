@@ -27,8 +27,8 @@ async function start(): Promise<void> {
     navigate(`#/r/${encodeURIComponent(state.prefs.lastPath)}`);
   }
 
-  // A debug handle for the browser test suite. Opt-in via ?debug so that an
-  // ordinary session has nothing extra attached to the window.
+  // A debug handle for the browser tests, only with ?debug, so an ordinary
+  // session attaches nothing to the window.
   if (new URLSearchParams(location.search).has("debug")) {
     (globalThis as unknown as Record<string, unknown>).orangey = {
       state,
@@ -41,8 +41,7 @@ async function start(): Promise<void> {
       backends: { IndexedDbBackend, MemoryBackend },
       mascot,
       mascotTicker,
-      // The image store, so a browser test can put a picture in without a
-      // file input. Behind ?debug like everything else here.
+      // So a browser test can add a picture without a file input.
       images: { putImage, putImageData, imageUrl, imageUrlSync, imageDataUrl, pruneImages },
       // So a test can wait for what it wrote to be stored before its page
       // closes; otherwise a late write lands in the next test's fresh storage.

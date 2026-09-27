@@ -1,10 +1,7 @@
 /**
- * A library backend over any FileSystemDirectoryHandle.
- *
- * Both storage backends the browser offers have the same shape, so they share
- * this implementation: OPFS hands us a private root, and the File System
- * Access API hands us a folder the user picked. The only differences are the
- * label, and that a picked folder can be revoked.
+ * A library backend over any FileSystemDirectoryHandle: the private OPFS root,
+ * or a folder the user picked through the File System Access API. The two
+ * differ only in their label and in that a picked folder can be revoked.
  */
 
 import type { Entry, LibraryBackend } from "./library.ts";
@@ -56,9 +53,8 @@ export class DirectoryBackend implements LibraryBackend {
   }
 
   /**
-   * Pictures are written as themselves. A .png in the library folder is a .png
-   * on the disk, so the owner can open it, edit it in whatever they draw with,
-   * and drop a new one over it.
+   * Pictures are written as themselves: a .png in the library folder is a real
+   * .png the user can open, edit and replace.
    */
   async readBytes(path: string): Promise<Uint8Array> {
     const dir = await this.#dir(parent(path));
@@ -72,9 +68,9 @@ export class DirectoryBackend implements LibraryBackend {
   }
 
   /**
-   * Write through a temporary file and rename, so an interrupted write cannot
-   * leave a half-written randomizer behind. Where rename is unavailable we
-   * write in place and accept the smaller guarantee rather than failing.
+   * Write to a temporary file and move it into place, so an interrupted write
+   * cannot leave a half-written file. Where that is not possible, write in place:
+   * a weaker guarantee beats failing.
    */
   async #writeFile(path: string, contents: string | Uint8Array): Promise<void> {
     const dir = await this.#dir(parent(path), true);
@@ -101,8 +97,8 @@ export class DirectoryBackend implements LibraryBackend {
       const out = await target.createWritable();
       await out.write(contents as FileSystemWriteChunkType);
       await out.close();
-      // Whatever went wrong above may still have made the temp file, and a
-      // folder of ".forest.orangey.json.tmp" is the user's folder, not ours.
+      // The failed attempt may still have made the temp file; the folder is the
+      // user's, so tidy it.
       await dir.removeEntry(tmpName).catch(() => {});
     }
   }
@@ -156,14 +152,10 @@ export class DirectoryBackend implements LibraryBackend {
 /**
  * The origin-private filesystem, but only where it can be written to.
  *
- * Safari up to 18 — every browser on an iPhone or iPad running iOS 18, since
- * they all use its engine — hands out the directory and lists it, and has no
- * `createWritable()`: reads succeed and every write throws. A library that
- * can be listed but not written to is worse than none, because the first
- * write is the starters, the next is the person's first wheel, and each of
- * them fails after the app has already opened. So the check is a write: one
- * small file, made and removed, and any failure at all sends the caller on
- * to IndexedDB, which those browsers do have.
+ * Safari up to 18 (and so every browser on iOS 18) lists the directory but has
+ * no `createWritable()`, so reads succeed and every write throws. The check is
+ * therefore a real write of a small probe file; any failure sends the caller on
+ * to IndexedDB.
  */
 export async function openOpfs(): Promise<DirectoryBackend | null> {
   try {
@@ -189,9 +181,8 @@ export function canPickFolder(): boolean {
 export interface StorageEnv {
   canPickFolder: boolean;
   /**
-   * Safari on iPhone and iPad — and every other browser there, since they all
-   * run on Safari's engine. Only those have `navigator.standalone`, so this is
-   * read from what the browser has rather than guessed from its name.
+   * iPhone or iPad, where every browser runs on Safari's engine. Detected by
+   * `navigator.standalone`, which only those have, not from the browser's name.
    */
   ios: boolean;
   /** Running as a home-screen or Dock app rather than in a browser tab. */
@@ -211,11 +202,10 @@ export function storageEnv(): StorageEnv {
 /**
  * What to tell someone whose library cannot live in a folder.
  *
- * A folder is where the library is safest, and most browsers that cannot pick
- * one are Safari, which clears the storage of a site nobody has opened for
- * about a week — unless it runs as a home-screen (iPhone, iPad) or Dock (Mac)
- * app. The one-time notice is for the case where that matters most and the
- * fix is one tap away: an iPhone or iPad, in a browser tab. Nowhere else.
+ * Most such browsers are Safari, which clears the storage of a site not opened
+ * for about a week unless it runs as a home-screen or Dock app. The one-time
+ * notice is only for an iPhone or iPad in a browser tab, where the fix is one
+ * tap away.
  */
 export function storageAdvice(env: StorageEnv): { note: string | null; homeScreenNotice: boolean } {
   if (env.canPickFolder) return { note: null, homeScreenNotice: false };
@@ -244,9 +234,8 @@ export async function pickFolder(): Promise<DirectoryBackend | null> {
     .requestPermission?.({ mode: "readwrite" });
   const backend = new DirectoryBackend(handle, "fsa", handle.name);
   if (permission === "denied") backend.writable = false;
-  // Remember the folder: a directory handle can be stored in IndexedDB and
-  // reopened next time, so the choice survives a reload instead of quietly
-  // falling back to browser storage.
+  // A directory handle can be stored in IndexedDB, so the chosen folder survives
+  // a reload instead of quietly falling back to browser storage.
   await appdb.set("folderHandle", handle);
   return backend;
 }

@@ -1,11 +1,7 @@
 /**
- * A list of outcomes as a spreadsheet.
- *
- * The importer has always been able to read a CSV; this is the other
- * direction, so a table can be taken out to a spreadsheet, edited by
- * whatever the group already uses, and brought back. The columns are exactly
- * the ones the import wizard recognises by name, so the round trip needs no
- * mapping step at all.
+ * A list of outcomes as CSV, so a table can be edited in a spreadsheet and
+ * imported back. The columns are the ones the import wizard recognises by
+ * name, so the round trip needs no mapping step.
  */
 
 import type { ListItem } from "../model/randomizer.ts";

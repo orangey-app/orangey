@@ -1,13 +1,10 @@
 /**
- * A library backend on IndexedDB.
+ * A library backend on IndexedDB, stored flat: one record per file or folder,
+ * keyed by path.
  *
- * This is what the single-file build uses. A page opened from disk gets no
- * origin-private filesystem, so without this the library fell through to
- * memory and vanished on reload — which is exactly what happened the first
- * time someone tried it. IndexedDB is available to file:// pages in every
- * current browser, so a downloaded orangey.html keeps its library after all.
- *
- * The tree is stored flat: one record per file or folder, keyed by path.
+ * It is the fallback where OPFS is missing or cannot be written, including a
+ * downloaded orangey.html opened from file://, which gets no OPFS but does get
+ * IndexedDB in every current browser.
  */
 
 import { IMAGE_DIR, type Entry, type LibraryBackend } from "./library.ts";
@@ -78,12 +75,9 @@ export class IndexedDbBackend implements LibraryBackend {
   }
 
   /**
-   * Whether a library database already exists here, without opening one.
-   *
-   * Opening creates the database, and an open connection that is then not
-   * used is exactly what made clearing the site's storage misbehave (see
-   * appdb). Where the browser cannot list its databases the answer is
-   * "maybe", and the caller opens to find out.
+   * Whether a library database already exists, without opening (and so creating)
+   * one: an unused open connection upsets clearing the site's storage (see
+   * appdb). "maybe" where the browser cannot list its databases.
    */
   static async exists(): Promise<boolean | "maybe"> {
     if (typeof indexedDB === "undefined") return false;
@@ -102,13 +96,10 @@ export class IndexedDbBackend implements LibraryBackend {
   }
 
   /**
-   * The records in a range of paths.
-   *
-   * Every read used to be `getAll()` over the whole store, which loads every
-   * picture's bytes to answer a question about file names. Keys are paths and
-   * are compared by code unit, so a folder's contents are a contiguous range;
-   * "\uffff" is the conventional end of one, and `sanitizeName` cannot produce
-   * it.
+   * The records in a range of paths, so a question about names does not load
+   * every picture's bytes. Keys are paths compared by code unit, so a folder's
+   * contents are a contiguous range ending at "\uffff", which `sanitizeName`
+   * cannot produce.
    */
   async #range(range: IDBKeyRange): Promise<Record_[]> {
     return runLibraryTx<Record_[]>(this.#db, "readonly", (s) => s.getAll(range) as IDBRequest<Record_[]>);
@@ -121,11 +112,9 @@ export class IndexedDbBackend implements LibraryBackend {
   async list(path: string): Promise<Entry[]> {
     const records =
       path === ""
-        ? // The top of the library, in two reads that step over the image
-          // store: its records are the pictures themselves, and loading a
-          // megabyte of bytes to list file names is the whole problem here.
-          // The `images` folder record sorts before "images/" and so is still
-          // included, which is what the tree builder expects to skip by name.
+        ? // Top level: two reads that skip the image records
+          // (the pictures' bytes). The `images` folder record sorts before "images/"
+          // and is still included; the tree builder skips it by name.
           [
             ...(await this.#range(IDBKeyRange.upperBound(`${IMAGE_DIR}/`, true))),
             ...(await this.#range(IDBKeyRange.lowerBound(`${IMAGE_DIR}/\uffff`, true))),

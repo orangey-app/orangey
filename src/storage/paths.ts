@@ -34,7 +34,7 @@ export function sanitizeName(name: string): string {
     .slice(0, 80);
 }
 
-/** Natural sort: "Chapter 2" before "Chapter 10" (decision D11). */
+/** Natural sort: "Chapter 2" before "Chapter 10". */
 export function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }

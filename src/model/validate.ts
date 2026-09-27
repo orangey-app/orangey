@@ -1,10 +1,7 @@
 /**
- * A very small validation helper.
- *
- * The plan called for zod; the build sandbox has no package registry, so this
- * is the ~100 lines of it that the file format actually needs. It keeps the
- * property that mattered: every failure names the path that failed
- * ("items[3].weight"), because that is what makes an import report useful.
+ * A very small validation helper: the part of a schema library the file
+ * format needs. Every failure names the path that failed ("items[3].weight"),
+ * which is what makes an import report useful.
  */
 
 export interface Issue {

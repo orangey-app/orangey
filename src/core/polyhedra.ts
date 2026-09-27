@@ -1,19 +1,13 @@
 /**
  * Polyhedra and orientation maths for the wireframe dice.
  *
- * The drawing technique is the one the Rosetta Code "Draw a rotating cube"
- * task demonstrates: keep the solid as a list of vertices and a list of edges,
- * rotate the vertices, project them, draw the edges. What is added here is the
- * part a die needs and a spinning cube does not — the axes a real die tumbles
- * about, and an orientation it can come to rest in with a face lying flat.
+ * A solid is a list of vertices and edges that are rotated, projected and
+ * drawn, as in the Rosetta Code "Draw a rotating cube" task, plus the tumble
+ * axes and resting poses a die needs. Orientation is a unit quaternion, not
+ * Euler angles: the dice change axis mid-flight and must settle on an exact
+ * pose, which Euler angles cannot interpolate to cleanly.
  *
- * Orientation is a unit quaternion rather than a pair of accumulated Euler
- * angles. The dice change axis mid-flight and then have to settle onto an
- * exact resting pose; Euler angles gimbal-lock and drift under that, and
- * cannot be interpolated into a target pose cleanly.
- *
- * Coordinates are right-handed with +y up. The projection flips y, because
- * screens count downwards.
+ * Right-handed coordinates, +y up; the projection flips y for the screen.
  */
 
 export type Vec3 = readonly [number, number, number];
@@ -35,9 +29,7 @@ export interface Solid {
   diagonals: Vec3[];
 }
 
-/* -------------------------------------------------------------------------- */
-/* vectors                                                                     */
-/* -------------------------------------------------------------------------- */
+// ---- Vectors ----
 
 export const vAdd = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const vSub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -59,9 +51,7 @@ export function vDistance(a: Vec3, b: Vec3): number {
   return vLength(vSub(a, b));
 }
 
-/* -------------------------------------------------------------------------- */
-/* quaternions                                                                 */
-/* -------------------------------------------------------------------------- */
+// ---- Quaternions ----
 
 export const IDENTITY: Quat = [0, 0, 0, 1];
 
@@ -141,24 +131,16 @@ export function quatSlerp(a: Quat, b: Quat, t: number): Quat {
   return quatNormalize([a[0] * ka + bx * kb, a[1] * ka + by * kb, a[2] * ka + bz * kb, a[3] * ka + bw * kb]);
 }
 
-/* -------------------------------------------------------------------------- */
-/* solids                                                                      */
-/* -------------------------------------------------------------------------- */
+// ---- Solids ----
 
 const PHI = (1 + Math.sqrt(5)) / 2;
 
 /**
  * Find the faces of a convex solid from its vertices and edges.
  *
- * For every corner — an edge (a, b) plus a further neighbour c of b — take the
- * plane through those three vertices. It is a face exactly when every vertex
- * of the solid lies on it or behind it. The vertices on that plane are the
- * face, and its outward normal is the plane's.
- *
- * Deriving the faces beats listing them: a typed-out face list is a second
- * description of the same shape, and the two drift apart. This one cannot
- * disagree with the vertices, and it caught a wrong dodecahedron the first
- * time it ran.
+ * For every corner (edge a-b plus a further neighbour c of b), the plane
+ * through the three is a face exactly when no vertex lies in front of it.
+ * Deriving the faces means they can never disagree with the vertex list.
  */
 export function computeFaces(vertices: Vec3[], edges: Edge[], tolerance = 1e-6): { faces: number[][]; normals: Vec3[] } {
   const adjacency: number[][] = vertices.map(() => []);
@@ -183,10 +165,8 @@ export function computeFaces(vertices: Vec3[], edges: Edge[], tolerance = 1e-6):
       }
       if (offset < tolerance) continue; // the plane passes through the centre
 
-      // Round first, then flatten a negative zero: a component of -1e-17
-      // prints as "-0.000000" while a component of +1e-17 prints as
-      // "0.000000", which would file one face under two keys and report a
-      // ten-sider with eleven faces.
+      // Round, then flatten negative zero: -1e-17 and +1e-17 would otherwise print
+      // differently and file one face under two keys.
       const key = normal
         .map((n) => {
           const rounded = Number(n.toFixed(6));
@@ -223,8 +203,7 @@ function withFaces(partial: Omit<Solid, "faces" | "faceNormals">): Solid {
 
 /**
  * Edges of a solid whose faces are all alike: every pair of vertices at the
- * shortest vertex-to-vertex vDistance. Cheaper to get right than typing out
- * thirty index pairs, and it cannot disagree with the vertex list.
+ * shortest vertex-to-vertex distance.
  */
 function edgesByShortestDistance(vertices: Vec3[], tolerance = 1e-6): Edge[] {
   let shortest = Infinity;
@@ -348,14 +327,9 @@ function icosahedron(): Solid {
 }
 
 /**
- * The pentagonal trapezohedron: ten kite faces, which is the shape of a real
- * ten-sider. Not Platonic, but using a d10-shaped d10 matters more than
- * keeping the family tidy.
- *
- * The two staggered rings sit at a height that makes each kite genuinely
- * planar. That height is solved for rather than guessed: with the wrong one
- * the "faces" are creased, and nothing downstream — the face finder, the
- * resting pose, the number written on the face — has a plane to work with.
+ * The pentagonal trapezohedron (ten kite faces), the shape of a real d10.
+ * The ring height is solved for so that each kite is planar; with a guessed
+ * height the faces are creased and face finding, resting pose and labels fail.
  */
 function trapezohedronRingHeight(): number {
   const angle = (deg: number) => (deg * Math.PI) / 180;
@@ -428,9 +402,8 @@ export function solidForSides(sides: number): Solid {
     case 12: solid = dodecahedron(); break;
     case 20: solid = icosahedron(); break;
     case 100: solid = trapezohedron("d100"); break;
-    // Anything without a solid of its own tumbles as a cube. It is a stand-in,
-    // not a claim about the die's real shape — nothing is drawn on the faces,
-    // so what the viewer sees is a die tumbling and landing, which is true.
+    // Anything without a solid of its own tumbles as a cube. Nothing is drawn on
+    // the faces, so this does not misrepresent the die.
     default: solid = { ...cube(), name: `d${sides}` }; break;
   }
   CACHE.set(sides, solid);
@@ -442,18 +415,15 @@ export function hasDedicatedSolid(sides: number): boolean {
   return [4, 6, 8, 10, 12, 20, 100].includes(sides);
 }
 
-/* -------------------------------------------------------------------------- */
-/* landing                                                                     */
-/* -------------------------------------------------------------------------- */
+// ---- Landing ----
 
 export const UP: Vec3 = [0, 1, 0];
 /** Towards the viewer. A die at rest turns a face this way to be read. */
 export const TOWARDS_VIEWER: Vec3 = [0, 0, 1];
 
 /**
- * The vertices lying on a given face: on a convex solid they are exactly the
- * ones furthest along that face's normal. Derived rather than listed, so a
- * face list can never drift out of step with the vertices.
+ * The vertices lying on a face: on a convex solid, exactly the ones furthest
+ * along the face's normal.
  */
 export function faceVertexIndices(solid: Solid, faceIndex: number, tolerance = 1e-6): number[] {
   const normal = solid.faceNormals[wrapFace(solid, faceIndex)];
@@ -495,14 +465,11 @@ export function faceEdgeLength(solid: Solid, faceIndex: number): number {
 }
 
 /**
- * The orientation a die comes to rest in: the face it is showing turned
- * square-on to the viewer, so the polygon is seen undistorted and its number
- * can sit centred inside it. `spin` turns it in its own plane, so two dice
- * showing the same number do not land identically.
- *
- * `view` is the camera's own rotation. The die is placed so that *after* the
- * camera transform the face is exactly head-on; without this the tilt that
- * gives the tumble its depth would leave every landed die slightly skewed.
+ * The orientation a die comes to rest in: the face it shows turned square-on
+ * to the viewer, so its number sits centred. `spin` turns it in its own plane,
+ * so two dice showing the same number do not land identically. `view` is the
+ * camera's rotation; the face is head-on after the camera transform, so the
+ * tilt that gives the tumble depth does not skew a landed die.
  */
 export function restQuaternion(solid: Solid, faceIndex: number, spin = 0, view: Quat = IDENTITY): Quat {
   const normal = solid.faceNormals[wrapFace(solid, faceIndex)];
@@ -512,11 +479,8 @@ export function restQuaternion(solid: Solid, faceIndex: number, spin = 0, view: 
 
 /**
  * How far, in degrees, this orientation is from showing a face square-on.
- *
- * The angle comes from atan2 of the cross and dot products rather than from
- * acos of the dot alone: acos loses most of its precision exactly where this
- * function is asked the important question — near zero — and would report a
- * die that is perfectly square-on as being a thousandth of a degree off.
+ * Uses atan2 of cross and dot rather than acos of the dot, which loses
+ * precision near zero, exactly where this is asked.
  */
 export function facingError(solid: Solid, q: Quat, view: Quat = IDENTITY): number {
   const seen = quatMultiply(view, q);
@@ -529,14 +493,12 @@ export function facingError(solid: Solid, q: Quat, view: Quat = IDENTITY): numbe
   return (best * 180) / Math.PI;
 }
 
-/* -------------------------------------------------------------------------- */
-/* tumbling                                                                    */
-/* -------------------------------------------------------------------------- */
+// ---- Tumbling ----
 
 /**
- * Two different diagonals of the solid, which is what the die spins about
- * before its first bounce. Two axes at once, rather than one, is what stops
- * the tumble reading as a single mechanical spin.
+ * Two different diagonals for the die to spin about before its first bounce;
+ * two axes rather than one keep the tumble from looking mechanical. Cosmetic
+ * only, so `random` may be Math.random.
  */
 export function pickTumbleAxes(solid: Solid, random: () => number = Math.random): [Vec3, Vec3] {
   const count = solid.diagonals.length;
@@ -575,9 +537,7 @@ export function bounceSchedule(durationMs: number, bounces: number): TumbleSched
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* projection                                                                  */
-/* -------------------------------------------------------------------------- */
+// ---- Projection ----
 
 export interface Projected {
   x: number;
@@ -587,13 +547,12 @@ export interface Projected {
 }
 
 /**
- * Perspective projection, as in the Rosetta Code variants that use a focal
- * vLength. Screen y is flipped because canvas counts downwards.
+ * Perspective projection with a focal length. Screen y is flipped because
+ * canvas counts downwards.
  */
 export function project(v: Vec3, radius: number, distanceFromCamera = 4): Projected {
   const z = v[2];
   const k = (distanceFromCamera / (distanceFromCamera - z)) * radius;
-  // The + 0 turns a negative zero back into zero; it is invisible on screen
-  // but it makes the projection compare equal to itself in tests.
+  // `+ 0` turns -0 into 0, so projections compare equal in tests.
   return { x: v[0] * k + 0, y: -v[1] * k + 0, z };
 }

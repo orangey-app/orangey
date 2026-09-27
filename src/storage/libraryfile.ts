@@ -1,27 +1,10 @@
 /**
- * A library, or part of one, as one plain-text file: `<name>.orangey-library.json`.
+ * A library, or part of one, as one plain-text file:
+ * `<name>.orangey-library.json` (format in FORMAT.md).
  *
- * The ZIP export is a closed box: to see what is in one you have to open it,
- * and a forum will not take it as a post. This is a single JSON document a
- * person can read before trusting it, paste into a post and copy out of one.
- * It carries three things, because those are what make a library more than a
- * heap of tables:
- *
- *   - every randomizer, as the same v1 randomizer a `.orangey.json` holds
- *     (the file format itself is untouched, P10 — this wrapper has a format
- *     name and version of its own);
- *   - where each one lives, as a library path, and the folders, so the tree
- *     arrives as it was;
- *   - the links between them — an outcome's "Goes to" and a board's entries —
- *     which name randomizers by id, so the ids travel. When an import has to
- *     give one a new id (it clashes with one already here), the links inside
- *     the file are rewritten to follow it (`relink`).
- *
- * Pictures are left out, both ways: inline, each would be a long block of
- * unreadable letters, and the file would stop being something you can read.
- * The ZIP export keeps them.
- *
- * Nothing here touches the page, so the whole round trip is unit-tested.
+ * Unlike a ZIP, it can be read before it is trusted and pasted into a forum
+ * post. Randomizers keep their ids, so the links between them travel; pictures
+ * are left out, since inline they would make the file unreadable.
  */
 
 import { FILE_SUFFIX, FORMAT, FORMAT_VERSION, fileNameFor, parseFile, serialize, wrap, type OrangeyFile } from "../model/file.ts";
@@ -143,10 +126,9 @@ export function parseLibrary(text: string): ReadLibraryFile {
 }
 
 /**
- * A folder path from a file someone else wrote: every segment made a name
- * this library could have made itself. `..`, drive letters, backslashes and
- * leading slashes all come out, so nothing lands outside the folder it is
- * imported into.
+ * A folder path from someone else's file, each segment sanitised as a name.
+ * `..`, drive letters, backslashes and leading slashes come out, so nothing
+ * lands outside the folder it is imported into.
  */
 export function safeFolder(raw: string): string {
   return raw.split(/[\\/]+/).map(sanitizeName).filter(Boolean).slice(0, 16).join("/");
@@ -210,14 +192,11 @@ export interface ExportPlan {
 }
 
 /**
- * What goes in the file: the chosen randomizers, then everything they link to
- * that is not already there, followed as far as the links go — a wheel whose
- * "Goes to" named a table left behind would arrive pointing at nothing.
+ * What goes in the file: the chosen randomizers, then everything they link to,
+ * followed as far as the links go, so nothing arrives pointing at nothing.
  *
- * `base` is taken off the front of the chosen ones' paths: a folder exported
- * from deep in one library arrives as that folder, not as the folders above
- * it. What was brought in by a link keeps its whole path, since it came from
- * somewhere else in the library.
+ * `base` is taken off the chosen ones' paths, so an exported folder arrives as
+ * itself; a randomizer brought in by a link keeps its whole path.
  */
 export function planExport(all: readonly ExportSource[], chosen: readonly string[], base = ""): ExportPlan {
   const byPath = new Map(all.map((s) => [s.path, s]));

@@ -1,8 +1,6 @@
 /**
- * The randomizer types (plan C2).
- *
- * "Choice", "weighted choice" and "wheel" are one type with two views
- * (decision D5): a list of weighted outcomes. Uniform choice is equal weights.
+ * The randomizer types. "Choice", "weighted choice" and "wheel" are one type,
+ * a list of weighted outcomes with two views; uniform choice is equal weights.
  */
 
 import { isRollable, type Weighted } from "../core/weighted.ts";
@@ -32,10 +30,10 @@ export const OFFER_MIN = 2;
 export const OFFER_MAX = 12;
 
 /**
- * What Orangey does when a particular outcome comes up. Wheels and coins have
- * no natural top or bottom the way dice do, so the game master tags outcomes
- * instead: the file says what he does ("cheer", "wince"), never which
- * animation plays, so new poses need no format change.
+ * What the mascot, Orangey, does when a particular outcome comes up. Wheels
+ * and coins have no natural top or bottom like dice, so outcomes are tagged.
+ * The file names the reaction, never an animation, so new poses need no
+ * format change.
  */
 export const OUTCOME_REACTIONS = ["cheer", "wince"] as const;
 export type OutcomeReaction = (typeof OUTCOME_REACTIONS)[number];
@@ -56,7 +54,7 @@ export interface ListItem extends Weighted {
   id: string;
   label: string;
   weight: number;
-  /** true = excluded from rolls, still listed, weight preserved (decision D6). */
+  /** true = excluded from rolls but still listed, weight preserved. */
   disabled?: boolean;
   description?: string;
   color?: string;
@@ -76,9 +74,8 @@ export interface ListItem extends Weighted {
    */
   imageData?: string;
   /**
-   * This outcome sends you to another randomizer, by id: rolling it opens that
-   * one beside this wheel. A table that points at another table is the whole
-   * reason encounter tables are written the way they are.
+   * Sends you to another randomizer, by id: rolling this outcome opens that one
+   * beside this wheel (tables that point at other tables).
    */
   goesTo?: string;
 }
@@ -87,7 +84,7 @@ export interface ListRandomizer extends RandomizerBase {
   type: "list";
   items: ListItem[];
   view: "wheel" | "list";
-  /** 0.2 bag mode; carried in the format from 0.1 so old files stay valid. */
+  /** Bag mode: outcomes are drawn without replacement. */
   withoutReplacement?: boolean;
   /**
    * What a wheel's slice shows when its outcome has a picture. Left out
@@ -96,9 +93,7 @@ export interface ListRandomizer extends RandomizerBase {
   slices?: SliceContent;
   /**
    * Make a choice: a roll draws this many different outcomes and the player
-   * picks one, and the pick is the outcome. "Here are three hooks, take one"
-   * is a mechanic a single landing cannot express. Left out, a roll lands on
-   * one outcome as it always has.
+   * picks one, which becomes the outcome. Left out, a roll lands on one outcome.
    */
   offer?: number;
   /**

@@ -1,11 +1,9 @@
 /**
- * The library: a folder tree of .orangey.json files (plan C5, decision D11).
+ * The library: a folder tree of .orangey.json files.
  *
- * There is deliberately no index file. The folder tree IS the library, so a
- * library kept in Dropbox or Git cannot develop a conflict between the files
- * and an index that claims to describe them. Ordering is alphabetical with
- * natural number handling; per-user extras (favourites, recents) live in the
- * app database, not in the user's files.
+ * There is no index file: the folder tree is the library, so a library kept in
+ * Dropbox or Git cannot conflict with an index. Per-device extras (favourites,
+ * recents) live in the app database, not in the user's files.
  */
 
 import { FILE_SUFFIX, fileNameFor, parseFile, serialize, wrap, type OrangeyFile } from "../model/file.ts";
@@ -20,11 +18,9 @@ export interface Entry {
 }
 
 /**
- * Where the image store keeps its files, at the top of the library.
- *
- * It is named here rather than in `images.ts` because the tree builder has to
- * know the name to leave it out, and a folder importing the store it is
- * meant to ignore would be a cycle.
+ * Where the image store keeps its files, at the top of the library. Defined
+ * here because the tree builder must skip it, and importing `images.ts` would
+ * make an import cycle, which the bundler forbids.
  */
 export const IMAGE_DIR = "images";
 
@@ -37,10 +33,8 @@ export interface LibraryBackend {
   read(path: string): Promise<string>;
   write(path: string, contents: string): Promise<void>;
   /**
-   * The same two for files that are not text. Pictures go through these, so a
-   * library kept in a folder holds real .png files a person can open, look at
-   * and replace with another — base64 inside a text file would make the
-   * folder a container rather than a folder.
+   * The same two for bytes. Pictures go through these, so a folder library holds
+   * real image files a person can open and replace.
    */
   readBytes(path: string): Promise<Uint8Array>;
   writeBytes(path: string, bytes: Uint8Array): Promise<void>;
@@ -59,11 +53,9 @@ export interface LibraryNode {
   readOnly?: boolean;
   error?: string;
   /**
-   * Top-level keys in the file that this version of Orangey does not know.
-   *
-   * Another tool's annotations, or a field from a newer format, are carried
-   * back out on the next save rather than dropped: a file the user opened to
-   * change one weight should not come back smaller than it went in.
+   * Top-level keys this version does not know (another tool's, or a newer
+   * format's). They are written back on the next save, so a file never comes
+   * back smaller than it went in.
    */
   extras?: Record<string, unknown>;
 }
@@ -81,12 +73,8 @@ export class LibraryService {
   backend: LibraryBackend;
   #tree: LibraryNode | null = null;
   /**
-   * Every node by path and by randomizer id.
-   *
-   * `find` and `findById` are called from render loops — the tree draws one
-   * row per file and each asks — and both used to walk the whole tree. The
-   * maps are rebuilt in one pass whenever the tree changes, which is far less
-   * often than they are read.
+   * Every node by path and by randomizer id. `find` and `findById` run in render
+   * loops, so these are rebuilt when the tree changes rather than walking it.
    */
   #byPath = new Map<string, LibraryNode>();
   #byId = new Map<string, LibraryNode>();
@@ -104,12 +92,9 @@ export class LibraryService {
   }
 
   /**
-   * Told when the shape of the library changes: a file created, renamed,
-   * moved or deleted, or the whole tree re-read.
-   *
-   * Not when a randomizer's contents change. `save()` is called on every
-   * keystroke in the editor, and a tree that redrew each time would throw
-   * away the row the user is typing in — the editor updates its own preview.
+   * Told when the shape of the library changes (create, rename, move, delete, or
+   * a full re-read), not when a randomizer's contents change: `save()` runs on
+   * every keystroke, and a redrawn tree would lose the row being typed in.
    */
   onChange(fn: () => void): () => void {
     this.#listeners.add(fn);
@@ -163,10 +148,8 @@ export class LibraryService {
   }
 
   /**
-   * Put a node in its folder, or say it could not be done.
-   *
-   * A patch is only safe when the tree is loaded and the folder is in it; a
-   * caller that gets false falls back to a full `refresh()`.
+   * Put a node in its folder. False when the tree is not loaded or the folder is
+   * not in it; the caller then does a full `refresh()`.
    */
   #attach(parentPath: string, node: LibraryNode): boolean {
     const parent_ = this.#byPath.get(parentPath);
@@ -190,14 +173,13 @@ export class LibraryService {
 
   async #readFolder(path: string, name: string): Promise<LibraryNode> {
     const entries = await this.backend.list(path);
-    // The image store's folder is the app's bookkeeping, not part of anyone's
-    // library, so it is never a folder you can open, move or save into. Only
-    // at the top: a folder of pictures the user made themselves is theirs.
+    // The image store's folder at the top is the app's, never one you can open,
+    // move or save into. A folder of pictures anywhere else is the user's.
     const wanted = entries.filter(
       (e) => !(path === "" && e.kind === "folder" && e.name === IMAGE_DIR) && (e.kind === "folder" || isRandomizerFile(e.name)),
     );
-    // Together rather than one after another: a library of two hundred files
-    // was two hundred round trips to the backend, each waiting for the last.
+    // In parallel: one backend round trip per file, in turn, is slow for a large
+    // library.
     const children = await Promise.all(
       wanted.map((e) =>
         e.kind === "folder" ? this.#readFolder(join(path, e.name), e.name) : this.#readFile(join(path, e.name), e.name),
@@ -292,8 +274,7 @@ export class LibraryService {
     while (existing.includes(final.toLowerCase())) final = `${clean} ${n++}`;
     const path = join(parentPath, final);
     await this.backend.mkdir(path);
-    // One node into the tree rather than re-reading every file in the
-    // library: a create used to cost a full walk of the folder structure.
+    // One node into the tree rather than re-reading the whole library.
     if (!this.#attach(parentPath, { kind: "folder", path, name: final, children: [] })) await this.refresh();
     return path;
   }
@@ -306,7 +287,7 @@ export class LibraryService {
     return path;
   }
 
-  /** Queue a save. Repeated calls for the same file coalesce (plan C5). */
+  /** Queue a save. Repeated calls for the same file coalesce. */
   save(path: string, randomizer: Randomizer): void {
     const node = this.find(path);
     this.#pending.set(path, serialize({ ...wrap(randomizer), unknown: node?.extras }));
@@ -324,16 +305,13 @@ export class LibraryService {
       clearTimeout(this.#timer);
       this.#timer = null;
     }
-    // `#flushing` must never hold a rejected promise: a `then` chained onto
-    // one is skipped, which is how a single failed write used to stop the app
-    // saving for the rest of the session.
+    // `#flushing` must never hold a rejected promise: a `then` on one is skipped,
+    // and saving would stop for the rest of the session.
     //
-    // The batch is taken inside the run rather than here, so that one run's
-    // snapshot, writes and restores are serialised against every other run's.
-    // Snapshotting at call time instead lets a second flush lift a newer text
-    // out of `#pending` before an earlier, slower flush fails — the guard
-    // below then sees an empty map, puts the older text back, and the next
-    // flush writes it over the newer one.
+    // The batch is taken inside the run, not at call time, so each flush's snapshot,
+    // writes and restores are serialised. Otherwise a later flush can empty
+    // `#pending` before an earlier one fails, and the earlier one puts its older
+    // text back over the newer. See "A save is debounced" in ARCHITECTURE.md.
     const run = this.#flushing.then(async () => {
       const batch = [...this.#pending.entries()];
       this.#pending.clear();
@@ -437,15 +415,10 @@ export class LibraryService {
   }
 
   /**
-   * Import a whole library from ZIP entries. Files that already exist are
-   * handled by `onCollision`, which answers "replace", "keep-both" or "skip"
-   * per file — the UI asks the user; tests answer programmatically.
-   */
-  /**
-   * A ZIP's randomizer files, by the same rules as a library file (see
-   * `importLibrary`), so the links between them survive: an arrival that has
-   * to take a new id takes the archive's links to it along. A file that needs
-   * no change is written with the exact text it arrived with.
+   * A ZIP's randomizer files, by the same rules as `importLibrary`, so the links
+   * between them survive. `onCollision` answers "replace", "keep-both" or "skip"
+   * for a path already taken. A file that needs no change is written with the
+   * exact text it arrived with.
    */
   async importArchive(
     entries: { path: string; text: string }[],
@@ -469,14 +442,11 @@ export class LibraryService {
   /**
    * A library file's randomizers, into `into`, keeping the links between them.
    *
-   * Two passes. The first settles where each one goes and under what id,
-   * asking about a path that is already taken: Skip keeps what is here (and
-   * the file's links to it now mean this one), Replace writes over it but
-   * keeps its id (so boards and links already pointing at it still work),
-   * Keep both writes a copy beside it under a new id. An arrival whose id is
-   * used elsewhere gets a new one too. The second pass rewrites every "Goes
-   * to" and board entry through those changes and writes the files, so a
-   * wheel in the file still reaches the table the file gave it.
+   * The first pass settles each arrival's path and id, asking about taken paths:
+   * Skip keeps what is here (the file's links now mean it), Replace overwrites
+   * but keeps its id, Keep both writes a copy under a new id; an id used
+   * elsewhere also gets a new one. The second pass rewrites every "Goes to" and
+   * board entry through those changes and writes the files.
    */
   importLibrary(
     entries: readonly { path: string; file: OrangeyFile }[],
@@ -487,7 +457,7 @@ export class LibraryService {
     return this.#importFiles(entries, folders, into, onCollision);
   }
 
-  /** Both imports: `text`, when given, is written as it came if nothing in it had to change. */
+  /** Both imports. `text`, when given, is written as it came if nothing had to change. */
   async #importFiles(
     entries: readonly { path: string; file: OrangeyFile; text?: string }[],
     folders: readonly string[],
@@ -556,9 +526,8 @@ export class LibraryService {
       const folder = parent(w.path);
       if (folder) await this.backend.mkdir(folder);
       const linked = relink(w.file.randomizer, ids);
-      // Untouched — its own id (`text` is only kept then) and its links as
-      // they were (relink returns the same object) — keeps the bytes it
-      // arrived with, as the ZIP import always has.
+      // Untouched (its own id, and `relink` returned the same object): write the
+      // exact text it arrived with.
       const unchanged = w.text !== undefined && linked === w.file.randomizer;
       await this.backend.write(w.path, unchanged ? w.text! : serialize({ ...w.file, randomizer: linked }));
     }

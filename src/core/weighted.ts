@@ -1,10 +1,9 @@
 /**
  * Weighted selection over a list of outcomes.
  *
- * Weights are non-negative reals and the app normalizes them (decision D6), so
- * {50,30,20} and {5,3,2} behave identically. An outcome is excluded when it is
- * disabled or its weight is zero; `disabled` is a separate flag so that turning
- * an outcome off and on again restores its original weight exactly.
+ * Weights are non-negative and normalised, so {50,30,20} and {5,3,2} behave the
+ * same. An outcome is out when disabled or weighted zero; `disabled` is separate
+ * so switching an outcome off and on restores its weight exactly.
  */
 
 import type { RandomSource } from "./rng.ts";
@@ -27,12 +26,9 @@ export function isRollable(item: Weighted): boolean {
 }
 
 /**
- * The same list with what has already been drawn taken out of play.
- *
- * Marked `disabled` rather than filtered: `Outcome.itemIndex`, the wheel's
- * colours and an outcome's chain target are all positions in this array, so
- * the order and the length have to survive. A drawn outcome is exactly an
- * outcome that cannot come up, which is what `disabled` already means.
+ * The same list with drawn outcomes marked `disabled` rather than removed:
+ * item indices, wheel colours and chain targets are positions in this array,
+ * so its order and length must survive.
  */
 export function withoutDrawn<T extends Weighted & { id: string }>(items: readonly T[], drawn: ReadonlySet<string>): T[] {
   return items.map((item) => (drawn.has(item.id) ? { ...item, disabled: true } : item));
@@ -141,8 +137,8 @@ export function pick<T>(items: readonly T[], rng: RandomSource): T {
 }
 
 /**
- * Draw `count` distinct outcomes without replacement (bag mode's core; also
- * used by "random order" in 0.2). Throws if fewer rollable outcomes exist.
+ * Draw `count` distinct outcomes without replacement. Throws if fewer rollable
+ * outcomes exist.
  */
 export function drawWithoutReplacement(
   items: readonly Weighted[],

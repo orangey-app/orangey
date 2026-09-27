@@ -1,19 +1,10 @@
 /**
  * The image store: the pictures an outcome can carry.
  *
- * A wheel file names a picture by id and the bytes live beside the library, at
- * `images/<id>.png`, for two reasons. A randomizer file stays small and stays
- * readable — a base64 blob in the middle of it would end that — and the same
- * picture used by five outcomes is stored once.
- *
- * The cost of that is portability, which is the whole point of a .orangey.json
- * file, so both ways out carry the picture with them: a single file inlines it
- * as a data: URL (`imageDataUrl`), and an archive holds it as its own entry.
- * An import puts the bytes back in the store and the file goes back to naming
- * an id.
- *
- * Nothing here resizes or re-encodes anything. Downscaling is the UI's job,
- * where there is a canvas to do it with; the store takes the bytes it is given.
+ * A randomizer file names a picture by id and the bytes live beside the library,
+ * under `images/`, so the file stays small and readable and a shared picture is
+ * stored once (see "Pictures live beside the library" in ARCHITECTURE.md).
+ * Nothing here resizes or re-encodes; the store keeps the bytes it is given.
  */
 
 import { IMAGE_DIR, type LibraryBackend } from "./library.ts";
@@ -21,41 +12,28 @@ import { base64FromBytes, bytesFromBase64 } from "./zip.ts";
 import { newId } from "../model/randomizer.ts";
 
 /**
- * The backend the library is on. The store follows the library rather than
- * holding its own: pictures belong to the library they are part of, so moving
- * the library to a folder has to take them along.
+ * The backend the library is on. Pictures belong to the library, so moving the
+ * library takes them along.
  */
 let imageBackend: LibraryBackend | null = null;
 
 /**
- * One object URL per picture, kept for as long as the page lives.
- *
- * A wheel redraws every frame of a spin and asks for the same picture each
- * time. Making a URL per ask leaks one per frame; making it once and keeping
- * it costs a handful of entries, and there is nothing to revoke until the
- * picture is deleted.
+ * One object URL per picture, kept for the life of the page: a wheel asks for
+ * the same picture every frame, and a URL per ask would leak one per frame.
  */
 const imageUrls = new Map<string, string>();
-/** Asks for a picture that are still in the air, so two asks make one read. */
+/** Reads still in flight, so two asks make one read. */
 const imageLoads = new Map<string, Promise<string | null>>();
 /**
- * Ids the store has already looked for and not found.
- *
- * An outcome can outlive its picture — the file was deleted from the folder,
- * or an archive arrived without it — and the callers ask again on every draw.
- * Without this, a wheel that lands on such an outcome reads the backend once
- * per frame forever. A miss is remembered until something puts the picture
- * back, or until the library changes underneath the store.
+ * Ids looked for and not found. An outcome can outlive its picture, and a wheel
+ * landing on it would otherwise read the backend every frame. Cleared when the
+ * picture is put back or the library changes.
  */
 const imageMisses = new Set<string>();
 /**
- * The file each picture is really stored under, by id.
- *
- * Every picture used to be written as `<id>.png` whatever it held, so a
- * folder library was full of JPEGs named .png that the operating system
- * would not preview. New ones carry their real extension; the map is what
- * lets both kinds be read without a migration, and it is built once per
- * backend from a single listing rather than guessed at per read.
+ * The file each picture is stored under, by id, built once per backend from one
+ * listing. A store may hold pictures of any kind named `.png`, so the name is
+ * looked up, not guessed.
  */
 let imageNames: Promise<Map<string, string>> | null = null;
 
@@ -113,11 +91,8 @@ export async function imageStoredName(id: string): Promise<string | null> {
 }
 
 /**
- * What kind of picture these bytes are.
- *
- * Every file in the store is named .png because that is what the app makes,
- * but the store takes whatever it is given and a data: URL has to say what it
- * really holds or the browser will not draw it.
+ * What kind of picture these bytes are. A data: URL must say, or the browser
+ * will not draw it.
  */
 function imageMediaType(bytes: Uint8Array): string {
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
@@ -142,8 +117,8 @@ export async function restoreImage(id: string, bytes: Uint8Array): Promise<void>
   if (!imageBackend) throw new Error("the image store has no library to write to");
   await imageBackend.mkdir(IMAGE_DIR);
   const names = await imageNameMap();
-  // Replacing a picture keeps whatever name it already had, so nothing is
-  // ever stored twice under two extensions.
+  // Replacing keeps the existing name, so a picture is never stored under two
+  // extensions.
   const name = names.get(id) ?? imageFileName(id, bytes);
   await imageBackend.writeBytes(`${IMAGE_DIR}/${name}`, bytes);
   names.set(id, name);
@@ -188,11 +163,9 @@ export async function imageUrl(id: string): Promise<string | null> {
 }
 
 /**
- * The URL if it is already there, and null if it is not.
- *
- * Drawing a wheel is synchronous and cannot wait for a read, so it asks with
- * this, draws the segment without its picture when the answer is null, and
- * `imageUrl` warms the cache so the next draw has it.
+ * The URL if it is already made, else null. Drawing a wheel is synchronous, so
+ * it draws the segment without its picture and `imageUrl` warms the cache for
+ * the next draw.
  */
 export function imageUrlSync(id: string): string | null {
   return imageUrls.get(id) ?? null;
@@ -229,12 +202,9 @@ export async function deleteImage(id: string): Promise<void> {
 }
 
 /**
- * Delete the pictures nothing points at any more, and say how many went.
- *
- * Deleting a wheel does not delete its pictures then and there: the same
- * picture may be on another wheel, and an undo that brought the wheel back
- * without its pictures would be worse than a file left behind. So they are
- * swept up later, against the ids the whole library is using.
+ * Delete the pictures nothing points at any more, and return how many went.
+ * Deleting a wheel leaves its pictures for this sweep: another wheel may use
+ * them, and an undo must bring the wheel back whole.
  */
 export async function pruneImages(usedIds: Set<string>): Promise<number> {
   if (!imageBackend) return 0;

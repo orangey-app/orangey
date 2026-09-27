@@ -1,15 +1,10 @@
 /**
  * Random sources.
  *
- * Two implementations of one interface (plan C4, decision D8):
- *   - CryptoSource  wraps crypto.getRandomValues; not reproducible, the default.
- *   - SeededSource  xoshiro128** driven by a string seed; reproducible, opt-in.
- *
- * Both produce unbiased integers by rejection sampling. Every result that
- * reaches an outcome comes from one of these and from nothing else.
- * `Math.random` is allowed for cosmetics only — the scatter of a wheel's
- * labels, the axes a die tumbles about — and never for anything a person
- * reads as the answer.
+ * CryptoSource wraps crypto.getRandomValues (the default, not reproducible);
+ * SeededSource is xoshiro128** driven by a string seed (reproducible, opt-in).
+ * Both give unbiased integers by rejection sampling. Every result comes from a
+ * RandomSource; Math.random is cosmetic only (label scatter, tumble axes).
  */
 
 export interface RandomSource {
@@ -36,12 +31,10 @@ function checkRange(min: number, max: number): void {
 }
 
 /**
- * Unbiased integer from a source of uniform 32-bit words.
- *
- * The naive `min + (word % n)` is biased whenever n does not divide 2^32: the
- * low residues occur once more often than the high ones. We reject the tail
- * that causes it, so every value is equally likely at the cost of a rare extra
- * draw. Ranges wider than 2^32 are built from two words.
+ * Unbiased integer from a source of uniform 32-bit words. `min + word % n` is
+ * biased unless n divides 2^32, so the tail is rejected and redrawn; ranges
+ * wider than 2^32 use two words. Changing how many words this draws breaks
+ * seeded rolls.
  */
 export function intFromWords(next: () => number, min: number, max: number): number {
   checkRange(min, max);
@@ -92,12 +85,9 @@ export class CryptoSource implements RandomSource {
 }
 
 /**
- * A string seed as two 32-bit words, to start the generator from.
- *
- * FNV-1a in the first half only; the second is a different mixing constant
- * over the same bytes, so the pair is not one hash cut in two. It is a seed
- * expander, not a hash function — do not use it for anything that needs
- * collision resistance.
+ * A string seed as two 32-bit words to start the generator: FNV-1a for the
+ * first, a different mixing constant for the second. A seed expander, not a
+ * hash for anything that needs collision resistance.
  */
 export function seedHash64(s: string): [number, number] {
   const bytes = new TextEncoder().encode(s);
@@ -110,7 +100,7 @@ export function seedHash64(s: string): [number, number] {
   return [h1 >>> 0, h2 >>> 0];
 }
 
-/** A small stable hash for non-cryptographic use (wheel colour rotation, C8.3). */
+/** A small stable hash for non-cryptographic use. */
 export function hash32(s: string): number {
   return seedHash64(s)[0];
 }
@@ -170,7 +160,6 @@ function rotl(x: number, k: number): number {
   return ((x << k) | (x >>> (32 - k))) >>> 0;
 }
 
-/** Convenience: the source a roll should use given the current seed setting. */
 export function sourceFor(seed: string | null | undefined): RandomSource {
   return seed ? new SeededSource(seed) : new CryptoSource();
 }

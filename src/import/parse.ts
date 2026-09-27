@@ -1,9 +1,6 @@
 /**
- * Delimited-text parsing (plan C7).
- *
- * RFC 4180 for the quoting rules — doubled quotes inside quoted fields,
- * delimiters and newlines allowed inside quotes — plus the practical bits:
- * a UTF-8 BOM, CRLF or LF, and a "delimiter" that is really a run of spaces.
+ * Delimited-text parsing: RFC 4180 quoting, plus a UTF-8 BOM, CRLF or LF, and
+ * a run of spaces as a delimiter.
  */
 
 export type Delimiter = "," | ";" | "\t" | "|" | "  ";

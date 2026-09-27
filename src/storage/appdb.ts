@@ -1,9 +1,8 @@
 /**
- * Application storage: preferences, history, recents and favourites.
+ * Per-device application storage: preferences, history, recents and favourites.
  *
- * This is the part that is genuinely the browser's, not the user's: it never
- * holds anything that is not reconstructible, so losing it costs a little
- * convenience and no content (plan C5, decision D12).
+ * It holds nothing that cannot be rebuilt, so losing it costs convenience, never
+ * content.
  */
 
 import type { FeelSettings } from "../ui/feel.ts";
@@ -29,9 +28,8 @@ export interface HistoryEntry {
    */
   parts?: string[];
   /**
-   * The roll that sent you here, when an outcome's link opened this
-   * randomizer. Names rather than an id: they are what the row says, and they
-   * outlive either randomizer being renamed or deleted.
+   * The roll whose outcome link opened this randomizer. Names, not ids, so the
+   * row still reads right after either randomizer is renamed or deleted.
    */
   from?: RollOrigin;
 }
@@ -56,9 +54,8 @@ export interface Prefs {
   /** Colour scheme: a built-in one, "system", or "custom" for your own. */
   scheme: string;
   /**
-   * Your own theme, once one has been made. Kept when another scheme is
-   * chosen, so it can be chosen again. Not `theme`: that key was a 0.3
-   * setting and may still sit in stored prefs (P22).
+   * Your own theme, kept when another scheme is chosen so it can be chosen again.
+   * Do not reuse the key `theme`: stored prefs may still hold an old one.
    */
   customScheme?: CustomScheme;
   /** Colours the user added to the palette; offered in the colour cell. */
@@ -71,23 +68,18 @@ const DB_NAME = "orangey";
 const DB_VERSION = 1;
 export const HISTORY_CAP = 5000;
 /**
- * How many of those rolls the app holds in memory.
- *
- * The store keeps up to `HISTORY_CAP`; this is the recent slice the History
- * view and the Recent rolls panel work from. An export asks for the lot.
+ * How many recent rolls the app holds in memory, for the History view and the
+ * Recent rolls panel. The store keeps up to `HISTORY_CAP`; an export reads all.
  */
 export const HISTORY_IN_MEMORY = 500;
 
 /**
  * One connection per operation, closed when its transaction ends.
  *
- * Keeping a single connection open for the life of the page was tried and
- * withdrawn. Clearing the site's storage while a connection is held — a user
- * clearing site data, or the browser tests doing it between cases — left
- * every later IndexedDB open on the origin slow or failing, for the library
- * database as well as this one, and neither `onversionchange`, `onclose` nor
- * a retry prevented it. An open costs a few milliseconds; a preference that
- * silently stops saving costs the user their settings.
+ * A connection held open while the site's storage is cleared (by the user, or
+ * by the browser tests between cases) left every later IndexedDB open on the
+ * origin slow or failing, and no `onversionchange`, `onclose` or retry fixed
+ * it. An open costs a few milliseconds.
  */
 function openDb(): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -137,12 +129,7 @@ function withTransaction<T>(
   );
 }
 
-/**
- * A read: the request's own result.
- *
- * Reads may resolve as soon as the request does — the value is already in
- * hand and the transaction has nothing left to do.
- */
+/** A read resolves as soon as its request does; nothing is left to commit. */
 function txRead<T>(store: string, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   return withTransaction<T>(store, "readonly", (s, resolve, reject) => {
     const req = fn(s);
@@ -152,10 +139,8 @@ function txRead<T>(store: string, fn: (s: IDBObjectStore) => IDBRequest<T>): Pro
 }
 
 /**
- * A write: only once the transaction commits.
- *
- * A request that has succeeded is not yet durable; resolving on it meant
- * telling the app a preference was saved while it could still be rolled back.
+ * A write resolves only once the transaction commits: a request that has
+ * succeeded can still be rolled back.
  */
 function txWrite(store: string, fn: (s: IDBObjectStore) => void): Promise<void> {
   const write = withTransaction<void>(store, "readwrite", (s, resolve, _reject, t) => {
@@ -169,12 +154,9 @@ function txWrite(store: string, fn: (s: IDBObjectStore) => void): Promise<void> 
 }
 
 /**
- * Writes started and not yet committed or failed.
- *
- * A roll's history row is written a moment after the answer is on screen, so
- * "the roll has happened" and "the roll is stored" are two different times.
- * Whatever needs the second — a test about to close its page, above all —
- * waits for this rather than guessing how long a write takes.
+ * Writes not yet committed or failed. A history row is written just after the
+ * answer shows, so a test about to close its page waits on `storageSettled`
+ * rather than guessing how long a write takes.
  */
 const pendingWrites = new Set<Promise<void>>();
 
@@ -214,11 +196,8 @@ export const appdb = {
   },
 
   /**
-   * The most recent rolls, newest first.
-   *
-   * Through the `at` index backwards rather than `getAll()` then sort: the
-   * store holds up to `HISTORY_CAP` entries, and reading five thousand of
-   * them to show the last few hundred is work the index can avoid.
+   * The most recent rolls, newest first. Read backwards through the `at` index
+   * so only `limit` entries are loaded, not the whole store.
    */
   async history(limit = HISTORY_IN_MEMORY): Promise<HistoryEntry[]> {
     try {
@@ -274,11 +253,8 @@ export const appdb = {
   },
 
   /**
-   * Keep the store to `HISTORY_CAP`, oldest first.
-   *
-   * Counting first means the usual case — every roll after the first few
-   * thousand — costs one count and nothing else, where it used to read every
-   * stored entry on every roll.
+   * Keep the store to `HISTORY_CAP`, dropping the oldest. Counts first, so the
+   * usual roll costs one count and nothing else.
    */
   async trimHistory(): Promise<void> {
     try {

@@ -1,22 +1,8 @@
 /**
- * A whole randomizer inside a link.
- *
- * A library link (`#/id/…`) is short and follows your edits, but it only works
- * on a device where that library is stored. This is the other kind: the wheel
- * itself — name, outcomes, weights, colours, Orangey's tags and the
- * randomizer's own animation settings — compressed into the address, so a deck
- * rolls it on anyone's machine with nothing installed and nothing shared in
- * advance.
- *
- * Two properties are worth knowing. The payload sits after the `#`, and
- * browsers never send a fragment to the server, so even the hosted copy never
- * sees anyone's encounter tables. And it is frozen: a deck made today rolls
- * the same wheel in a year, whatever has happened to the library since.
- *
- * What is deliberately left out: `created` and `modified`, which mean nothing
- * to a stranger, and the outcomes' ids, which are library bookkeeping and
- * would be the largest thing in the payload. They are made afresh on the way
- * in.
+ * A whole randomizer inside a link (`#/roll?w=…`), so it rolls on any device
+ * with nothing shared in advance. The payload is in the fragment, which is
+ * never sent to a server, and the link is frozen: it rolls the same wheel in a
+ * year. See docs/FORMAT.md, "A randomizer inside a link".
  */
 
 import { base64FromBytes, bytesFromBase64, deflate, inflate } from "../storage/zip.ts";
@@ -27,16 +13,10 @@ import { Check, ValidationError } from "./validate.ts";
 const DEFLATED = "1";
 const STORED = "0";
 
-/**
- * Past this many characters a link is long enough to be worth warning about:
- * every browser and both deck programs take it, but it is unwieldy to handle.
- */
+/** Past this many characters the app warns that the link is unwieldy. */
 export const LINK_SOFT_LIMIT = 2000;
 
-/**
- * And past this one Orangey will not offer it at all. Browsers go further,
- * but a link this long has stopped being something you can paste about.
- */
+/** Past this many characters the app does not offer a link at all. */
 export const LINK_HARD_LIMIT = 8000;
 
 const linkEncoder = new TextEncoder();
@@ -59,10 +39,8 @@ export function packRandomizer(r: Randomizer): Record<string, unknown> {
   delete packed.modified;
   if (r.type === "list") {
     packed.items = r.items.map((item) => {
-      // No pictures, ever. The bytes are not in the link and inlining them
-      // would make an address nobody can paste, so a wheel opened from a link
-      // simply has none — and the id of a picture in someone else's library
-      // would mean nothing here anyway.
+      // No pictures: inlining the bytes would make the link far too long, and an
+      // id from someone else's image store means nothing here.
       const { id: _id, image: _image, imageData: _imageData, ...rest } = item;
       return rest;
     });
@@ -72,10 +50,8 @@ export function packRandomizer(r: Randomizer): Record<string, unknown> {
 }
 
 /**
- * A board names its randomizers rather than carrying them, so a link could
- * hold the board and none of what is on it: it is shared as an archive
- * (Share…). Refused in both directions, so a hand-made link cannot open a
- * board on a play screen that has nothing it can roll.
+ * A board only names its randomizers, so it is shared as an archive, never a
+ * link. Refused both ways, so a hand-made link cannot open an empty board.
  */
 const BOARD_NOT_IN_LINK = "a board only names its randomizers, so it travels as an archive, not in a link";
 

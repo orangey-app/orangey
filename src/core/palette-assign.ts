@@ -1,16 +1,10 @@
 /**
- * Assigning colours to outcomes (plan C8.3).
+ * Assigning colours to wheel outcomes.
  *
- * Requirements, in priority order:
- *   1. two segments that touch never look alike — including the wrap-around
- *      pair, because a wheel is a cycle and the last slice touches the first;
- *   2. the assignment is stable, so the same wheel shows the same colours on
- *      every reload and a GM can say "the red one";
- *   3. it looks like a wheel people already know: primary colours in turn.
- *      (It used to be a hashed walk through a 71-colour pool, which read as
- *      random to anyone who had not seen it before.)
- *
- * An explicitly chosen colour always wins and is never moved.
+ * In priority order: touching segments never look alike (including the last
+ * and the first, since a wheel is a cycle); the same wheel gets the same
+ * colours on every reload; and it looks like a familiar wheel, primary colours
+ * in turn. A colour the user chose always wins and is never moved.
  */
 
 import {
@@ -25,11 +19,9 @@ import {
 } from "./color.ts";
 
 /**
- * Thresholds. T was set from the palette's own distance distribution: with a
- * muted pool the median pair sits near 0.18, so a bar of 0.15 rejects the
- * pairs that actually read as "the same colour twice" while still leaving
- * roughly two thirds of the pool available at every step. A higher bar looked
- * better on paper and forced the wheel to alternate between extremes.
+ * T comes from the palette's own distance distribution: 0.15 rejects pairs that
+ * read as the same colour twice while leaving most of the pool usable. A higher
+ * bar forces the wheel to alternate between extremes.
  */
 export const DEFAULT_THRESHOLDS = {
   /** Minimum OKLab distance between touching segments. */
@@ -65,14 +57,10 @@ export function toCandidate(hex: string): ColorCandidate {
 }
 
 /**
- * Are these two safe to put side by side?
- *
- * Two colours pass when they are far enough apart overall AND, if both are
- * colourful, they differ clearly in hue or clearly in lightness — that second
- * clause is what rejects "two dark blues" that a plain distance check lets
- * through. The same test is then repeated through a deuteranopia simulation at
- * a lower bar, which is what stops a red/green pair that is obvious to most
- * people and identical to some.
+ * Are these two safe to put side by side? They must be far apart in OKLab and,
+ * if both are colourful, differ clearly in hue or lightness (a plain distance
+ * check lets two dark blues through). The test is repeated at a lower bar
+ * through a deuteranopia simulation to catch red/green pairs.
  */
 export function distinct(a: ColorCandidate, b: ColorCandidate, t: Thresholds = DEFAULT_THRESHOLDS, scale = 1): boolean {
   const T = t.T * scale;
@@ -87,9 +75,8 @@ export function distinct(a: ColorCandidate, b: ColorCandidate, t: Thresholds = D
 }
 
 /**
- * The wheel's colours: red, yellow and blue in turn, the way a wheel at a
- * table or on a game show is painted, so a wheel reads as a wheel to anyone.
- * Green is the spare, for the one slice that cannot take its turn's colour.
+ * Red, yellow and blue in turn, like a painted prize wheel. Green is the spare,
+ * for a slice that cannot take its turn's colour.
  */
 export const WHEEL_COLOURS = ["#e31f26", "#fcb315", "#006eb8"] as const;
 export const WHEEL_SPARE = "#008842";
@@ -104,19 +91,18 @@ export interface WheelColours {
 /**
  * Colour every outcome that has no colour of its own.
  *
- * Slice i takes the cycle's colour for i. When that would look like a
- * neighbour — the last slice of a 4-, 7- or 10-outcome wheel meets the first,
- * which is also red, or the user has coloured a slice next to it — it takes
- * the spare instead, then either other cycle colour. Deterministic from the
- * positions alone: the same outcomes always get the same colours, and adding
- * one at the end recolours at most the last slice. A colour the user chose is
- * never moved; if two of those clash, the clash is reported, not hidden.
+ * Slice i takes the cycle's colour for i. If that would look like a neighbour
+ * (the last slice of a 4-, 7- or 10-slice wheel meets the first, or the user
+ * coloured the slice next to it), it takes the spare, then either other cycle
+ * colour. Deterministic from position alone, so adding an outcome at the end
+ * recolours at most the last slice. User colours are never moved; clashes
+ * between them are reported.
  */
 export function assignWheelColours(
   fixed: (string | null | undefined)[],
   cyclic = true,
-  // Your own theme or a wheel's own palette: three in turn, then the spare.
-  // The constants stay as they are; a different set is passed in.
+  // A custom theme or a wheel's own palette passes its own set: three in turn,
+  // then the spare.
   colours: readonly string[] = [...WHEEL_COLOURS, WHEEL_SPARE],
 ): WheelColours {
   const cycle = colours.slice(0, 3);

@@ -1,17 +1,11 @@
 /**
- * Your own theme: four choices in, every colour the app paints with out.
+ * Custom theme: four chosen colours (background, text, accent, wheel) in,
+ * every colour token the app paints with out, derived the way the built-in
+ * schemes relate theirs. No DOM, so it runs under Node.
  *
- * A person picks a background, a text colour, an accent and the wheel's
- * colours; the thirteen tokens a scheme defines are derived from those, the
- * way the built-in schemes relate theirs — borders are the background moved
- * toward the text, faint text is the text moved toward the background, and so
- * on. Pure and DOM-free (P20): the settings screen and `state.applyTheme()`
- * call it, and it is tested under `node --test`.
- *
- * Readability is checked, not assumed. `themeProblems` names every pair that
- * fails and which of the four inputs to move; `fixTheme` proposes the closest
- * readable version — the same hues, each nudged in lightness as little as
- * will do — which the person may take or leave.
+ * `themeProblems` names every pair that fails readability and which input to
+ * move; `fixTheme` proposes the closest readable version (same hues, lightness
+ * nudged as little as possible).
  */
 
 import { contrastRatio, hexToOklab, hexToRgb, labelFor, mix, oklabToRgb, rgbToHex, type Oklab } from "./color.ts";
@@ -63,7 +57,7 @@ export interface ThemeProblem {
 const WHITE_HEX = "#ffffff";
 const BLACK_HEX = "#000000";
 
-/** Is this a dark background? The one white text reads better on. */
+/** Is this a dark background, one that white text reads better on? */
 function isDark(bg: string): boolean {
   const rgb = hexToRgb(bg);
   return contrastRatio(rgb, hexToRgb(WHITE_HEX)) > contrastRatio(rgb, hexToRgb(BLACK_HEX));
@@ -74,12 +68,9 @@ function ratio(a: string, b: string): number {
 }
 
 /**
- * The thirteen tokens, from the four choices.
- *
- * Raised surfaces are lighter and sunken ones darker on either kind of ground,
- * as in both Orangey and Night; how far differs, because a light page wants
- * nearly white cards and a dark one only a slightly lifted shade. The
- * proportions are the built-in schemes' own, measured: borders 12 % and 28 %
+ * The thirteen tokens, from the four choices. Raised surfaces are lighter and
+ * sunken ones darker on either ground, by different amounts for light and dark
+ * pages. Proportions measured from the built-in schemes: borders 12 % and 28 %
  * toward the text, soft and faint text 25 % and 50 % toward the background.
  */
 export function deriveTheme(s: CustomScheme): Record<ThemeToken, string> {
@@ -105,8 +96,8 @@ export function deriveTheme(s: CustomScheme): Record<ThemeToken, string> {
     "--accent-ink": labelFor(s.accent).ink,
     "--accent-soft": mix(s.accent, s.bg, 0.75),
     "--accent-strong": mix(s.accent, s.ink, 0.1),
-    // Night's shadow is black and deeper, Orangey's the text colour and
-    // faint: a light "shadow" on a dark page would read as a glow.
+    // Dark pages get a deeper black shadow, light pages a faint one in the text
+    // colour: a light shadow on a dark page would read as a glow.
     "--shadow": dark
       ? "0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35)"
       : `0 1px 2px ${shade(0.08)}, 0 6px 18px ${shade(0.07)}`,
@@ -121,17 +112,13 @@ export function deriveTheme(s: CustomScheme): Record<ThemeToken, string> {
 
 /** The built-in status colours, whose hues a theme keeps. */
 const STATUS_BASE = { "--ok": "#3f9c5a", "--warn": "#d38b1f", "--error": "#d64545" } as const;
-/** Status colours are read as text — "Clear", a warning, a failed import — so they need what body text needs. */
+/** Status colours are read as text, so they need what body text needs. */
 const STATUS_RATIO = 4.5;
 
 /**
- * A status colour that reads on every surface of this theme.
- *
- * The same green, amber and red as the built-in schemes, kept exactly where
- * they already read, and otherwise moved in lightness just far enough — the
- * way the theme's own text lies from the page, lighter or darker, since that
- * is the side known to read. A red is still a red; it is only never lost on a
- * strong background of its own kind.
+ * A status colour that reads on every surface of this theme: the built-in
+ * green, amber or red, kept where it already reads, otherwise moved in
+ * lightness just far enough, toward the side the theme's own text lies on.
  */
 function statusColour(base: string, surfaces: readonly string[], lighter: boolean): string {
   const worst = (hex: string) => Math.min(...surfaces.map((s) => ratio(hex, s)));
@@ -155,14 +142,11 @@ function labelRatio(fill: string): number {
 export const WHEEL_LABEL_RATIO = 3;
 
 /**
- * The wheel's colours on their own, for the theme and for a wheel's own
- * palette alike.
- *
- * The three in turn must each carry a readable label and be told apart from
- * the one after it, including the third from the first — a wheel is a cycle.
- * The spare only ever stands in between the third and the first, when the
- * turn's own colour would look like a neighbour; if it looks like one of
- * those, the colour assigner skips it there, so that is a note, not a fault.
+ * The wheel's colours on their own, for a theme or a wheel's own palette.
+ * The three in turn must each carry a readable label and differ from the next,
+ * including third to first (a wheel is a cycle). The spare only stands between
+ * the third and the first; if it looks like one of them the assigner skips it
+ * there, so that is a note, not a fault.
  */
 export function wheelProblems(wheel: readonly string[]): ThemeProblem[] {
   const out: ThemeProblem[] = [];
@@ -205,15 +189,14 @@ export function themeProblems(s: CustomScheme): ThemeProblem[] {
   need("Soft text on the background", t["--ink-soft"], t["--bg"], 4.5, "ink");
   need("Faint text on the background", t["--ink-faint"], t["--bg"], 3, "ink");
   need("Button text on the accent", t["--accent-ink"], t["--accent"], 4.5, "accent");
-  // Not checked: the accent against the page. Every built-in light scheme
-  // would fail 3 : 1 there (Orangey's orange on cream is about 2), and a
-  // button is known by its text, which the line above checks.
+  // Not checked: accent against the page. Every built-in light scheme would fail
+  // 3:1 there, and a button is known by its text, which is checked above.
   return [...out, ...wheelProblems(s.wheel)];
 }
 
-// ---- the suggestion ---------------------------------------------------------
+// ---- Suggesting a fix ----
 
-/** A colour at this lightness, same hue; chroma comes down only if the colour would not exist. */
+/** A colour at this lightness, same hue; chroma drops only if it would not exist. */
 function withLightness(hex: string, L: number): string {
   const lab = hexToOklab(hex);
   const target: Oklab = { L: Math.min(1, Math.max(0, L)), a: lab.a, b: lab.b };
@@ -238,17 +221,16 @@ function setInput(s: CustomScheme, key: ThemeInput, hex: string): CustomScheme {
   return { ...s, wheel };
 }
 
-/** Is this particular problem still there? Found again by what it says, since the numbers move. */
+/** Is this problem still there? Matched by its pair, since the numbers move. */
 function stillFails(s: CustomScheme, p: ThemeProblem): boolean {
   return themeProblems(s).some((q) => q.pair === p.pair && !q.note);
 }
 
 /**
- * The ways out of a problem, tried in order from where the scheme stands; the
- * first that clears it is taken. Each way is a sequence of moves: the text
- * away from the background, and only if that is not enough the background
- * away from the text; a colour towards the extreme its label is not, or else
- * the other way, because a colour already near white cannot get lighter.
+ * The ways out of a problem, tried in order; the first that clears it wins.
+ * Each is a sequence of moves: the text away from the background, then the
+ * background away from the text; a colour towards the extreme its label is
+ * not, or else the other way, since a colour near white cannot get lighter.
  */
 function waysOut(s: CustomScheme, p: ThemeProblem): { key: ThemeInput; step: number }[][] {
   const L = (hex: string) => hexToOklab(hex).L;
@@ -276,10 +258,9 @@ function failing(s: CustomScheme): number {
 
 /**
  * Follow one way out, at most 30 steps a move, and stop at the first point
- * where this problem is gone and nothing new has gone wrong. A wheel colour
- * nudged clear of one neighbour can land on the other; stopping there would
- * only hand the next pass a problem to undo this one. If no such point comes,
- * the first point where this problem is gone will do.
+ * where this problem is gone and nothing new has gone wrong (a wheel colour
+ * nudged clear of one neighbour can land on the other). Failing that, stop at
+ * the first point where this problem is gone.
  */
 function walk(s: CustomScheme, p: ThemeProblem, way: { key: ThemeInput; step: number }[]): CustomScheme {
   const before = failing(s);
@@ -312,14 +293,10 @@ const MOVED_WORDS: Record<ThemeInput, string> = {
 };
 
 /**
- * The closest readable version of a scheme: the suggestion shown beside the
- * person's own when theirs fails.
- *
- * Every hue is kept. For each problem the named colour's lightness moves away
- * from what it is measured against, 0.02 at a time and at most 30 steps; only
- * if that is not enough does the other colour of the pair move. Chroma gives
- * way only where a lighter or darker version of a colour cannot exist. It
- * runs until nothing is left or a pass changes nothing, and says what moved.
+ * The closest readable version of a scheme, offered beside the person's own
+ * when theirs fails. Hues are kept; lightness moves 0.02 at a time, at most 30
+ * steps, and chroma gives way only where a colour cannot otherwise exist. Runs
+ * until no problems remain or a pass changes nothing, and says what moved.
  */
 export function fixTheme(s: CustomScheme): { scheme: CustomScheme; moved: string[] } {
   let scheme = s;

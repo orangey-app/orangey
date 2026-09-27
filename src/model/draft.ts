@@ -1,13 +1,10 @@
 /**
  * Is this draft one the app could read back?
  *
- * `validateRandomizer` says whether a file is well formed, and it stays that
- * way: a file already on disk with an odd dice expression must still open, so
- * it can be fixed (P10). But an editor must not *write* something it could
- * not then load, which is a stricter question and a different one. This asks
- * it, without a DOM, so both editors and the tests can use the same answer.
- *
- * It returns a sentence for a person to read, or null when the draft is fine.
+ * `validateRandomizer` stays lenient: the file format is append only, and a
+ * file on disk with, say, an odd dice expression must still open so it can be
+ * fixed. An editor must not write what it could not load, which is the
+ * stricter check here. No DOM. Returns a sentence for a person, or null.
  */
 
 import { Check } from "./validate.ts";
@@ -16,8 +13,8 @@ import { tryParse } from "../core/dice/grammar.ts";
 import { validateSpec } from "../core/number.ts";
 
 /**
- * "randomizer.items[3].label" is precise and unreadable. The field at the end
- * is the part a person needs, with the index kept because it says which row.
+ * Turns "randomizer.items[3].label" into the part a person needs, keeping the
+ * index because it says which row.
  */
 function readableField(path: string): string {
   const tail = path.replace(/^randomizer\.?/, "");

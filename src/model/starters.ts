@@ -1,10 +1,6 @@
 /**
- * What a brand-new library starts with.
- *
- * An empty library on first open is a blank page with buttons on it. A handful
- * of real, useful randomizers shows what the app is for and gives something
- * to roll in the first ten seconds. They are ordinary files: rename, edit or
- * delete them like anything else.
+ * What a brand-new library starts with: a few useful randomizers, so there is
+ * something to roll straight away. They are ordinary files.
  */
 
 import { emptyRandomizer, makeItem, type Randomizer } from "./randomizer.ts";

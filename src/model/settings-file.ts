@@ -1,16 +1,10 @@
 /**
- * The `.orangey-settings.json` file: the settings worth carrying to another
- * device, and nothing that belongs to this browser alone.
+ * The `.orangey-settings.json` file: settings worth carrying to another device
+ * (scheme, Feel, seed, the user's colours) and nothing per device (library
+ * folder, open folders, favourites, storage backend, starters flag).
  *
- * In: colour scheme, every Feel setting (the wheel, dice, coin, Orangey and
- * his rules), the seed, and the colours you added to the palette.
- * Out: which folder the library is in, which folders are open, favourites,
- * the storage backend, and the "starters were added" flag — those describe
- * this device, and loading them elsewhere would only confuse it.
- *
- * Same conventions as the randomizer files: two-space indent, LF, a fixed
- * key order, unknown keys refused rather than guessed at (settings are small
- * and a typo should be told, not silently dropped).
+ * Same conventions as randomizer files, except unknown keys are refused:
+ * settings are small, and a typo should be reported, not dropped.
  */
 
 import { hexToRgb, isHex, rgbToHex } from "../core/color.ts";
@@ -47,7 +41,8 @@ export interface SettingsFile {
   settings: PortableSettings;
 }
 
-// Appended to, never reordered (P17): a file written by 0.5 loads unchanged.
+// The settings file is append only: add keys at the end, never reorder, so
+// older files load unchanged.
 const KEY_ORDER: (keyof PortableSettings)[] = ["scheme", "feel", "seed", "reducedMotionOverridden", "colours", "customScheme"];
 
 export const SCHEMES = ["system", "orangey", "night", "meadow", "ocean", "berry", "custom"] as const;

@@ -1,9 +1,6 @@
 /**
  * Turning detected rows into outcomes, with a report the user reads before
- * anything is created (plan C7).
- *
- * Errors skip a row rather than abandoning the import: one bad weight in a
- * forty-row encounter table should not send you back to the spreadsheet.
+ * anything is created. A bad row is skipped rather than failing the import.
  */
 
 import { makeItem, type ListItem } from "../model/randomizer.ts";
@@ -58,10 +55,9 @@ export function buildItems(rows: string[][], hasHeader: boolean, mapping: Mappin
   let defaultedWeights = 0;
 
   /**
-   * A published encounter table gives a d100 range per row — `01-65` — and
-   * the width of that range IS the weight. One cell that reads as a range
-   * makes the column a range column; in one, a lone number such as `99` or
-   * `00` means that single roll, so its weight is 1 rather than 99.
+   * A printed table gives a d100 range per row (`01-65`) whose width is the
+   * weight. One range cell makes the column a range column; there a lone number
+   * such as `99` or `00` is a single roll, weight 1.
    */
   const isRangeColumn =
     mapping.weight !== null &&

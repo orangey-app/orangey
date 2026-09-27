@@ -1,10 +1,10 @@
 /**
- * Wheel geometry: weights in, arcs out (plan C4).
+ * Wheel geometry: weights in, arcs out.
  *
- * Angles are degrees measured clockwise from twelve o'clock. The pointer sits
- * at three o'clock, because labels are written along the radius, reading
- * outwards: whatever lands under a pointer on the right arrives horizontal and
- * reads left to right towards it. The wheel rotates; the pointer never moves.
+ * Angles are degrees clockwise from twelve o'clock. The pointer sits at three
+ * o'clock: labels run along the radius, so the one under a right-hand pointer
+ * lands horizontal and reads towards it. The wheel rotates; the pointer never
+ * moves.
  */
 
 import type { RandomSource } from "./rng.ts";
@@ -104,14 +104,10 @@ export interface SpinPlan {
 }
 
 /**
- * Plan a spin that ends with the pointer inside `segment`.
- *
- * The result is decided before this is called (decision D7); all this does is
- * choose a pleasant-looking way to arrive there. The landing point is drawn
- * uniformly within the segment but kept clear of both edges, so the pointer
- * never appears to sit exactly on a boundary — which looks like a bug even
- * when it is not — and within MAX_LANDING_TILT of the middle, so the winning
- * label arrives readable.
+ * Plan a spin that ends with the pointer inside `segment`. The result is
+ * decided before the animation; this only chooses how to arrive. The landing
+ * point is uniform within the segment but clear of both edges (a pointer on a
+ * boundary looks like a bug) and within MAX_LANDING_TILT of the middle.
  */
 export function planSpin(
   segment: Segment,
@@ -156,14 +152,10 @@ export interface RadialLabelRoom {
 }
 
 /**
- * How much text a slice can carry along its radius.
- *
- * Along the radius the length is bounded by the wheel, not by the slice; the
- * slice only has to be as wide as the letters are tall. A slice narrows towards
- * the hub, so the text is anchored at the rim and may run inwards only as far
- * as the slice is still `lineHeight` × the font size wide. Returns null when not
- * even a few letters would fit — the list and the result panel name the slice
- * instead.
+ * How much text a slice can carry along its radius. The text is anchored at
+ * the rim and runs inwards only while the slice is at least `lineHeight` ×
+ * font size wide. Returns null when not even a few letters fit (the list and
+ * the result panel name the slice instead).
  */
 export function radialLabelRoom(
   span: number,
@@ -190,7 +182,7 @@ export function radialLabelRoom(
 export const SLICE_CONTENTS = ["pictures", "names", "both"] as const;
 export type SliceContent = (typeof SLICE_CONTENTS)[number];
 
-/** A picture's round medallion: its centre's distance from the wheel's centre, and its diameter. */
+/** A picture's round medallion: centre's distance from the wheel centre, and diameter. */
 export interface SliceMedallion {
   centre: number;
   side: number;
@@ -207,14 +199,10 @@ const MEDALLION_GAP = 4;
 const MEDALLION_MIN = 18;
 
 /**
- * What goes in one slice, and where.
- *
- * `rim` is how far out anything may reach (the pointer covers the last few
- * pixels) and `hub` how far in. A slice shows a picture or a name, never one
- * laid over the other: with "both", the picture moves out to the rim and the
- * name gets what is left between it and the hub; when that is too little for
- * even a few letters, the picture gives way, because someone who asked for
- * both has said the names matter.
+ * What goes in one slice, and where. `rim` is how far out anything may reach
+ * (the pointer covers the last few pixels), `hub` how far in. A picture and a
+ * name never overlap: with "both" the picture moves to the rim and the name
+ * gets the rest; if that fits too few letters, the picture is dropped.
  */
 export function sliceLayout(
   span: number,
@@ -270,13 +258,10 @@ export interface TickerWindow {
 }
 
 /**
- * Which slice of a long list the ticker should actually build.
- *
- * A list of five thousand outcomes is five thousand rows of DOM, so the strip
- * is capped. Capping it at the first `size` rows works until the winner is
- * beyond them: the strip then scrolls to a row that was never built and the
- * ticker lands on nothing. So the window follows the winner instead, with a
- * few rows of run-up in front of it for the roll to travel through.
+ * Which part of a long list the ticker builds. The strip is capped (five
+ * thousand outcomes would be five thousand rows), and the window follows the
+ * winner with a few rows of run-up, so the strip never scrolls to a row that
+ * was not built.
  */
 export function tickerWindow(liveCount: number, position: number, size = 80, tail = 3): TickerWindow {
   const start = Math.max(0, position - tail);

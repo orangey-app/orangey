@@ -1,10 +1,6 @@
 /**
- * An in-memory library backend.
- *
- * It is the reference implementation the shared backend test suite runs
- * against, and it is what the app falls back to if neither OPFS nor a chosen
- * folder is available — a session with no persistence is better than an app
- * that refuses to start.
+ * An in-memory library backend: the reference the shared backend test suite
+ * runs against, and the last fallback when no persistent storage is available.
  */
 
 import type { Entry, LibraryBackend } from "./library.ts";

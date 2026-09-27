@@ -1,8 +1,7 @@
 /**
- * Evaluate a parsed dice expression against a RandomSource.
- *
- * Every die is recorded individually, kept or dropped, so the UI can show
- * "4d6kh3 → [6, 5, 2̶, 4] = 15" and a screen reader can say the same thing.
+ * Evaluate a parsed dice expression against a RandomSource. Every die is
+ * recorded, kept or dropped, so the UI and screen readers can show the whole
+ * roll: "4d6kh3 → [6, 5, 2̶, 4] = 15".
  */
 
 import type { RandomSource } from "../rng.ts";
@@ -19,12 +18,10 @@ export interface DieRoll {
   /** For a success pool: did this kept die meet the target? */
   success?: boolean;
   /**
-   * Which throw this face arrived in: absent for the dice first thrown, 1 for
-   * a die an explosion added or a face a reroll replaced, 2 for one added by
-   * that, and so on. The tray lands the throws one after another, the way
-   * they happen at a table. Recorded here, where the dice are made, because
-   * rebuilding it from the order of the array would break the moment this
-   * loop changed.
+   * Which throw this face arrived in: absent for the first throw, 1 for a die
+   * added by an explosion or a face that replaced a reroll, 2 for one added by
+   * that, and so on. The tray lands the throws in this order. Recorded where the
+   * dice are made; rebuilding it from array order would be fragile.
    */
   wave?: number;
 }
@@ -37,12 +34,9 @@ export interface TermResult {
   dice?: DieRoll[];
   sides?: number;
   /**
-   * The lowest and highest a kept die can finally show.
-   *
-   * Not simply 1 and `sides`: Fate dice run -1 to +1, and an unlimited
-   * reroll means the faces it rerolls can never be the final value. The tray
-   * paints its highs and lows from these, which is why they travel with the
-   * result rather than being worked out again downstream.
+   * The lowest and highest a kept die can finally show. Not always 1 and
+   * `sides`: Fate dice run -1 to +1, and an unlimited reroll removes the faces it
+   * rerolls. The tray colours highs and lows from these.
    */
   faceMin?: number;
   faceMax?: number;
@@ -101,11 +95,9 @@ function topFace(node: DiceNode): number {
 }
 
 /**
- * The lowest and highest a die of this node can finally come to rest on.
- *
- * An unlimited reroll removes faces from the possible outcomes entirely: a
- * `d6r1` can never end on a 1, so its floor is 2. `ro` rerolls once, so the
- * rerolled face can still come back and the range is unchanged.
+ * The lowest and highest a die of this node can finally rest on. An unlimited
+ * reroll removes faces (`d6r1` never ends on a 1); `ro` rerolls once, so the
+ * range is unchanged.
  */
 function faceRange(node: DiceNode): { min: number; max: number } {
   const faces = facesOf(node);
@@ -119,9 +111,8 @@ function faceRange(node: DiceNode): { min: number; max: number } {
 function evalNode(node: Node, rng: RandomSource): { value: number; dice?: DieRoll[]; sides?: number } {
   if (node.kind === "const") return { value: node.value };
 
-  // 1. The original dice, left to right, exactly as they always were. An
-  //    expression with no new modifiers must draw in precisely this order
-  //    and stop here, or every seeded roll ever recorded changes.
+  // The base dice, left to right. Seeded rolls depend on this draw order: an
+  // expression without reroll or explode must draw exactly these and stop.
   const dice: DieRoll[] = [];
   for (let i = 0; i < node.count; i++) dice.push({ value: drawFace(node, rng), kept: true });
 
@@ -139,8 +130,7 @@ function evalNode(node: Node, rng: RandomSource): { value: number; dice?: DieRol
           rerolls < REROLL_CAP &&
           !(node.reroll.once && rerolls >= 1)
         ) {
-          // The face that was thrown away stays visible, the way a dropped
-          // die does: what happened at the table is part of the answer.
+          // The discarded face stays in the list, shown like a dropped die.
           dice.splice(i, 0, { value: die.value, kept: false, rerolled: true, exploded: die.exploded, ...(die.wave ? { wave: die.wave } : {}) });
           i++;
           die.value = drawFace(node, rng);
@@ -157,14 +147,14 @@ function evalNode(node: Node, rng: RandomSource): { value: number; dice?: DieRol
     }
   }
 
-  // 4. Keep and drop see only the dice that are still in play.
+  // Keep and drop see only the dice still in play.
   const live = dice.filter((d) => !d.rerolled);
   const kept = keepIndices(live.map((d) => d.value), node);
   live.forEach((d, i) => {
     d.kept = kept[i];
   });
 
-  // 5. A success pool counts rather than adds.
+  // A success pool counts rather than adds.
   let value: number;
   if (node.success) {
     for (const d of live) {
@@ -190,12 +180,8 @@ function boundsOf(node: Node): { min: number; max: number } {
 }
 
 /**
- * The lowest and highest an expression can come to, without rolling it.
- *
- * Reserving the result panel's height needs the widest number that can turn
- * up, which used to be found by rolling the expression once on a throwaway
- * seeded source and reading the bounds off the result. That worked, but it
- * meant a roll happened to answer a layout question.
+ * The lowest and highest an expression can come to, without rolling it (used
+ * to reserve the result panel's height).
  */
 export function expressionBounds(input: string): { min: number; max: number; openEnded: boolean } {
   let min = 0;
@@ -251,12 +237,9 @@ export function evaluate(expr: Expression, rng: RandomSource, input = expr.norma
   const openEnded = expr.terms.some((t) => t.node.kind === "dice" && t.node.explode === true);
 
   /**
-   * An extreme is "every kept die showed its face", term by term, and every
-   * dice term has to agree.
-   *
-   * Exploded dice are left out of the maximum: they only exist because a die
-   * already showed its top face, so counting them would make a maximum
-   * harder to reach the better you rolled.
+   * Extreme = every kept die in every dice term showed its top (or bottom) face.
+   * Exploded dice do not count: they only exist because a die already showed its
+   * top face, so requiring them would make a maximum harder the better you roll.
    */
   const diceTerms = terms.filter((t) => t.dice && t.dice.length);
   const extreme = (pick: (t: TermResult) => boolean) => diceTerms.length > 0 && diceTerms.every(pick);

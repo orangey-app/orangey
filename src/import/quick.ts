@@ -1,16 +1,9 @@
 /**
- * A wheel typed at the table, one option per line.
+ * The quick wheel's text, one option per line, to outcomes and back. No DOM.
  *
- * The quick wheel on the play screen is a textarea, and this is how its text
- * becomes outcomes and back. Pure and DOM-free (P13), so it is tested under
- * `node --test` like the importer it sits beside.
- *
- * A line is an option. A trailing ` | 3` or ` x3` weighs it: the first takes
- * any number, since "| 0.5" is a reasonable thing to write; the second only a
- * whole one, since "x0.5" is not how anyone writes a count. The weight is
- * read only when something is left over for a label, so a line that is just
- * "x3" is an option called "x3". A leading bullet is dropped, because lists
- * pasted from notes arrive with them.
+ * A trailing ` | 3` or ` x3` sets the weight: `|` takes any number, `x` only a
+ * whole one. The weight is read only if a label is left, so a line that is
+ * just "x3" is an option called "x3". A leading bullet is dropped.
  */
 
 import { makeItem, type ListItem } from "../model/randomizer.ts";
@@ -44,10 +37,9 @@ export function parseQuickOptions(text: string): ListItem[] {
 }
 
 /**
- * The text that gives these outcomes back: what the textarea shows when a
- * quick wheel is reopened from its address. Weights other than 1 come back
- * as ` | n`, whichever way they were typed; bullets and blank lines do not
- * come back, because the address never held them.
+ * The textarea text for these outcomes, used when a quick wheel is reopened
+ * from its address. Weights other than 1 come back as ` | n`; bullets and
+ * blank lines are not kept.
  */
 export function quickText(items: readonly ListItem[]): string {
   return items.map((i) => (i.weight === 1 ? i.label : `${i.label} | ${i.weight}`)).join("\n");

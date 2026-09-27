@@ -1,10 +1,9 @@
 /**
- * Guessing the shape of pasted or dropped data (plan C7).
+ * Guessing the shape of pasted or dropped data.
  *
- * Delimiter: the one that gives the most consistent column count over the
- * first 50 non-empty lines, with a bonus for producing more than one column at
- * all. Header: the first row is a header when it contains nothing that parses
- * as a number while some later row does — the usual "Name,Weight" case.
+ * Delimiter: the one giving the most consistent column count over the first 50
+ * non-empty lines, with a bonus for more than one column. Header: the first row
+ * is a header when none of it parses as a number but a later row does.
  */
 
 import { DELIMITERS, parseDelimited, type Delimiter } from "./parse.ts";
@@ -28,12 +27,10 @@ export function parseNumberLoose(s: string): number | null {
 }
 
 /**
- * A roll range, as a published table writes one: `01-65`, `66–85`, `00`.
- *
- * Returns how many rolls the range covers, which is the outcome's weight.
- * `00` is 100 on a d100, the way every table in print means it. Deliberately
- * not part of `parseNumberLoose`: that one also decides delimiters and
- * headers, and a hyphen must not start looking numeric there.
+ * A roll range as a printed table writes one (`01-65`, `66–85`, `00`); returns
+ * how many rolls it covers, which is the outcome's weight. `00` is 100, as on a
+ * d100. Kept out of `parseNumberLoose`, which also decides delimiters and
+ * headers, where a hyphen must not look numeric.
  */
 export function parseRollRange(raw: string): number | null {
   const m = /^\s*(\d{1,3})\s*[-–—]\s*(\d{1,3})\s*$/.exec(raw);
@@ -123,9 +120,8 @@ export function guessColumns(rows: string[][], hasHeader: boolean): ColumnGuess 
   let description = find(DESC_HINTS);
   const color = find(COLOR_HINTS);
 
-  // A roll range counts as numeric here. `01-65` is not a number, but a
-  // column of them is plainly not the labels either, and without this the
-  // first column of a published d100 table gets taken for the outcome names.
+  // A roll range counts as numeric here, or the range column of a printed d100
+  // table is taken for the outcome names.
   const numericShare = (col: number) => {
     const cells = body.map((r) => r[col] ?? "").filter((c) => c !== "");
     if (cells.length === 0) return 0;

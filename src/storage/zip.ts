@@ -1,10 +1,9 @@
 /**
- * A minimal ZIP writer and reader for library export/import (plan C5).
+ * A minimal ZIP writer and reader for library export and import.
  *
- * Hand-written because the sandbox had no package registry; it produces
- * ordinary ZIP files that any operating system can open, which is the whole
- * point of the feature. Entries are deflated where the platform offers
- * compression streams and stored otherwise.
+ * Hand-written, as the project has no dependencies. It writes ordinary ZIPs any
+ * operating system can open; entries are deflated where `CompressionStream`
+ * exists and stored otherwise.
  */
 
 const encoder = new TextEncoder();
@@ -26,11 +25,9 @@ export function crc32(bytes: Uint8Array): number {
 }
 
 /**
- * Bytes to base64 and back.
- *
- * Here rather than anywhere else because both users — a link and a picture —
- * already import this module for `deflate`. The chunking matters: spreading a
- * whole picture into `fromCharCode` overflows the call stack.
+ * Bytes to base64 and back, here because both users (links and pictures)
+ * already import this module. Chunked: spreading a whole picture into
+ * `fromCharCode` overflows the call stack.
  */
 export function base64FromBytes(bytes: Uint8Array): string {
   let binary = "";
@@ -77,11 +74,8 @@ export interface ZipEntry {
 }
 
 /**
- * Which entries are pictures.
- *
- * They are kept as bytes on both sides: putting a PNG through a TextDecoder
- * on the way out of an archive and an encoder on the way back in does not
- * return the PNG.
+ * Picture entries stay bytes both ways: a PNG through a TextDecoder and back is
+ * no longer a PNG.
  */
 const PICTURE_ENTRY = /\.(png|jpe?g|webp|gif)$/i;
 

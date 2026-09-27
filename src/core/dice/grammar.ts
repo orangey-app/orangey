@@ -1,5 +1,5 @@
 /**
- * Dice notation (docs/DICE.md is the normative description).
+ * Dice notation parser. docs/DICE.md is the normative description.
  *
  *   expr     := term (("+" | "-") term)*
  *   term     := dice | integer | "adv" | "dis"
@@ -12,13 +12,9 @@
  *   success  := cmp integer
  *   cmp      := ">=" | "<=" | ">" | "<" | "="
  *
- * The modifiers come in that fixed order. That is a real constraint rather
- * than an accident: it makes the canonical form unique, and `normalized` is
- * what the history's "repeat" and the file format store.
- *
- * Whitespace is ignored, case is ignored. Anything else is a ParseError that
- * points at the offending character, because "invalid expression" with no
- * position is useless when you are typing at a table.
+ * The fixed modifier order keeps the canonical form (`normalized`) unique; the
+ * history's "repeat" and the file format store it. Whitespace and case are
+ * ignored. A ParseError carries the position of the offending character.
  */
 
 export const MAX_COUNT = 100;
@@ -43,7 +39,6 @@ export interface DiceNode {
   success?: { cmp: Cmp; n: number };
 }
 
-/** Does a face satisfy a comparator? */
 export function matchesCmp(value: number, cmp: Cmp, n: number): boolean {
   switch (cmp) {
     case ">=": return value >= n;
@@ -139,7 +134,6 @@ function parseCmp(c: Cursor): Cmp | null {
   return null;
 }
 
-/** The modifiers, in the one order the canonical form allows. */
 const MODIFIER_ORDER = "the order is !, then r or ro, then kh/kl/dh/dl, then a success target";
 
 function word(c: Cursor, text: string): boolean {
@@ -156,8 +150,8 @@ function parseDiceOrConst(c: Cursor): Node {
   c.ws();
   const start = c.i;
 
-  // Sugar: the two rolls every d20 game makes constantly. They take no count
-  // and no modifiers, and normalise to the forms they stand for.
+  // Shorthand for the d20 advantage and disadvantage rolls. They take no count
+  // or modifiers and normalise to 2d20kh1 and 2d20kl1.
   if (word(c, "adv")) return { kind: "dice", count: 2, sides: 20, keep: { mode: "kh", n: 1 } };
   if (word(c, "dis")) return { kind: "dice", count: 2, sides: 20, keep: { mode: "kl", n: 1 } };
 
@@ -193,7 +187,7 @@ function parseDiceOrConst(c: Cursor): Node {
   const node: DiceNode = { kind: "dice", count: n, sides };
   if (fate) node.fate = true;
 
-  // ---- explode ------------------------------------------------------------
+  // Explode
   c.ws();
   if (c.src[c.i] === "!") {
     const at = c.i;
@@ -202,7 +196,7 @@ function parseDiceOrConst(c: Cursor): Node {
     node.explode = true;
   }
 
-  // ---- reroll -------------------------------------------------------------
+  // Reroll
   c.ws();
   const twoChars = c.src.slice(c.i, c.i + 2).toLowerCase();
   const oneChar = (c.src[c.i] ?? "").toLowerCase();
@@ -219,8 +213,7 @@ function parseDiceOrConst(c: Cursor): Node {
     node.reroll = { once, cmp, n: target };
   }
 
-  // ---- keep / drop --------------------------------------------------------
-  // "4d6 kh3" is how people write it, and DICE.md promises it works.
+  // Keep / drop. "4d6 kh3", with a space, is accepted (DICE.md promises it).
   c.ws();
   const two = c.src.slice(c.i, c.i + 2).toLowerCase();
   if (two === "kh" || two === "kl" || two === "dh" || two === "dl") {
@@ -233,7 +226,7 @@ function parseDiceOrConst(c: Cursor): Node {
     node.keep = { mode: two as KeepMode, n: k };
   }
 
-  // ---- success ------------------------------------------------------------
+  // Success target
   c.ws();
   const cmp = parseCmp(c);
   if (cmp) {
@@ -287,10 +280,8 @@ export function parse(input: string): Expression {
 
 /**
  * Is this text a dice roll someone typed, and if so, in its canonical form?
- *
- * For a search box that also takes notation: it has to hold at least one die,
- * because a bare "3" parses as a constant and would otherwise offer to make a
- * randomizer that always says 3 every time someone searched for a number.
+ * For a search box that also takes notation. It must hold at least one die, so
+ * a bare number is not offered as a randomizer.
  */
 export function diceNotation(text: string): string | null {
   const parsed = tryParse(text);

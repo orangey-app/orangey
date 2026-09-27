@@ -1,10 +1,7 @@
 /**
- * The shape of animation settings, shared by the file format and the UI.
- *
- * Lives in the model rather than the UI because a randomizer file may carry
- * an override for its own type's section, and the model must never import
- * from the UI. The behaviour — defaults, clamping, merging — is in
- * src/ui/feel.ts.
+ * The shape of animation settings, shared by the file format and the UI. Here
+ * rather than in the UI because a randomizer file may carry an override and
+ * the model has no DOM. Defaults, clamping and merging are in src/ui/feel.ts.
  */
 
 export type MotionLevel = "full" | "quick" | "instant";
@@ -43,9 +40,8 @@ export type MascotPresence = "hidden" | "triggers" | "always";
 
 export interface MascotFeel {
   /**
-   * The GM's choice: never shown; shown only when something happens (a roll,
-   * a max, a min, a failed link) and gone again afterwards; or always there,
-   * idling between rolls.
+   * Never shown; shown only when something happens (a roll, a max, a min, a
+   * failed link) and gone afterwards; or always there, idling between rolls.
    */
   presence: MascotPresence;
   /** How much the body wobbles: 0 none, 1 soft, 1.8 the drawn maximum. */
