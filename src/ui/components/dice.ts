@@ -1,19 +1,13 @@
 /**
- * The dice tray and the coin.
- *
- * Two dice styles. "flat" is the plain numbered square. "wireframe" draws the
- * die as the solid it actually is — a tetrahedron for a d4, a cube for a d6,
- * an octahedron, a pentagonal trapezohedron for the ten-siders, a dodecahedron
- * and an icosahedron — using the vertices-edges-project-draw technique from
- * the Rosetta Code rotating cube, with the orientation held as a quaternion so
- * the die can change axis mid-flight and still land flat (see
+ * The dice tray, in two styles: "flat", a numbered square, and "wireframe",
+ * the real solid (a tetrahedron for four sides, a cube for six, and so on) drawn
+ * with the Rosetta Code rotating-cube technique. The orientation is held as a
+ * quaternion so the die can change axis mid-flight and still land flat (see
  * `src/core/polyhedra.ts`).
  *
- * Neither gives the answer away while it is moving: the dice cycle through
- * changing values and settle onto the real ones, and the coin shows nothing
- * until it lands. Both finish with a bounce whose size follows the Settle
- * setting, and both can be skipped straight to the landing at any moment —
- * the result was decided before the animation began.
+ * The result is decided before the animation: the dice tumble through other
+ * values, settle on the real ones, and can be skipped to the landing at any
+ * moment.
  */
 
 import { h, windowOf } from "../dom.ts";
@@ -54,11 +48,8 @@ interface TrayDie {
   kept: boolean;
   sides: number;
   /**
-   * The lowest and highest this die could finally show.
-   *
-   * Not 1 and `sides`: a Fate die runs -1 to +1, so a `+1` compared against
-   * `sides` would be painted as a minimum. The evaluator already knows the
-   * real range, so it travels with the result.
+   * The lowest and highest this die can show. Not 1 and `sides`: a Fate die runs
+   * -1 to +1.
    */
   faceMin: number;
   faceMax: number;
@@ -68,19 +59,16 @@ interface TrayDie {
   /** Which throw it arrives in: 0 for the first. See `DieRoll.wave`. */
   wave: number;
   /**
-   * Which face of the solid to come to rest on, counting from zero.
-   *
-   * A Fate die's value can be -1, and `value - 1` would then index a face
-   * that does not exist.
+   * Which face of the solid to rest on, from zero. Not `value - 1`: a Fate die's
+   * value can be -1.
    */
   face: number;
 }
 
 /**
- * Put each die in a wrapper that flies it in. All dice launch from one point
- * below the middle of the tray, scatter to a random spot on the way, and
- * arrive at their own slot — so the scatter is random but the order they end
- * up in is not. Only transform is animated.
+ * Fly each die in: all launch from one point below the tray's middle, scatter
+ * to a random spot and arrive at their own slot, so the path is random but the
+ * final order is not. Only transform is animated.
  */
 function launch(tray: HTMLElement, wrappers: HTMLElement[], feel: FeelSettings, durationMs: number): void {
   const box = tray.getBoundingClientRect();
@@ -125,10 +113,8 @@ export function createDiceTray(): DiceTray {
   let finish: (() => void) | null = null;
 
   /**
-   * How a die reads: dropped by a keep/drop, or a natural high or low.
-   *
-   * The flat tray and the wireframe tray want the same words on different
-   * base classes, so the base is the only thing that differs.
+   * How a die reads: dropped by a keep/drop, or a natural high or low. Shared by
+   * both tray styles; only the base class differs.
    */
   const dieClasses = (die: TrayDie, base: string): string => {
     const classes = [base];
@@ -155,17 +141,14 @@ export function createDiceTray(): DiceTray {
     return die.exploded ? `${what}, exploded` : what;
   };
 
-  /** A face that is not the answer, for the tumble. */
+  /** A face that is not the answer, for the tumble (cosmetic only). */
   const tumbleFace = (die: TrayDie): string =>
     die.fate ? faceText(die, Math.floor(Math.random() * 3) - 1) : String(1 + Math.floor(Math.random() * die.sides));
 
   /**
-   * The wireframe dice this tray put in the shared animation loop.
-   *
-   * The loop is shared by every tray on the page — a board rolls several at
-   * once — so a tray starting a roll may only take its own dice out of it.
-   * Clearing the whole set left the other trays' dice drawn but never
-   * stepped, which is how a board ended up with wireframes that sat still.
+   * The wireframe dice this tray put in the animation loop. Every tray on the
+   * page shares that loop (a board rolls several at once), so a tray may only
+   * remove its own dice; clearing the whole set would freeze other trays' dice.
    */
   let mine: WireDie[] = [];
 
@@ -180,9 +163,8 @@ export function createDiceTray(): DiceTray {
       return Promise.resolve();
     }
 
-    // Tumbling: faces showing values that are not the answer. How fast they
-    // tumble and how often the numbers change both come from the settings,
-    // so a quick roll looks hurried rather than merely shorter.
+    // Tumble speed and face changes both follow the duration, so a quick roll looks
+    // hurried rather than merely shorter.
     const tumbleCycle = Math.min(500, Math.max(140, duration / 3));
     const faceChange = Math.min(140, Math.max(45, duration / 10));
 
@@ -351,10 +333,9 @@ export function createDiceTray(): DiceTray {
       };
     });
 
-    // One size for every number in the tray, comfortable in the smallest
-    // face present, so a d12 beside a d6 reads as a set rather than a jumble
-    // of type sizes. Worked out once for all of them, whichever throw lands
-    // first, so a later throw does not change the size of numbers already down.
+    // One number size for the whole tray, set by the smallest face, so mixed dice
+    // read as a set. Worked out once, at the first landing, so a later throw does
+    // not resize numbers already down.
     let fits: ReturnType<typeof fitValueToFace>[] | null = null;
     let fitSize = Infinity;
 
@@ -463,23 +444,16 @@ export function createDiceTray(): DiceTray {
 /* -------------------------------------------------------------------------- */
 
 /**
- * How a wireframe die tumbles.
- *
- * It spins about two of the solid's own diagonals at once. At every bounce one
- * of those two axes is swapped for another diagonal and given a new speed —
- * the other carries on — which is what stops the motion reading as a single
- * mechanical spin. Through the last bounce the orientation is interpolated
- * into a resting pose with a face flat and level, so the die ends the way a
- * real one does rather than frozen mid-tumble.
+ * A wireframe die in flight. It spins about two of the solid's diagonals at
+ * once; each bounce swaps one axis for another diagonal with a new speed, so the
+ * motion never reads as one mechanical spin. Through the last bounce it eases
+ * into a resting pose with a face flat and level.
  */
 interface WireDie {
   canvas: HTMLCanvasElement;
   /**
-   * Looked up once, not on every frame.
-   *
-   * `draw` runs per die per frame. `getContext` is cheap but not free, and
-   * reading `clientWidth` forces the browser to lay the page out — sixty
-   * times a second, for every die on a board.
+   * Cached: `draw` runs per die per frame, and reading `clientWidth` forces a
+   * layout.
    */
   ctx: CanvasRenderingContext2D | null;
   dpr: number;
@@ -532,10 +506,9 @@ function pump(): void {
 }
 
 /**
- * The window to take frames from. One loop draws every tumbling die; when
- * some are in a pop-out and the main window is hidden (minimised, or under a
- * game), frames must come from the window that is still being looked at, or
- * the dice in it stop in mid-air.
+ * The window to take frames from. One loop draws every tumbling die; when some
+ * are in a pop-out and the main window is hidden, frames must come from the
+ * window still on screen, or its dice stop mid-air.
  */
 function frameSource(): Window {
   for (const die of active) {
@@ -652,29 +625,9 @@ function draw(die: WireDie): void {
 }
 
 /**
- * Size and place the number so it sits inside the face the die came to rest
- * showing: half the length of one of that face's sides, centred on it.
- *
- * The measurement is taken from the projected vertices rather than worked out
- * from the geometry, so it is right whatever the solid, the camera or the die
- * size happen to be. Two refinements to the plain rule, both of which only
- * ever make the number smaller:
- *
- *  - a kite has two short sides and two long ones, so the mean side is used;
- *    on a regular face every side is the same and the rule is unchanged;
- *  - a number of more than one digit is shrunk until it fits within the
- *    face's inscribed circle, because half a side of a triangle is wider than
- *    a triangle has room for once there are two digits in it.
- */
-/**
- * Put a die's number on the middle of its face — the middle of the digits
- * actually drawn, not of the box they sit in.
- *
- * The box is as tall as the font, not as the digits: in a font whose 1 and 3
- * sit lower than its 8, "13" centred as a box hangs below the middle of the
- * face. The canvas measures the ink itself, so the number is moved by the
- * difference. If the dice font has not finished loading, the fallback's
- * shapes are measured now and the number is placed again once it has.
+ * Centre a die's number on its face by the digits actually drawn, not their
+ * box: in some fonts "13" sits lower than "8", so a centred box hangs low. If
+ * the dice font is still loading, the number is placed again once it arrives.
  */
 let inkContext: CanvasRenderingContext2D | null | undefined;
 function placeOnFace(label: HTMLElement, centre: { x: number; y: number }): void {
@@ -706,9 +659,9 @@ function inkOffset(label: HTMLElement): { x: number; y: number; font: string; fo
 function fitValueToFace(die: WireDie, label: HTMLElement): { size: number; centre: { x: number; y: number } } | null {
   const face = die.solid.faces[die.faceIndex];
   if (!face || face.length < 3) return null;
-  // The resting pose, not the current one: the number sits on the face the
-  // die comes to rest on, and with dice landing in throws this is worked out
-  // before every die in the tray has been turned to rest.
+  // The number is half the face's mean side (a kite's sides differ), measured on
+  // the resting pose, not the current one: with dice landing in throws this runs
+  // before every die has come to rest.
   const orientation = quatMultiply(VIEW_TILT, die.rest);
   const points = face.map((i) => {
     const p = project(rotateVec(orientation, die.solid.vertices[i]), die.radius);
@@ -733,7 +686,7 @@ function fitValueToFace(die: WireDie, label: HTMLElement): { size: number; centr
     const side = Math.hypot(b.x - a.x, b.y - a.y);
     sideTotal += side;
     if (side > 0) {
-      // Distance from the centre to this side.
+      // Distance from the centre to this side; the smallest is the inscribed radius.
       const area = Math.abs((b.x - a.x) * (a.y - centre.y) - (a.x - centre.x) * (b.y - a.y));
       inradius = Math.min(inradius, area / side);
     }
@@ -744,7 +697,8 @@ function fitValueToFace(die: WireDie, label: HTMLElement): { size: number; centr
   let size = meanSide * 0.5;
   const digits = (label.textContent ?? "").length;
   if (digits > 1) {
-    // Rough advance width per digit for the interface font, at font-size 1.
+    // Two or more digits must also fit the inscribed circle; 0.62 is a rough
+    // advance width per digit at font-size 1.
     const width = size * 0.62 * digits;
     const room = inradius * 1.7;
     if (width > room) size *= room / width;

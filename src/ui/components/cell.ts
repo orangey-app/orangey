@@ -1,10 +1,8 @@
 /**
- * One randomizer on a board: its own wheel, dice or coin, its own result, and
- * its own Feel settings, in a cell small enough that several fit on a screen.
- *
- * It is the play screen's surface without the furniture — no presets, no link
- * dialog, no history panel — because a board carries those once for all of its
- * cells rather than once per cell.
+ * One randomizer on a board: its own wheel, dice or coin, result and Feel
+ * settings, in a cell small enough that several fit on a screen. It leaves out
+ * the play screen's presets, link dialog and history, which a board carries once
+ * for all its cells.
  */
 
 import type { Randomizer, Rollable } from "../../model/randomizer.ts";
@@ -33,9 +31,9 @@ export interface CellView {
   readonly rolling: boolean;
   readonly randomizer: Randomizer;
   /**
-   * Show this randomizer's newer version — a quick edit, or an edit made
-   * elsewhere — keeping the answer on screen. False when it changed too much
-   * to update in place (another type, wheel to list): build a new cell then.
+   * Show a newer version of this randomizer, keeping the answer on screen.
+   * False when it changed too much to update in place (another type, wheel to
+   * list): build a new cell then.
    */
   update(next: Randomizer): boolean;
 }
@@ -47,9 +45,9 @@ export function createCell(
     onLanded?: (outcome: Outcome) => void;
     from?: RollOrigin;
     /**
-     * The cell itself is the Roll button: a press anywhere on it rolls (and,
-     * mid-roll, skips), and it takes the keyboard like a button. The pop-out
-     * uses it, where a button's height is room the wheel could have.
+     * The cell itself is the Roll button: a press anywhere rolls (mid-roll, skips),
+     * and it takes the keyboard like a button. Used in the pop-out, where a
+     * button's height is better spent on the wheel.
      */
     clickToRoll?: boolean;
     /**
@@ -59,18 +57,13 @@ export function createCell(
     quickEdit?: boolean;
   } = {},
 ): CellView {
-  /** The randomizer as it stands now: `update` swaps in a newer version. */
   let randomizer = initial;
   const result = createResultPanel(opts.clickToRoll ? "Click to roll" : "Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
   const coin = createCoin();
   let wheel: ReturnType<typeof createWheel> | null = null;
-  /**
-   * A list shown as a list: its outcomes, each one a pick. A board cell used
-   * to show nothing at all for one of these — only the answer under an empty
-   * stage — so a list on a board could be rolled but never seen.
-   */
+  /** A list randomizer shown as its outcomes, each one a pick. */
   let outcomeList: OutcomeListView | null = null;
   /** The outcome the answer on screen came from, for putting the pointer back on it. */
   let answerIndex: number | null = null;
@@ -104,7 +97,6 @@ export function createCell(
   };
   reserve();
 
-  /** A double-tap on a slice: its weight, edited on the wheel and saved. */
   function quickEdit(index: number, clientX: number, clientY: number): void {
     if (randomizer.type !== "list" || !wheel || roller.rolling) return;
     const item = randomizer.items[index];
@@ -134,9 +126,8 @@ export function createCell(
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
   /**
-   * A bag's count and its Refill, as on the play screen. A board is where a
-   * bag is most often played — one draw per scene, over an evening — so an
-   * empty one must be refillable where it is, not only from its own screen.
+   * A bag's count and Refill, so an empty bag can be refilled on the board
+   * without opening its own screen.
    */
   const bagCount = h("span", { class: "faint bag-count" });
   const refillButton = button("Refill", () => {
@@ -186,13 +177,12 @@ export function createCell(
       opts.onLanded?.(outcome);
     },
     from: opts.from,
-    // The count changes at the landing; the wheel waits for the next roll, so
-    // the winning slice does not vanish from under the pointer (as on the
-    // play screen).
+    // Only the count updates at the landing; the wheel waits for the next roll
+    // (see rollCell).
     onBagChange: () => updateBagLine(),
-    // Several cells can offer at once after Roll all; the keyboard goes to a
-    // cell's cards only when it was already in that cell.
-    // Asked of the cell's own document: in a pop-out the keyboard is there.
+    // Several cells can offer at once after Roll all, so the keyboard goes to this
+    // cell's cards only if it was already in the cell. Asked of the cell's own
+    // document, so this works in any window.
     focusOffer: () => {
       const focused = el.ownerDocument.activeElement;
       return el.contains(focused) || (el.parentElement?.contains(focused) ?? false);
@@ -200,10 +190,9 @@ export function createCell(
   });
 
   /**
-   * Every way of rolling a cell — its button, a click on its wheel, Roll all.
-   * What was drawn last time leaves the wheel now, as the next roll starts,
-   * as on the play screen; without it a cell's wheel kept every slice until
-   * the page was reloaded.
+   * Every way of rolling a cell: its button, a click on its wheel, Roll all.
+   * Slices drawn from a bag leave the wheel here, as the next roll starts, not at
+   * the landing, so the winning slice never vanishes from under the pointer.
    */
   function rollCell(): Promise<void> {
     wheel?.refresh();
@@ -222,9 +211,9 @@ export function createCell(
     el.tabIndex = 0;
     el.setAttribute("role", "button");
     el.setAttribute("aria-label", `Roll ${randomizer.name}`);
-    // A button inside the cell — an offered card, Refill, a list's outcome —
-    // is its own press, not a roll; and a wheel rolls from its hub only, so
-    // its slices can take a double-tap (the hub calls `rollCell` itself).
+    // A button inside the cell (an offered card, Refill, a list's outcome) is its
+    // own press, not a roll; and a wheel rolls from its hub only, so its slices
+    // can take a double-tap (the hub calls `rollCell` itself).
     const own = (e: Event) => Boolean((e.target as Element | null)?.closest?.("button, input, select, textarea, a, .wheel-wrap, .weight-editor"));
     el.addEventListener("click", (e) => {
       if (!own(e)) void rollCell();
@@ -232,7 +221,7 @@ export function createCell(
     el.addEventListener("keydown", (e) => {
       if (own(e) || (e.key !== " " && e.key !== "Enter")) return;
       e.preventDefault();
-      // Handled: the window's own Space would roll everything else too.
+      // Stopped here: the window's own Space handler would roll everything else too.
       e.stopPropagation();
       void rollCell();
     });
@@ -248,11 +237,7 @@ export function createCell(
   };
 }
 
-/**
- * A Roll button for one cell. Pressing it again while the cell is running
- * means "get to the answer", which is what the cell's own roll does with a
- * roll already in flight.
- */
+/** A Roll button for one cell. Pressed mid-roll, it skips to the answer. */
 export function cellRollButton(cell: CellView, className: string): HTMLElement {
   const roll = button("Roll", () => {
     const skipping = cell.rolling;

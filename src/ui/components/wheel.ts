@@ -1,17 +1,12 @@
 /**
- * The wheel.
+ * The wheel, in three modes by outcome count: labelled slices up to 48,
+ * unlabelled up to 200, and above that a ticker, since a 250-slice pie is
+ * unreadable. The spin is fitted to a result decided before the animation, so
+ * skipping is always safe.
  *
- * Three modes, chosen by outcome count (decision D9): labelled segments up to
- * 48, unlabelled segments up to 200, and above that a ticker — a 250-slice pie
- * is unreadable, and encounter tables that long are common.
- *
- * Labels are written along the radius, reading outwards, and the pointer sits
- * at three o'clock, so whatever wins arrives horizontal and reads towards it.
- * Labels on the left half read upside down while the wheel is still; flipping
- * them would turn half of all winners upside down instead.
- *
- * The spin is fitted to a result that has already been decided, so skipping is
- * always safe and the wheel can never disagree with the announcement.
+ * Labels run along the radius, reading outwards, towards a pointer at three
+ * o'clock, so the winner arrives horizontal. Labels on the left half read upside
+ * down at rest; flipping them would turn half of all winners upside down.
  */
 
 import { assignWheelColours } from "../../core/palette-assign.ts";
@@ -39,11 +34,10 @@ import { imageUrl, imageUrlSync } from "../../storage/images.ts";
 
 export const LABEL_LIMIT = 48;
 export const TICKER_LIMIT = 200;
-/** The disc at the centre; labels stop short of it. */
 /**
- * The hub is the wheel's Roll button — a click on a slice does not roll, so a
- * double-tap there can open the slice's weight instead — so it is sized to be
- * hit, not only to cover where the slices meet.
+ * The hub is the wheel's Roll button (a click on a slice does not roll, so a
+ * double-tap there can edit its weight), so it is sized to be hit. Labels stop
+ * short of it.
  */
 const HUB_RADIUS = 22;
 
@@ -70,7 +64,6 @@ function measureWheelLabel(text: string, fontSize: number): number {
 
 export interface WheelView {
   el: HTMLElement;
-  /** Redraw from the current items. */
   refresh(): void;
   /** Animate to an outcome index; resolves when the wheel has settled. */
   spinTo(index: number, feel: FeelSettings): Promise<void>;
@@ -151,10 +144,9 @@ export function createWheel(opts: WheelOptions): WheelView {
   function renderWheel(): HTMLElement {
     const items = opts.items();
     const showLabels = mode() === "wheel";
-    // Pictures not in the cache yet are collected over the whole draw and
-    // fetched together, and the wheel is redrawn once, only if something
-    // actually arrived. Redrawing on a picture that is simply not there is
-    // what used to spin this forever.
+    // Pictures not yet cached are fetched together after the draw, and the wheel
+    // is redrawn once, only if something arrived; redrawing for a picture that is
+    // simply missing would loop forever.
     const wanted = new Set<string>();
     const paths = segments.map((seg) => {
       const fill = colorByIndex[seg.index] ?? "#888888";
@@ -167,10 +159,9 @@ export function createWheel(opts: WheelOptions): WheelView {
       });
     });
 
-    // What each slice holds, decided once for the pictures and the names
-    // together: a picture only where it is already in the cache (one still
-    // loading shows the name until the redraw brings it), and never a name
-    // laid over a picture.
+    // What each slice holds, decided once: a picture only if already cached (one
+    // still loading shows the name until the redraw), and never a name over a
+    // picture.
     const content = opts.slices?.() ?? "pictures";
     const plan = new Map<number, SliceLayout>();
     for (const seg of segments) {
@@ -252,8 +243,8 @@ export function createWheel(opts: WheelOptions): WheelView {
     const pointer = s("path", {
       class: "wheel-pointer",
       d: `M ${size - 2} ${cy - 10} L ${size - 2} ${cy + 10} L ${cx + pointerTip} ${cy} Z`,
-      // Ink, not the orange accent: the wheel's yellow is close enough to the
-      // accent that a pointer resting on a yellow slice all but disappeared.
+      // Ink, not the accent: the wheel's yellow is close enough to the accent that
+      // the pointer would all but vanish on a yellow slice.
       fill: "var(--ink)",
       stroke: "var(--bg-raised)",
       "stroke-width": "1.5",
@@ -356,11 +347,9 @@ export function createWheel(opts: WheelOptions): WheelView {
   }
 
   /**
-   * Run an animation, and hand back the way to cut it short.
-   *
-   * The wheel and the ticker travel differently but wait the same way: a
-   * frame loop, a `skip` that jumps to the end, and exactly one settle
-   * whichever of the two gets there first. `onDone` runs once.
+   * Run an animation and hand back the way to cut it short. The wheel and the
+   * ticker travel differently but wait the same way: a frame loop, a `skip` that
+   * jumps to the end, and exactly one settle; `onDone` runs once.
    */
   function animate(durationMs: number, onFrame: (t: number) => void, onDone: () => void): Promise<void> {
     const started = performance.now();
@@ -374,9 +363,9 @@ export function createWheel(opts: WheelOptions): WheelView {
         resolve();
       };
       cancelSpin = finish;
-      // Frames come from the window the wheel is in (see windowOf); the time
-      // is read here rather than taken from the frame, because a pop-out's
-      // frame times count from when that window opened, not this page.
+      // Frames come from the wheel's own window, so it spins in any window (see
+      // windowOf). Time is read here, not taken from the frame: a pop-out's frame
+      // times count from when that window opened.
       const view = windowOf(el);
       const step = () => {
         if (done) return;
@@ -436,9 +425,9 @@ export function createWheel(opts: WheelOptions): WheelView {
     if (!tickerStrip) return Promise.resolve();
     const strip = tickerStrip;
 
-    // The idle strip holds only the first rows of a long list, so the winner
-    // may not be among them. Rebuild it around the winner before travelling,
-    // and the roll lands on a row that exists however long the list is.
+    // The idle strip holds only the first rows of a long list, so rebuild it
+    // around the winner before travelling, or the roll could land on a row that
+    // does not exist.
     const window_ = tickerWindow(live.length, position);
     const rows = live.slice(window_.start, window_.end);
     setChildren(strip,

@@ -1,12 +1,8 @@
 /**
- * A list randomizer shown as a list: every outcome with its odds, and each
- * one a button — pressing it picks that outcome as the answer, as Roll picks
- * one at random. The play screen, a board's cell and the pop-out all use it.
- *
- * A pick lands through the roll controller (`roller.choose`), so it is an
- * answer like any other: announced, recorded (as *picked*), taken out of the
- * bag, and followed when the outcome leads to another randomizer. The list
- * scrolls within itself, so a hundred-row table does not push its Roll off
+ * A list randomizer shown as a list: every outcome with its odds, each a button
+ * that picks it as the answer. A pick goes through `roller.choose`, so it is
+ * announced, recorded as picked, taken from the bag and followed like any
+ * answer. The list scrolls within itself so a long table cannot push Roll off
  * the screen.
  */
 

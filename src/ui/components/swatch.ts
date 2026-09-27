@@ -1,6 +1,6 @@
 /**
  * The colour cell: a grid of named palette swatches, a free hex field, and a
- * way back to the automatic colour (plan C8.2).
+ * way back to the automatic colour.
  */
 
 import { chroma, hexToOklab, hueAngle, isHex } from "../../core/color.ts";

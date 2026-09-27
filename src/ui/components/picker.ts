@@ -1,19 +1,12 @@
 /**
- * Choosing a randomizer from the library.
+ * Choosing a randomizer from the library, for a board (what goes on it) or an
+ * outcome's "Goes to". Shows the library as a tree, flattens to matches as you
+ * type, takes a pasted link or dice notation, and can make a new randomizer.
  *
- * Used by a board (what goes on it) and by an outcome's "Goes to" (where it
- * sends you). Both used to offer a flat list of every randomizer, which is
- * fine with six and unusable with sixty: a real game has folders.
- *
- * The dialog shows the library as a tree, flattens to matches while you type,
- * takes a link someone sent you, and can make a new randomizer on the spot —
- * because the thing you want to put on a board often does not exist yet.
- *
- * A board takes several at once (`pickRandomizers`): Ctrl-click (⌘ on a Mac)
- * chooses one more, Shift-click a run of them, and a right-click on a folder
- * chooses everything in it. Once something is chosen, a plain click chooses
- * too — on an iPad there is no Ctrl — and "Add N" adds the lot. With nothing
- * chosen, a click adds that one at once, as it always did.
+ * A board takes several (`pickRandomizers`): Ctrl/⌘-click adds one, Shift-click
+ * a run, a right-click on a folder everything in it. Once something is chosen a
+ * plain click chooses too (an iPad has no Ctrl) and "Add N" adds the lot; with
+ * nothing chosen a click adds that one at once.
  */
 
 import { emptyRandomizer, type DiceRandomizer, type Randomizer, type RollableType } from "../../model/randomizer.ts";
@@ -34,9 +27,7 @@ export interface PickerOptions {
   title: string;
   /** Randomizers already spoken for, by id: shown greyed rather than hidden. */
   taken?: () => Set<string>;
-  /** Offer to make a new randomizer. */
   allowNew?: boolean;
-  /** Take a link that someone pasted. */
   allowLink?: boolean;
   /** Take dice notation typed into the search box, such as "2d6 + 3". */
   allowNotation?: boolean;
@@ -45,12 +36,10 @@ export interface PickerOptions {
 }
 
 /**
- * Where dice made from typed notation live. A board entry is a reference to a
- * library randomizer (see ARCHITECTURE.md), so "2d6 + 3" typed on a board has
- * to become a file somewhere; one folder keeps them out of the way, and is the
- * only place they are reused from — a named "Attack roll" that happens to be
- * d20 + 5 is its own thing, and editing it should never change a board that
- * only asked for d20 + 5.
+ * Where dice made from typed notation are kept. A board entry points at a
+ * library randomizer, so "2d6 + 3" typed on a board must become a file. They are
+ * reused only from this folder, so editing a named "Attack roll" that happens to
+ * have the same dice never changes a board that only typed the notation.
  */
 const QUICK_DICE_FOLDER = "Dice";
 
@@ -270,10 +259,9 @@ function openPicker(opts: PickerOptions, multiple: boolean): Promise<PickedRando
     });
 
     /**
-     * Dice from typed notation: reuse one already made for the same
-     * expression, or make it. One that is already taken here is not reused,
-     * because a board holds each randomizer once and two "2d6" cells — one per
-     * player — is a thing people want.
+     * Dice from typed notation: reuse one already made for the same expression, or
+     * make it. One already on this board is not reused: a board holds each
+     * randomizer once, and two "2d6" cells (one per player) is a thing people want.
      */
     let making = false;
     async function useNotation(expression: string): Promise<void> {

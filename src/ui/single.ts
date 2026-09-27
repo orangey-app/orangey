@@ -1,11 +1,8 @@
 /**
- * Which build this is, and where the other one lives.
- *
- * The site build serves `orangey.html` beside `index.html`, so Settings can
- * offer it as a download — fetched relatively, so it works wherever the app
- * is served from: the root of a domain, a project subpath, or a folder. The single-file build marks itself with a meta tag
- * at build time, and Settings says so instead of offering the file it
- * already is.
+ * Which build this is, and where the other one lives. The site build serves
+ * `orangey.html` beside `index.html` for Settings to offer as a download
+ * (fetched relatively, so any base path works); the single-file build marks
+ * itself with a meta tag.
  */
 
 export const SINGLE_FILE_NAME = "orangey.html";

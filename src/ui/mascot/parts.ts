@@ -1,16 +1,13 @@
 /**
- * Orangey's anatomy, as the owner drew it.
+ * Orangey's anatomy, as drawn.
  *
  * Copyright (c) 2026 Amogh Kinikar. All rights reserved. The geometry in
  * this file is the Orangey character and is NOT under the MIT licence that
  * covers the rest of the software — see LICENSE and assets/mascot/README.md.
  *
- * Every constant here is lifted from one of six SVG files — the logo and the
- * five poses — normalised into the logo's own coordinate space. The body is
- * the same curve in all six (maximum deviation 0.0005 units), so there is one
- * body; the poses differ only in eyes, mouth and arms. Legs are canonical in
- * every pose. Nothing here is invented: redrawing a pose is a one-constant
- * swap, and the source files live in assets/mascot/.
+ * Every constant comes from the six SVG files in assets/mascot/ (the logo and
+ * five poses), normalised into the logo's coordinate space. The body is the
+ * same curve in all six, so the poses differ only in eyes, mouth and arms.
  */
 
 /** The body outline: four cubic segments, twelve movable points. */
@@ -79,10 +76,8 @@ export const MASCOT_POSES: Record<PoseName, Pose> = {
   anticipate: { eyes: "sq", mouth: "mAnt", arms: ["I", "J"] },
 };
 
-/* ---- markup ---------------------------------------------------------------
- * Path data verbatim from the owner's files, translated into logo space.
- * A hand is four finger strokes and a dot at the wrist.
- */
+// Markup: path data verbatim from the source SVGs, in logo space.
+// A hand is four finger strokes and a dot at the wrist.
 
 function mascotHand(x: number, y: number, fingers: readonly string[], dotAsPath = false): string {
   const strokes = fingers.map((d) => `<path class="l" d="M${x},${y}${d}"/>`).join("");
@@ -128,7 +123,7 @@ const MASCOT_BACK_LIMBS =
   ]) +
   `<g class="legR"><path class="l" d="M118.95,118.1c5.91,12.02,2.32,25.63,2.32,25.63,0,0,8.48-.45,14.31-.76"/></g>`;
 
-/** Limbs drawn in front of the body: the screen-left arms, the anticipation pair, and the left leg. */
+/** Limbs drawn in front of the body: screen-left arms, the anticipation pair, left leg. */
 const MASCOT_FRONT_LIMBS =
   // B — down-left (Surprised)
   mascotArm("B", "M48.82,99.68c-2.49,9.59-7.45,19.98-17.35,27.08-.55.39-1.1.77-1.66,1.13", 29.8, 127.89, [
@@ -198,10 +193,9 @@ export function mascotRestingBodyPath(): string {
 }
 
 /**
- * The app's mark: his head alone, tight to the drawn outline plus two units
- * of air. The logo tile in assets/mascot/logo.svg is this artwork on the
- * brand black square; the square belongs to the icons, which are square
- * canvases, not to a mark sitting on a coloured bar.
+ * The viewBox of the app's mark: his head alone, with two units of air around
+ * the drawn outline. The icons draw it on the black square tile of
+ * assets/mascot/logo.svg.
  */
 export const MASCOT_LOGO_VIEWBOX = "12.59 23.85 130.71 116.09";
 
@@ -209,13 +203,10 @@ export const MASCOT_LOGO_VIEWBOX = "12.59 23.85 130.71 116.09";
 export const MASCOT_LOGO_TILE = 155.91;
 
 /**
- * Orangey's head as the logo: the same body, stem and three-quarter eyes as
- * every pose, with no mouth and no limbs. It is built from the constants
- * above rather than from a second copy of the paths, so redrawing him
- * reaches the top bar, the favicon and the installed icon at once.
- *
- * It is deliberately not a `mascot-svg`: that class means an animated
- * Orangey, and counting them is how the tests prove there is only ever one.
+ * Orangey's head as the logo: the body, stem and three-quarter eyes, with no
+ * mouth or limbs. Built from the constants above, so a redraw reaches the top
+ * bar, favicon and installed icon at once. Deliberately not a `mascot-svg`:
+ * tests count those to prove there is only ever one animated Orangey.
  */
 export function mascotLogoMarkup(): string {
   const eye = (side: EyeSide) => {

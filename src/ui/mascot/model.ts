@@ -1,15 +1,10 @@
 /**
- * Orangey's motion, as numbers.
+ * Orangey's motion, as numbers: the springs and state machine that produce,
+ * each frame, everything the view draws. No DOM, so tests run it in Node and
+ * check that at rest he is exactly the drawing.
  *
- * The model owns the springs and the state machine and produces, each frame,
- * everything the view needs to draw: the body path, the eye centres and
- * rotations, the limb angles, the whole-figure offset and tilt. It never
- * touches the DOM, so the tests can run it in Node for ten simulated seconds
- * and check the invariant that matters: at rest, he is the drawing.
- *
- * States live in a registry. A state is a pose (which drawn parts show) plus
- * an optional entry impulse and a per-frame driver that sets spring targets.
- * Adding an animation is registering a state; nothing else changes.
+ * A state is a pose plus an optional entry impulse and a per-frame driver that
+ * sets spring targets; adding an animation means registering a state.
  */
 
 import {
@@ -103,7 +98,7 @@ export class MascotModel {
   vy = 0;
   grounded = true;
 
-  /** How far the body modes are allowed to show: 0 none, 1 soft, 1.8 the owner's default. */
+  /** How far the body modes may show: 0 none, 1 soft, 1.8 the default. */
   gain = 1.8;
   /** Total simulated time, and time in the current state. */
   t = 0;
@@ -189,7 +184,6 @@ export class MascotModel {
     const limbTargets = def.limbs?.(this) ?? {};
     for (const k of MASCOT_LIMB_KEYS) this.limb[k].t = limbTargets[k] ?? 0;
 
-    // the hop, integrated only while airborne
     if (!this.grounded) {
       this.vy += 1150 * dt;
       this.y += this.vy * dt;

@@ -1,14 +1,9 @@
 /**
  * Bag mode: which outcomes have already been drawn.
  *
- * "Draw without putting back" is a property of the randomizer and lives in
- * its file; *what has been drawn so far* is not. It is like history: it
- * belongs to this device and this session of play, and two people rolling the
- * same shared wheel each have their own bag. Putting it in the file would
- * make every draw a write to the user's library and a change to sync.
- *
- * So the bag lives in the app database, keyed by randomizer id, with an
- * in-memory copy the roll path can read synchronously.
+ * What has been drawn is per device, like history: it lives in the app database,
+ * keyed by randomizer id, never in the randomizer file, with an in-memory copy
+ * the roll path can read synchronously.
  */
 
 import { appdb } from "../storage/appdb.ts";
@@ -21,10 +16,8 @@ function bagKey(randomizerId: string): string {
 }
 
 /**
- * A randomizer that came out of a link has no file behind it, and its item
- * ids are made fresh on every load — so a stored bag could never match, and
- * storing one would only leave debris in the database. Those bags live for
- * as long as the page does.
+ * A randomizer from a link has no file and gets fresh item ids on every load,
+ * so its bag is never stored and lasts only as long as the page.
  */
 function isPersistent(randomizerId: string): boolean {
   return state.library.findById(randomizerId) !== null;
@@ -45,7 +38,7 @@ export function bagDrawn(randomizerId: string): ReadonlySet<string> {
   return bags.get(randomizerId) ?? new Set<string>();
 }
 
-/** Take an outcome out of the bag. Called at the landing, not at the start. */
+/** Take an outcome out of the bag. Call at the landing, not at the start. */
 export function bagTake(randomizerId: string, itemId: string): void {
   const drawn = bags.get(randomizerId) ?? new Set<string>();
   drawn.add(itemId);
@@ -53,7 +46,6 @@ export function bagTake(randomizerId: string, itemId: string): void {
   if (isPersistent(randomizerId)) void appdb.set(bagKey(randomizerId), [...drawn]);
 }
 
-/** Everything goes back in. */
 export function bagRefill(randomizerId: string): void {
   bags.set(randomizerId, new Set());
   if (isPersistent(randomizerId)) void appdb.set(bagKey(randomizerId), []);

@@ -21,28 +21,24 @@ import type { Outcome } from "./roll.ts";
 import { emitMascotEvent, type MascotEvent } from "./mascot/events.ts";
 
 /**
- * A history entry as the app holds it. Striking a roll does not remove it —
- * the roll happened, and a line through it says so — so the flag rides along
- * in the record IndexedDB already keeps. An entry written before this existed
- * arrives without the field, which reads as not struck.
+ * A history entry as the app holds it. Striking a roll keeps it, with a line
+ * through; an entry without `struck` reads as not struck.
  */
 export interface HistoryRow extends HistoryEntry {
   struck?: boolean;
 }
 
 /**
- * The randomizer a row came from. A dice roll carries its expression rather
- * than an id in `repeat`, so for those the id on the entry is what says which
- * randomizer rolled it.
+ * The randomizer a row came from. A dice roll's `repeat` holds its expression,
+ * not an id, so the entry's own id says which randomizer rolled it.
  */
 export function rollOwnerId(row: HistoryRow): string | null {
   return row.repeat?.kind === "randomizer" ? row.repeat.id : row.randomizerId;
 }
 
 /**
- * What a row says beyond its headline: the dice rolled inside the outcome,
- * and the roll that sent you here. Each is its own line, and either may be
- * missing — a row written before 0.5 has neither.
+ * What a row says beyond its headline: the dice rolled inside the outcome, and
+ * the roll that sent you here. Either may be missing.
  */
 export function rollDetails(row: HistoryRow): { parts: string | null; from: string | null } {
   return {
@@ -62,12 +58,8 @@ export function rollsInScope(rows: HistoryRow[], ids: string[]): HistoryRow[] {
 }
 
 /**
- * What changed. A view says which of these it cares about, so typing in the
- * editor no longer redraws the history panel and a toast no longer redraws
- * the library tree.
- *
- * A subscriber that names no topics hears everything, which keeps any caller
- * that was missed correct rather than silently stale.
+ * What changed. A subscriber names the topics it cares about; one that names
+ * none hears everything.
  */
 export type StateTopic = "prefs" | "history" | "toasts" | "library" | "outcome";
 
@@ -83,14 +75,10 @@ export interface Toast {
 const RESCAN_DELAY = 30_000;
 
 /**
- * The browser's own storage for the library: the origin-private filesystem
- * where it can be written to, IndexedDB otherwise.
- *
- * With one exception. A browser that gains a writable filesystem in an update
- * — Safari did between 18 and 26 — would open an empty one and hide the
- * library its IndexedDB holds. So a library already in IndexedDB is kept over
- * an empty filesystem. The extra look costs one IndexedDB open, and only on a
- * browser whose filesystem is empty, which after the first run means never.
+ * The browser's own storage: the origin-private filesystem where writable,
+ * IndexedDB otherwise. A library already in IndexedDB wins over an empty
+ * filesystem, so a browser that gains OPFS in an update (Safari did) does not
+ * hide it.
  */
 async function pickBrowserStorage(): Promise<LibraryBackend | null> {
   const opfs = await openOpfs();
@@ -128,8 +116,8 @@ class AppState {
   /** A folder was chosen before, but the browser wants a click to reopen it. */
   folderNeedsPermission = false;
   /**
-   * Facts for the mascot (and anything else that wants them). Views emit;
-   * the mascot host listens. Nothing on this bus ever writes app state.
+   * Facts for the mascot and anyone else listening: views emit, the mascot only
+   * reads. Nothing on this bus writes app state.
    */
   readonly events = new EventTarget();
 
@@ -140,11 +128,8 @@ class AppState {
   #unwatchLibrary: (() => void) | null = null;
 
   /**
-   * Take a library and listen to it.
-   *
-   * Every place that swaps the backend goes through here, so a failed write
-   * always has somebody to tell, the image store follows the library, and a
-   * change to the tree reaches the views that draw it.
+   * Take a library and listen to it. Every backend swap goes through here, so
+   * failed writes, the image store and tree changes all follow the new library.
    */
   setLibrary(library: LibraryService): void {
     this.#unwatchLibrary?.();
@@ -152,8 +137,7 @@ class AppState {
     useImageStore(library.backend);
     this.#unwatchLibrary = library.onChange(() => this.emit("library"));
     library.onError(() => {
-      // One toast, not one per keystroke: while the last one is still on
-      // screen a further failure has nothing new to say.
+      // One toast, not one per keystroke, while the last is still on screen.
       if (this.#saveErrorToast && this.toasts.some((t) => t.id === this.#saveErrorToast)) return;
       this.#saveErrorToast = this.toast("Could not save your changes", "Retry", () => {
         void this.library.flush().catch(() => {});
@@ -178,16 +162,14 @@ class AppState {
     const stored = await appdb.get<Partial<Prefs>>("prefs");
     this.prefs = { ...DEFAULT_PREFS, ...stored, feel: normalizeFeel(stored?.feel), colours: normalizeColours(stored?.colours) };
 
-    // Respect the system setting on first run, but let an explicit choice win
-    // from then on (plan C10).
+    // Follow the system's reduced-motion setting until the user chooses explicitly.
     if (!this.prefs.reducedMotionOverridden && prefersReducedMotion()) {
       this.prefs.feel = { ...this.prefs.feel, motion: "instant" };
     }
 
-    // Storage, in order of preference: the folder the user chose last time
-    // (if the browser still allows it without asking), the origin-private
-    // filesystem, IndexedDB — which a page opened from disk does get — and
-    // only then memory, which the UI flags loudly because nothing survives.
+    // Storage, in order of preference: the folder chosen last time (if reopening
+    // needs no prompt), the origin-private filesystem, IndexedDB, and only then
+    // memory, which the UI flags because nothing survives.
     let backend: LibraryBackend | null = null;
     const remembered = await reopenFolder();
     if (remembered && remembered !== "ask") backend = remembered;
@@ -197,12 +179,9 @@ class AppState {
     this.setLibrary(new LibraryService(backend));
     await this.library.refresh();
 
-    // First run: a few real randomizers, so the app is not an empty page.
-    // Only ever once per browser, and only into an empty library.
-    // ?noseed lets the test suite start from a genuinely empty library.
-    // A write that fails here is reported the way any failed save is; it
-    // must not stop the app from opening, since an empty library that can be
-    // looked at beats a page that says "Loading…" for ever.
+    // First run: a few sample randomizers, once per browser and only into an empty
+    // library (`?noseed` skips this for tests). A failed write is reported like any
+    // failed save and must not stop the app opening.
     const noSeed = new URLSearchParams(location.search).has("noseed");
     if (!noSeed && !this.prefs.seeded && backend.kind !== "memory" && this.library.files().length === 0) {
       try {
@@ -220,10 +199,8 @@ class AppState {
     this.history = await appdb.history(HISTORY_IN_MEMORY);
     this.ready = true;
 
-    // The editor no longer writes on every keystroke, so something has to
-    // catch the last one when the page goes away. `pagehide` covers closing
-    // and navigating; `visibilitychange` covers a phone being locked or the
-    // tab being switched, which on mobile is often the only one that fires.
+    // Saves are debounced, so flush when the page goes away. On mobile
+    // `visibilitychange` is often the only event that fires.
     const flushNow = () => void this.library.flush().catch(() => {});
     addEventListener("pagehide", flushNow);
     addEventListener("visibilitychange", () => {
@@ -239,15 +216,8 @@ class AppState {
   }
 
   /**
-   * A library in a folder can be edited by anything: an editor, a sync
-   * client, another window. Coming back to the tab is the moment to look
-   * again — there is no watcher for a directory handle, and polling a folder
-   * of files for changes nobody may have made is not worth the battery.
-   *
-   * Never while there is something waiting to be written, and never while an
-   * editor is open: the editor holds its own copy and only the node's path,
-   * so a rescan cannot actually disturb it, but having the tree shift under
-   * someone mid-edit is its own kind of surprise.
+   * Re-read a folder library when the tab comes back: anything can edit it and
+   * there is no directory watcher. Never with writes pending or an editor open.
    */
   #lastRescan = 0;
   #rescanFolder(): void {
@@ -260,10 +230,8 @@ class AppState {
   }
 
   /**
-   * The one place theme colours are set. A built-in scheme is an attribute and
-   * a block in tokens.css; your own is the same attribute plus every derived
-   * token set on the page itself — and choosing anything else takes those
-   * off again, so switching back to Night leaves nothing of it behind.
+   * The one place theme colours are set: a built-in scheme is an attribute, your
+   * own adds every derived token inline, and anything else removes them again.
    */
   applyTheme(): void {
     const root = document.documentElement;
@@ -322,8 +290,7 @@ class AppState {
   async importSettings(text: string): Promise<void> {
     const s = parseSettings(text);
     this.resetSeedSequence();
-    // A file without a theme of its own (every file from 0.5) leaves the one
-    // saved on this device alone: it can still be chosen again.
+    // A settings file without a theme of its own leaves this device's theme alone.
     await this.savePrefs({
       scheme: s.scheme, feel: s.feel, seed: s.seed, reducedMotionOverridden: s.reducedMotionOverridden, colours: s.colours,
       customScheme: s.customScheme ?? this.prefs.customScheme,
@@ -336,9 +303,8 @@ class AppState {
   }
 
   /**
-   * A seeded session must not repeat the same number forever, so the seed is
-   * advanced per roll: seed "847193" gives 847193#1, #2, ... The user shares
-   * the base seed and everyone sees the same sequence.
+   * A seeded session advances the seed per roll ("847193" gives 847193#1, #2, …),
+   * so sharing the base seed reproduces the whole sequence.
    */
   #seedStep = 0;
   #nextSeedStep(): string {
@@ -360,9 +326,8 @@ class AppState {
 
   async record(randomizer: Randomizer, outcome: Outcome, from?: RollOrigin): Promise<void> {
     this.lastOutcome = { outcome, randomizer };
-    // What a row says beyond its headline: the dice inside the outcome and,
-    // for a pick, what it was picked from. Both ride in `parts`, the row's
-    // existing details line, rather than in a field of their own.
+    // Beyond the headline: the dice inside the outcome and, for a pick, what it was
+    // picked from, both in `parts`.
     const parts = [
       ...(outcome.rolled ?? []),
       ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : []),
@@ -402,11 +367,8 @@ class AppState {
   }
 
   /**
-   * Clear the rolls of particular randomizers — what a Recent rolls panel has
-   * in front of the user — and nothing else. No ids means the whole history.
-   *
-   * Memory holds the most recent rolls only, so the store is walked as well:
-   * an older roll of the same randomizer is part of what was asked for.
+   * Clear the rolls of these randomizers (no ids: the whole history). Memory holds
+   * only recent rolls, so the store is walked as well.
    */
   async clearHistoryFor(ids: string[]): Promise<void> {
     if (ids.length === 0) {
@@ -421,8 +383,8 @@ class AppState {
   }
 
   /**
-   * Strike a roll through, or take the line off again. The entry goes back to
-   * the store whole, because the store keeps records rather than fields.
+   * Strike a roll through, or undo that. The store keeps whole records, so the
+   * entry is written back whole.
    */
   async setStruck(id: string, struck: boolean): Promise<void> {
     const row = this.history.find((entry) => entry.id === id);

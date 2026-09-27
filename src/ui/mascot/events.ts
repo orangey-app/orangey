@@ -1,11 +1,7 @@
 /**
- * What the app tells the mascot.
- *
- * Randomizers emit facts; they never name an animation. The reactions table
- * (reactions.ts) turns a fact into a state, and the host plays it. Keeping
- * this vocabulary small and generic is what lets a new randomizer type join
- * without the mascot knowing it exists: it produces an Outcome, the Outcome is
- * summarised, and everything downstream already works.
+ * What the app tells the mascot: facts about what happened, never the name of
+ * an animation. reactions.ts turns a fact into a state, so a new randomizer
+ * type needs no mascot changes.
  */
 
 import type { Outcome } from "../roll.ts";
@@ -16,16 +12,13 @@ export type Extreme = "max" | "min" | null;
 export interface RollSummary {
   kind: Randomizer["type"];
   /**
-   * The roll hit the top or bottom of what it could produce. For dice that
-   * is every kept die on its highest (or lowest) face; for whole-number draws,
-   * every value at the range's bound. Coins and wheels have no honest extreme
-   * and always report null.
+   * Every kept die, or every drawn number, at its highest or lowest possible
+   * value. Coins and wheels always report null.
    */
   extreme: Extreme;
   /**
-   * What the game master asked for when this outcome comes up — a wheel item
-   * or coin face tagged "cheer" or "wince" in its editor. Dice and numbers
-   * carry no tag; their extremes speak for them.
+   * The "cheer" or "wince" tag set on a wheel item or coin face in its editor.
+   * Dice and numbers carry none; their extremes speak for them.
    */
   mood: OutcomeReaction | null;
   /** The same text the result panel shows. */

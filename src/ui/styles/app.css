@@ -12,10 +12,7 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-/* The app is exactly the window's height, and the library and the main pane
-   each scroll inside it. It used to grow with its content, so the whole page
-   scrolled as one: reaching the Roll button under a long list scrolled the
-   library away with it. */
+/* Exactly the window's height: the library and the main pane scroll inside it. */
 #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 /* ---- shell ---------------------------------------------------------------- */
@@ -41,8 +38,6 @@ body {
   color: var(--ink);
   text-decoration: none;
 }
-/* The mark is Orangey's head — the artwork of the logo tile without the
-   tile, so it sits on any scheme's top bar. */
 .brand .mark {
   display: block; width: 26px; height: 23px; flex: none;
 }
@@ -140,15 +135,12 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--gap); }
 .field-label { font-size: 14px; color: var(--ink-soft); font-weight: 550; }
 .field-hint { font-size: 13px; color: var(--ink-faint); }
-/* A setting that is only ever on or off: the box sits beside its label, not
-   above it like the sliders. */
 .feel-toggle { flex-direction: row; align-items: center; cursor: pointer; }
 .feel-toggle input { cursor: pointer; }
 
 .row { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; }
 .row.tight { gap: 6px; }
-/* Space above a block, so a view does not have to carry a style object for
-   it. Three sizes is all the app actually used across seventeen copies. */
+/* Top-margin utilities, so views need no inline style for spacing. */
 .gap-s { margin-top: 8px; }
 .gap-m { margin-top: 12px; }
 .gap-l { margin-top: 14px; }
@@ -157,9 +149,7 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--mono); font-s
 .home-shortcuts[hidden] { display: none; }
 .home-shortcuts h2 { font-size: 16px; margin: 0 0 6px; }
 .shortcut-group + .shortcut-group { margin-top: 12px; }
-/* input.roll-count, not .roll-count: the general rule for number inputs sets
-   width: 100% and outranks a bare class, which pushed the field onto a line
-   of its own below its "×". */
+/* input.roll-count, not .roll-count: the number-input rule's width: 100% wins. */
 input.roll-count { width: 56px; }
 .roll-count-field[hidden] { display: none; }
 .slices-field[hidden] { display: none; }
@@ -195,10 +185,7 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
   min-height: 128px;
   justify-content: center;
 }
-/* The slot carries the type size and the reserved height; the value inside it
-   is clamped to that many lines and clipped with an ellipsis beyond. Both are
-   set once per randomizer from its longest possible outcome, so a roll can
-   never change the card's height. */
+/* Set per randomizer from its longest outcome, so a roll never changes the height. */
 .result-slot {
   font-size: clamp(38px, 11vw, 76px);
   /* The last line's descenders sit in the padding below .result-value, so
@@ -221,27 +208,20 @@ h3 { font-size: 14px; margin: var(--pad) 0 6px; color: var(--ink-soft); }
   -webkit-line-clamp: var(--result-lines, 1);
   line-clamp: var(--result-lines, 1);
   overflow: hidden;
-  /* The line is set tight, and the clip that limits an answer to its lines
-     also cut off what hangs below them: the dice font's old-style 3, 4, 5, 7
-     and 9 and Arapey's g, p and y reach about 0.2 em under the baseline,
-     past the line box. The padding is inside the clip, so they keep it.
-     Where the baseline falls differs by platform: 0.1 em was enough on
-     Linux and 1.6 px short on Windows, hence the extra. */
+  /* Descenders (old-style dice digits, Arapey's g, p, y) reach about 0.2 em below
+     the baseline; this padding is inside the clip, so they are not cut off. More
+     than 0.1 em because Windows puts the baseline about 1.6 px lower than Linux. */
   padding-bottom: 0.16em;
   max-width: 100%;
 }
-/* The detail line arrives with the first roll, so its room is kept from the
-   start; the seed line only when a seed is set. */
+/* Room for the detail line is kept from the start, so the first roll moves nothing. */
 .result-detail { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); min-height: 1.35em; }
 .result-meta { font-size: 14px; color: var(--ink-faint); }
 .result-panel.seeded .result-meta { min-height: 1.35em; }
 .result-value.is-max { color: var(--ok); }
 .result-value.is-min { color: var(--error); }
 
-/* Make a choice: the offered outcomes as cards under the answer's slot. Every
-   card is the same height — two lines, clipped — and the row holds invisible
-   stand-ins from the moment the randomizer opens, so neither the cards
-   arriving nor a longer label moves anything. */
+/* Offer cards: equal height; invisible stand-ins hold the row until they arrive. */
 .offer-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
@@ -294,11 +274,8 @@ button.offer-card:not([aria-disabled="true"]):hover { border-color: var(--accent
 .cell .offer-card { font-size: 13px; }
 .cell .offer-cards { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
 
-/* The quick wheel: a box of lines on the home screen, behind its own button
-   in the preset row so the play card stays where a phone's thumb expects it. */
 .quick-wheel[hidden] { display: none; }
-/* The interface's own type rather than the mono of other text boxes: these
-   are the options as the table will read them. 16px, or iOS zooms on focus. */
+/* 16px, or iOS zooms on focus. */
 .quick-options { width: 100%; min-height: 6.5em; box-sizing: border-box; font-family: inherit; font-size: 16px; }
 .quick-wheel-foot { margin-top: 6px; }
 input.quick-offer, input.offer-input { width: 56px; }
@@ -307,8 +284,7 @@ input.quick-offer, input.offer-input { width: 56px; }
 
 .quickbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
 .quickbar button { min-width: 54px; font-variant-numeric: tabular-nums; }
-/* The same row, holding the way home instead of the presets, so opening a
-   randomizer from the library does not shift everything below it. */
+/* The home bar reuses the preset row, so opening a randomizer shifts nothing. */
 .home-bar .home-button { min-width: 0; }
 
 /* ---- wheel ---------------------------------------------------------------- */
@@ -316,13 +292,9 @@ input.quick-offer, input.offer-input { width: 56px; }
 .wheel-wrap { position: relative; display: grid; place-items: center; padding: 8px 0 4px; }
 .wheel-holder { width: 100%; max-width: min(72vw, 380px); }
 .wheel-small .wheel-holder { max-width: 200px; }
-/* The rotation is written as rotate(angle cx cy) on the group, which carries
-   its own origin — a CSS transform-origin here would be applied on top of it
-   and slide the wheel out of its own circle. */
+/* No transform-origin: the group's rotate(angle cx cy) already carries one. */
 .wheel-svg { display: block; width: 100%; height: auto; }
-/* The hub is the wheel's Roll button; the slices are not (a double-tap on
-   one edits its weight), so only the hub looks pressable. `manipulation`
-   stops a double-tap from zooming the page on a touch screen. */
+/* Only the hub rolls; `manipulation` stops a double-tap on a slice zooming the page. */
 .wheel-svg { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 .wheel-hub.rolls { cursor: pointer; }
 .wheel-hub.rolls:hover circle { fill: var(--accent-soft); }
@@ -367,8 +339,7 @@ input.quick-offer, input.offer-input { width: 56px; }
 
 /* ---- dice and coin -------------------------------------------------------- */
 
-/* A list shown as a list: every outcome is a button that picks it. It scrolls
-   inside itself, so a long table keeps its Roll on the screen. */
+/* Outcome list: scrolls inside itself, so a long list keeps Roll on screen. */
 .outcome-list {
   position: relative;
   list-style: none;
@@ -427,8 +398,7 @@ input.quick-offer, input.offer-input { width: 56px; }
   100% { transform: translateY(0) rotate(360deg); }
 }
 
-/* The wireframe dice: a canvas per die, the value revealed on it and under it
-   once it lands. Only transform and opacity are animated. */
+/* Wireframe dice: one canvas per die; only transform and opacity animate. */
 .die-slot { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .die-stage { position: relative; width: 92px; height: 92px; display: grid; place-items: center; }
 .die-canvas { display: block; }
@@ -459,7 +429,6 @@ input.quick-offer, input.offer-input { width: 56px; }
 .die-slot.max .die-value { color: var(--ok); }
 .die-slot.min .die-value { color: var(--error); }
 
-/* The landing: a drop, a squash, one smaller hop, then rest. */
 .die.landing { animation: land var(--bounce, 440ms) cubic-bezier(0.28, 0.9, 0.35, 1) both; }
 .die-stage.landing { animation: land var(--bounce, 440ms) cubic-bezier(0.28, 0.9, 0.35, 1) both; }
 @keyframes land {
@@ -483,9 +452,7 @@ input.quick-offer, input.offer-input { width: 56px; }
   from { transform: rotateX(0); }
   to { transform: rotateX(calc(360deg * var(--coin-flips, 5))); }
 }
-/* The toss: a parabola sampled at eighths, so the wrapper follows the true
-   curve between linear keyframes; the coin shrinks towards the apex to read
-   as going away, and comes back to size as it lands. */
+/* The toss: a parabola sampled at eighths, so linear keyframes follow the curve. */
 .coin-flight.tossing { animation: toss var(--coin-duration, 1100ms) linear both; }
 @keyframes toss {
   0%    { transform: translate(calc(var(--travel, 0px) * -1), 0) scale(1); }
@@ -500,12 +467,9 @@ input.quick-offer, input.offer-input { width: 56px; }
 }
 .coin-flight.landing { animation: land var(--bounce, 440ms) cubic-bezier(0.28, 0.9, 0.35, 1) both; }
 
-/* The dice fly in from one point below the tray, scatter, and arrive at
-   their own slots. Ease-in-out: slow to leave the hand, slow to arrive. */
 .die-flight { will-change: transform; }
 .die-flight.flying { animation: throw var(--flight, 900ms) cubic-bezier(0.45, 0, 0.25, 1) both; }
-/* A later throw — dice an explosion or a reroll added — is not in the air
-   yet: it keeps its place in the row, unseen, until it is thrown. */
+/* Dice added later (explosions, rerolls) keep their place, unseen, until thrown. */
 .die-flight.waiting { visibility: hidden; }
 @keyframes throw {
   0%   { transform: translate(var(--sx, 0px), var(--sy, 0px)) scale(0.8); }
@@ -513,8 +477,7 @@ input.quick-offer, input.offer-input { width: 56px; }
   100% { transform: translate(0, 0) scale(1); }
 }
 
-/* The result is not shown until the animation lands, so the slot holds its
-   place with a muted note rather than the answer. */
+/* Until the landing the slot shows a muted placeholder, not the answer. */
 .result-panel.is-pending .result-value { color: var(--ink-faint); font-weight: 550; opacity: 0.8; }
 
 /* ---- library -------------------------------------------------------------- */
@@ -574,9 +537,7 @@ input.quick-offer, input.offer-input { width: 56px; }
 
 /* ---- outcome table -------------------------------------------------------- */
 
-/* Two columns joined the table (a picture, and where an outcome sends you),
-   so the minimum is wider than it was: below this the selects collapse to a
-   sliver you cannot read, and the wrapper scrolls instead. */
+/* Narrower than this and the selects become unreadable; the wrapper scrolls instead. */
 .outcomes { width: 100%; min-width: 900px; border-collapse: collapse; }
 .outcomes th {
   text-align: left; font-size: 13px; color: var(--ink-soft); font-weight: 600;
@@ -652,17 +613,13 @@ input.quick-offer, input.offer-input { width: 56px; }
 .swatch-grid button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 
 .editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--pad); align-items: start; }
-/* minmax(0, 1fr), not 1fr: the outcome table has a minimum width and scrolls
-   inside .table-scroll, but a plain 1fr track is at least as wide as its
-   content, so on a phone the whole card grew to the table's width instead. */
+/* minmax(0, 1fr), not 1fr: a 1fr track grows to the table's width instead of scrolling. */
 @media (max-width: 900px) { .editor-layout { grid-template-columns: minmax(0, 1fr); } }
 .table-scroll { max-height: 62vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
 
 /* ---- misc ----------------------------------------------------------------- */
 
-/* The settings and preview cards are made once and filled as there is
-   something to say; until then they are empty, and an empty card is a
-   rounded blank under the page. */
+/* Cards are filled later; an empty one would show as a blank rounded box. */
 .importer > .card:empty { display: none; }
 .report { font-family: var(--mono); font-size: 13px; line-height: 1.7; white-space: pre-wrap; margin: 0; }
 .report .ok { color: var(--ok); }
@@ -682,22 +639,16 @@ input.quick-offer, input.offer-input { width: 56px; }
 .history-list .what { flex: 1; min-width: 0; }
 .history-list .what .name { font-weight: 600; }
 .history-list .what .detail { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
-/* The dice behind an answer and the roll that led to it: under the headline,
-   quieter than it, one line each. */
 .history-list .what .roll-note { display: block; font-size: 13px; color: var(--ink-faint); }
 .history-list .what .roll-parts { font-family: var(--mono); }
 
-/* Full-screen result, for a link clicked from a slide or a projector.
-   The chrome is hidden here rather than with the hidden attribute, which the
-   class rules that set `display` would otherwise override. */
+/* Full screen: chrome is hidden here, as rules that set display beat [hidden]. */
 body.presenting .topbar,
 body.presenting .side,
 body.presenting .tabbar,
 body.presenting .quickbar,
 body.presenting .quick-wheel,
-/* Everything after the play card, not after the first card: on the home
-   screen the quick wheel's card comes first, and would take the play card
-   with it. */
+/* After the play card, not the first card: on home the quick wheel's card is first. */
 body.presenting .play > .play-card ~ .card,
 body.presenting .present-button,
 body.presenting .popout-button,
@@ -724,13 +675,9 @@ body.presenting .play > .card {
   gap: 10px;
   padding: clamp(12px, 3vw, 40px);
 }
-/* The stage gives way, not the result: the panel keeps the height it has
-   reserved for two lines of the largest type, and the wheel takes what is
-   left. Squeezing the panel instead let the answer overlap the wheel. */
+/* The stage shrinks, not the result panel, so the answer never overlaps the wheel. */
 body.presenting .stage { display: flex; justify-content: center; min-height: 0; flex: 1 1 auto; }
-/* Full screen the wheel is sized by the height it is given, not by the width
-   of the window: a width-driven square overflowed the space left above the
-   result and drew over it. */
+/* Full screen the wheel follows the height it is given, not the window width. */
 body.presenting .wheel-wrap { display: flex; align-items: stretch; justify-content: center; min-height: 0; padding: 0; }
 body.presenting .wheel-holder {
   /* Stretched to the height the stage was given — a definite size, unlike a
@@ -746,13 +693,10 @@ body.presenting .wheel-svg { height: 100%; width: 100%; }
 body.presenting .result-panel { min-height: 0; padding: 4px; flex: none; }
 body.presenting .result-slot { font-size: clamp(40px, 11vw, 150px); }
 body.presenting .result-slot.small { font-size: clamp(30px, 7vw, 96px); }
-/* Two reserved lines at the full-screen size would take a third of a laptop
-   screen, so it steps down: still the largest thing on the wall, with the
-   wheel above it left room to be seen. */
+/* Two lines at full-screen size would fill a third of a laptop screen: step down. */
 body.presenting .result-panel.two-lines .result-slot { font-size: min(clamp(36px, 8vw, 112px), 17vh); }
 body.presenting .result-panel.two-lines .result-slot.small { font-size: min(clamp(28px, 6vw, 84px), 15vh); }
 body.presenting .result-detail { font-size: clamp(13px, 1.5vw, 20px); }
-/* Cards read from across the room, like the answer they stand in for. */
 body.presenting .offer-card { font-size: clamp(15px, 1.8vw, 24px); }
 body.presenting .roll-button { min-height: 60px; font-size: 20px; flex: none; }
 body.presenting .leave-presenting {
@@ -783,8 +727,7 @@ body.presenting .leave-presenting:focus-visible { opacity: 1; }
 .scheme-custom:disabled .scheme-swatch { background: none; border: 1px dashed var(--border-strong); }
 .theme-warning { margin-top: 8px; }
 
-/* The theme card. Each preview box carries the derived tokens as inline
-   custom properties, so everything inside it is painted as the app would be. */
+/* Each preview box carries the derived tokens as inline custom properties. */
 .theme-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 10px 0; }
 .theme-wheel-fields { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 .colour-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -835,12 +778,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
 
-/* ---- Orangey the mascot ---------------------------------------------------
- * One SVG carries every pose; data-pose on the svg picks the arms, mouth and
- * left eye. Colours are the brand's, fixed: he is the same fruit in every
- * scheme. The wobble, hops and eye movement are written by mascot/view.ts;
- * only the blink is CSS.
- */
+/* ---- Orangey the mascot --------------------------------------------------- */
 .mascot { display: block; width: 100%; height: 100%; }
 .mascot-svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .mascot-svg .l { fill: none; stroke: #253122; stroke-width: 1.35; stroke-linecap: round; stroke-miterlimit: 10; }
@@ -869,7 +807,6 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .mascot-rules { display: grid; gap: 6px; }
 .row.wrap { flex-wrap: wrap; }
 
-/* The one Orangey the app shows, in whichever slot is on screen. */
 .result-panel { position: relative; }
 .mascot-slot { position: absolute; left: 6px; bottom: 0; width: 88px; height: 88px; pointer-events: none; }
 .mascot-slot-inline { position: static; width: 72px; height: 72px; }
@@ -878,19 +815,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 body.presenting .mascot-slot { left: auto; right: 24px; bottom: 24px; width: 120px; height: 120px; }
 @media (prefers-reduced-motion: reduce) { .mascot-host { transition: none; } }
 
-/* ---- A roll struck through ------------------------------------------------
- * The roll happened, so the row keeps its place and its time; the line says
- * the table agreed not to count it, which is what a pencil through it on
- * paper says. Both the History screen and the Recent rolls panel draw it.
- */
+/* ---- a roll struck through ------------------------------------------------ */
 .history-list li.struck .when,
 .history-list li.struck .what { text-decoration: line-through; }
 .history-list li.struck .name,
 .history-list li.struck .detail { color: var(--ink-faint); }
 
-/* ---- pictures on outcomes -------------------------------------------------
-   The wheel carries a thumbnail; the answer carries the picture itself, sized
-   so that it never pushes the name or the Roll button off a laptop screen. */
+/* ---- pictures on outcomes ------------------------------------------------- */
 
 .result-picture {
   display: block; margin: 0 auto 6px; max-width: 100%; max-height: 18vh;
@@ -902,15 +833,11 @@ body.presenting .result-picture { max-height: 40vh; }
 .picture-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--border); }
 .picture-col { white-space: nowrap; }
 .goes-to-cell { white-space: nowrap; }
-/* The description is the column that gives way when the window is narrow, but
-   it must not give way to nothing. */
+/* The description column gives way first, but never to nothing. */
 .outcomes .desc-cell input { min-width: 130px; }
 .outcomes th, .outcomes .goes-to-cell, .outcomes .picture-col { white-space: nowrap; }
 
-/* ---- boards ----------------------------------------------------------------
-   Several randomizers on one screen. The grid is sized by the cells rather
-   than by a column count, so a board of two is not stretched across a desktop
-   and a board of nine still fits a laptop. */
+/* ---- boards --------------------------------------------------------------- */
 
 .board-grid {
   display: grid; gap: var(--gap);
@@ -919,9 +846,7 @@ body.presenting .result-picture { max-height: 40vh; }
 }
 .board-grid.board-empty { display: none; }
 .cell-holder { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg-raised); }
-/* Every cell in a row is as tall as the tallest, and its Roll sits at the
-   bottom, so the buttons line up across the board whatever each cell shows —
-   a percentage line, a dice breakdown, or nothing yet. */
+/* Equal-height cells with Roll at the bottom, so buttons line up across a row. */
 .board-grid > .cell-holder, .board-grid > .chain-link.board-chain { display: flex; flex-direction: column; }
 .board-grid > .cell-holder > .cell, .board-grid > .chain-link.board-chain > .cell { flex: 1 0 auto; }
 .board-grid .cell-roll, .board-grid .chain-roll { margin-top: auto; }
@@ -930,27 +855,20 @@ body.presenting .result-picture { max-height: 40vh; }
 .cell-stage { display: grid; place-items: center; min-height: 120px; }
 .cell-stage > .outcome-list { width: 100%; align-self: stretch; max-height: 240px; }
 .cell-remove { position: absolute; top: 6px; right: 6px; padding: 2px 8px; line-height: 1; }
-/* Taking a randomizer off the board is an edit; in play mode there is no ✕ to
-   hit by accident. A chain's ✕ only closes what a roll opened, so it stays. */
+/* A cell's ✕ shows only while editing; a chain's ✕ always stays. */
 .board:not(.board-editing) .cell-holder > .cell-remove { display: none; }
 .board-editing .cell-holder { cursor: grab; }
 .cell-missing { color: var(--ink-soft); }
 .cell-roll { width: 100%; margin-top: 8px; }
 .board-grid > .cell-holder > .cell, .board-grid > .chain-link.board-chain > .cell { margin-bottom: 8px; }
-/* Opened by an outcome's link, not part of the board: dashed, so it reads as
-   something that will go away rather than something that was put there. */
 .board-grid > .chain-link.board-chain { position: relative; margin: 0; padding: 10px; box-shadow: none; border-style: dashed; }
-/* A cell's answer is read from across a table, but there are several of them:
-   between the play screen's huge type and the size of the cell it sits in. */
 .cell .result-slot { font-size: clamp(20px, 3.4vw, 34px); min-height: 0; }
 .cell .result-slot.small { font-size: clamp(16px, 2.6vw, 26px); }
 .cell .result-detail { font-size: 12px; }
 .cell .result-panel { padding: 0; }
 body.presenting .cell .result-slot { font-size: clamp(24px, 4vw, 54px); }
 
-/* ---- choosing a randomizer ------------------------------------------------
-   The library, in a dialog: a tree while you browse, a flat list of matches
-   while you type. */
+/* ---- choosing a randomizer ------------------------------------------------ */
 
 .picker-dialog { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--gap); width: min(520px, 92vw); }
 .picker-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
@@ -972,18 +890,14 @@ body.presenting .cell .result-slot { font-size: clamp(24px, 4vw, 54px); }
 .picker-list { list-style: none; margin: 0 0 var(--gap); padding: 0; display: grid; gap: 4px; max-height: 50vh; overflow-y: auto; }
 .picker-choice { width: 100%; text-align: left; }
 
-/* Full screen: the grid takes the height it is given, and the cells shrink to
-   fit rather than pushing the button off the bottom. */
+/* Full screen: cells shrink to fit rather than pushing Roll off the bottom. */
 body.presenting .board .home-bar,
 body.presenting .board .cell-remove { display: none; }
-/* On a projector the table sees the cells, not the box that makes them. */
 body.presenting .board-quickbar,
 body.presenting .temp-head .temp-save,
 body.presenting .temp-editor { display: none; }
 
-/* Temporary cells: a quick wheel or a dice expression beside the board's own,
-   for tonight. Dashed, so it reads as not part of the board, and with a ✕ that
-   is always there — closing one does not change the board. */
+/* Temporary cells, beside the board's own; closing one does not change the board. */
 .board-quickbar { margin: 4px 0 10px; }
 input.board-dice { width: 140px; }
 .cell-temp { border-style: dashed; border-color: var(--border-strong); }
@@ -996,10 +910,7 @@ input.board-dice { width: 140px; }
 .temp-editor summary { cursor: pointer; }
 .temp-editor .quick-options { min-height: 4.5em; margin: 4px 0; }
 .temp-empty { text-align: center; margin: 24px 0; }
-/* Full screen a board fills the window, as the play card does. The page is a
-   flex row there, and a board that was not told to grow shrank to its
-   content: a third of a desktop screen, one cell wide. The card loses its
-   frame, and Recent rolls stay behind on the ordinary screen. */
+/* Full screen the page is a flex row: without flex: 1 a board shrinks to its content. */
 body.presenting .board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 body.presenting .board-card {
   flex: 1;
@@ -1015,14 +926,9 @@ body.presenting .board-card {
 body.presenting .board > .board-card ~ .card { display: none; }
 body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 
-/* ---- an outcome that opens another randomizer ------------------------------
-   The randomizer that opened sits beside the one that sent you there, so the
-   table can see both at once. Anything earlier in the chain is an icon in the
-   strip above, with the answer it gave.
-
-   The chain's elements are siblings of the play card rather than a box around
-   it, because the full-screen rules above are written against `.play > .card`.
-   The two columns are a grid that exists only while something is open. */
+/* ---- an outcome that opens another randomizer -----------------------------
+   The chain's elements are siblings of the play card, not a box around it,
+   because the full-screen rules above target `.play > .card`. */
 
 .play.has-chain {
   display: grid;
@@ -1053,8 +959,7 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .chain-note { margin: 0 0 var(--gap); }
 
 .chain-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--gap); }
-/* With nothing in it the strip's margin still showed, as a band across the
-   top of the full-screen view. */
+/* An empty strip would still show its margin as a band. */
 .chain-strip:empty { display: none; }
 .chain-icon { display: flex; align-items: baseline; gap: 8px; max-width: 240px; }
 .chain-icon-name { font-weight: 600; }
@@ -1066,14 +971,9 @@ body.presenting .board-grid { flex: 1; min-height: 0; overflow: auto; }
 .home-screen-notice { margin: 8px var(--gap) 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); }
 .home-screen-notice p { margin: 0 0 8px; }
 
-/* ---- type ------------------------------------------------------------------
-   Arapey is the page's font (--font on body), Young Serif the numbers on
-   dice, and the system font only the labels on wheel slices, which are
-   small, dense and on strong colour. Arapey has no bold. Headings, names and
-   answers are large enough to carry themselves, so nothing is faked there; the
-   small interface weights — a primary button, the selected row, a field label
-   — keep their browser-thickened bold, which at those sizes reads as
-   emphasis rather than as a heavier face. */
+/* ---- type -----------------------------------------------------------------
+   Arapey has no bold, so large text turns off the browser's faked bold; small
+   interface text keeps it, where it reads as emphasis. */
 h1, h2, h3, .brand, .board-name, .cell-name,
 .result-panel:not(.is-dice) .result-value {
   font-synthesis: none;
@@ -1084,11 +984,7 @@ h1, h2, h3, .brand, .board-name, .cell-name,
 }
 .wheel-label { font-family: var(--font-ui); }
 
-/* ---- the pop-out window (popout.ts) --------------------------------------
-   A second window, always on top, holding cells: the whole of it is for
-   rolling, and a cell is its own Roll button. It is sized by the person
-   dragging its edges, so everything here follows the window rather than a
-   layout. */
+/* ---- the pop-out window (popout.ts) --------------------------------------- */
 
 body.popout {
   height: auto;
@@ -1112,21 +1008,15 @@ body.popout {
 /* Inside a slot a chain's own frame would be a box in a box. */
 .popout-slot .chain-link { border: 0; box-shadow: none; padding: 0; margin: 0; background: none; }
 .popout-back { align-self: flex-start; padding: 2px 8px; margin-bottom: 4px; }
-/* Where the answer leads: easy to see, since pressing it is the next move. */
 .popout-slot button.popout-next { display: block; margin: 6px auto 2px; border: 1px solid var(--accent); color: var(--ink); }
 .popout-note:empty { display: none; }
 /* The rules above set display, which would otherwise override hidden. */
 .popout-slot button[hidden] { display: none; }
-/* The cell is the button: it says so to the pointer and to the keyboard. */
 .cell.click-to-roll { cursor: pointer; border-radius: var(--radius-sm); }
 .cell.click-to-roll:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .popout-roll-all { width: 100%; min-height: 48px; flex: none; }
 
-/* One randomizer: the window is the stage. Each box down to the stage takes
-   the height left over, and the wheel is sized from the stage. The stage
-   used to centre the wheel in a box shrunk to its content, which fell back to
-   a drawing's default 300 pixels: it could get smaller with the window but
-   never bigger. */
+/* One randomizer: each box down to the stage takes the leftover height. */
 body.popout-single { height: 100vh; min-height: 0; }
 .popout-single .popout-grid,
 .popout-single .popout-slot,
@@ -1139,9 +1029,7 @@ body.popout-single { height: 100vh; min-height: 0; }
   display: flex;
   flex-direction: column;
 }
-/* The stage is a size container: the wheel is as large as the smaller of
-   its width and its height, so it neither spills sideways nor pushes the
-   answer off the bottom. */
+/* A size container: the wheel fits the smaller of its width and height. */
 .popout-single .cell-stage { flex: 1 1 0; min-height: 0; min-width: 0; container-type: size; display: grid; place-items: center; }
 .popout-single .wheel-wrap { padding: 0; }
 .popout-single .wheel-holder { width: min(100cqw, 100cqh); max-width: none; }
@@ -1150,9 +1038,7 @@ body.popout-single { height: 100vh; min-height: 0; }
 .popout-single .cell .result-slot { font-size: clamp(22px, min(10vw, 8vh), 80px); }
 /* The window's title names it; a randomizer a chain swapped in names itself. */
 .popout-single .popout-root .cell-name { display: none; }
-/* Flat dice and the coin grow with the stage too — `cq` units are the
-   stage's, as for the wheel. Wireframe dice keep their size: their canvas is
-   drawn at one size when they are made. */
+/* Flat dice and the coin scale with the stage; wireframe canvases have a fixed size. */
 .popout-single .dice-tray { --die: clamp(46px, min(24cqw, 36cqh), 140px); gap: calc(var(--die) * 0.22); }
 .popout-single .die {
   width: var(--die);
@@ -1160,8 +1046,7 @@ body.popout-single { height: 100vh; min-height: 0; }
   border-radius: calc(var(--die) * 0.2);
   font-size: calc(var(--die) * 0.4);
 }
-/* The coin rises by up to 0.6 of its size when tossed; the wrap keeps that
-   room above it, so coin and room together stay inside the stage. */
+/* Room above the coin for its toss (up to 0.6 of its size), inside the stage. */
 .popout-single .coin-wrap { --coin: clamp(96px, min(50cqw, 45cqh), 280px); padding-top: calc(var(--coin) * 0.6); }
 .popout-single .coin {
   width: var(--coin);

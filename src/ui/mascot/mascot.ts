@@ -1,9 +1,7 @@
 /**
  * One Orangey: a model, a view, and a place on the shared ticker.
- *
- * `createMascot` is the only thing the rest of the app needs. The host
- * (host.ts) owns the single instance the app shows; the settings panel may
- * make throwaway ones for its previews.
+ * `createMascot` is the only entry point; host.ts owns the instance the app
+ * shows, and the settings panel makes throwaway ones for previews.
  */
 
 import "./states.ts";
@@ -16,7 +14,7 @@ export interface Mascot {
   readonly el: HTMLElement;
   readonly model: MascotModel;
   setState(name: string): void;
-  /** 0 none, 1 soft, 1.8 the owner's default. */
+  /** 0 none, 1 soft, 1.8 the default. */
   setWobble(gain: number): void;
   /** full runs the springs; quick runs them faster; instant draws one still pose. */
   setMotion(level: MotionLevel): void;

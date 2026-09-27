@@ -1,11 +1,7 @@
 /**
- * Full screen: one randomizer, or one board, filling the display.
- *
- * The play screen and a board both offer it and both used to carry their own
- * copy, which had already drifted — one of them swallowed the browser's
- * refusal silently and the other explained it in a comment. The class on
- * `body` is the single source of truth, so a view that is torn down while
- * presenting leaves nothing behind for the next one to trip over.
+ * Full screen: one randomizer, or one board, filling the display. The class on
+ * `body` is the single source of truth, so a view torn down while presenting
+ * leaves nothing behind.
  */
 
 export interface PresentingControls {
@@ -16,12 +12,8 @@ export interface PresentingControls {
 }
 
 /**
- * The lock that keeps the display on while a wheel is on a projector.
- *
- * A table can go several minutes between rolls, which is long enough for a
- * laptop to dim and a phone to lock. The browser may refuse — it needs a
- * gesture, or the API may not exist at all — and that is fine: the worst case
- * is the screen behaving exactly as it did before.
+ * Keeps the display awake while presenting, where the browser allows; a refusal
+ * is harmless.
  */
 let wakeLock: WakeLockSentinel | null = null;
 
@@ -29,8 +21,8 @@ async function holdScreenAwake(): Promise<void> {
   if (wakeLock) return;
   try {
     wakeLock = (await navigator.wakeLock?.request("screen")) ?? null;
-    // The browser drops it whenever the tab is hidden, so it has to be asked
-    // for again when the tab comes back and the wheel is still up there.
+    // The browser releases the lock whenever the tab is hidden, so ask again when
+    // it comes back.
     wakeLock?.addEventListener("release", () => {
       wakeLock = null;
     });

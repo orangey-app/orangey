@@ -1,11 +1,7 @@
 /**
- * One colour, chosen two ways: the browser's colour picker, and its hex typed
- * beside it.
- *
- * A colour input is awkward on a phone and cannot be pasted into, so the hex
- * field has to work on its own; the two stay in step. Used by the theme card
- * in Settings and by a wheel's own palette in the editor, so the two look and
- * behave the same.
+ * One colour, chosen with the browser's colour picker or typed as hex beside
+ * it. A colour input is awkward on a phone and cannot be pasted into, so the hex
+ * field works on its own; the two stay in step.
  */
 
 import { hexToRgb, isHex, rgbToHex } from "../../core/color.ts";

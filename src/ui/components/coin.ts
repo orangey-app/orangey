@@ -1,12 +1,6 @@
 /**
- * The coin.
- *
- * It lived in `dice.ts` because both are "things that land on a number", but
- * it shares no code with the dice: the coin is a CSS animation on two
- * elements, and the dice are a canvas and a solid. Its own file says so.
- *
- * The toss is only transforms, so it runs on the compositor and a phone can
- * do it without dropping the rest of the page.
+ * The coin: a CSS animation on two elements. The toss is only transforms, so it
+ * runs on the compositor and a phone can do it without stalling the page.
  */
 
 import { h, windowOf } from "../dom.ts";
@@ -36,9 +30,8 @@ export function createCoin(): CoinView {
         return Promise.resolve();
       }
 
-      // The toss: the coin rises along a parabola, shrinking as it goes away,
-      // spinning about its own axis the whole time, and comes back down to
-      // where it started. Only transforms are animated.
+      // The toss: up along a parabola, shrinking as it rises and spinning all the
+      // way, then back down where it started.
       disc.textContent = "";
       disc.className = "coin";
       flight.className = "coin-flight";
@@ -53,7 +46,8 @@ export function createCoin(): CoinView {
       disc.classList.add("flipping");
       flight.classList.add("tossing");
 
-      // A pop-out's coin lands on the pop-out's clock (see windowOf).
+      // The coin lands on its own window's clock, so it works in any window
+      // (see windowOf).
       const clock = windowOf(el);
       return new Promise<void>((resolve) => {
         const land = () => {

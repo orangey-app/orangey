@@ -1,11 +1,7 @@
 /**
- * Hash routing.
- *
- * Hashes rather than paths so that the single-file build works when opened
- * straight from disk, where there is no server to rewrite URLs. Everything
- * after the hash also stays on the device: browsers never send a fragment to
- * the server, so a link that carries settings — or, later, a whole wheel —
- * tells the host nothing.
+ * Hash routing. Hashes rather than paths so the single-file build works from
+ * disk; a fragment is also never sent to the server, so links that carry a
+ * wheel tell the host nothing.
  */
 
 export type Route =
@@ -13,18 +9,12 @@ export type Route =
   | { name: "randomizer"; path: string; params: LinkParams }
   | { name: "byId"; id: string; params: LinkParams }
   /**
-   * A randomizer carried inside the link itself; `payload` is the `w` value.
-   * `quick` marks a quick wheel's own address: the play screen with the text
-   * back in its box, rather than a wheel someone sent. On the route, not in
-   * `LinkParams`, because it means nothing anywhere else.
+   * A randomizer carried inside the link (`payload` is the `w` value). `quick`
+   * marks a quick wheel's own address: the play screen with the text back in its
+   * box.
    */
   | { name: "linked"; payload: string; params: LinkParams; quick?: true }
-  /**
-   * `from` is the address of the screen that opened this editor, when that
-   * matters for getting back: a randomizer made from a board's picker or from
-   * a wheel's "where does this send you?" would otherwise strand you on its
-   * own play screen.
-   */
+  /** `from` is the address of the screen that opened this editor, for Back. */
   | { name: "edit"; path: string; from?: string; params: LinkParams }
   | { name: "library"; params: LinkParams }
   | { name: "import"; params: LinkParams }
@@ -51,9 +41,8 @@ function readParams(query: string): LinkParams {
 }
 
 /**
- * `decodeURIComponent` throws on a malformed escape ("%", "%zz"), and a throw
- * from the router leaves the app with nothing rendered at all. A bad address
- * is a bad address: treat it as one rather than as a fatal error.
+ * `decodeURIComponent` throws on a malformed escape; a bad address must not stop
+ * the app rendering.
  */
 function decodeArg(raw: string): string | null {
   try {
@@ -105,11 +94,8 @@ export function parseRoute(hash: string): Route {
 }
 
 /**
- * The address of an editor, remembering where it was opened from.
- *
- * `from` is itself a whole address and may carry a `from` of its own, so a
- * board, then a wheel's editor, then a new randomizer's editor unwinds one
- * step per Back. It is encoded as a single value, which is why it can nest.
+ * The address of an editor. `from` is itself a whole address and may carry its
+ * own `from`, so Back unwinds one step at a time.
  */
 export function editHash(path: string, from?: string): string {
   const base = `#/edit/${encodeURIComponent(path)}`;
@@ -117,12 +103,9 @@ export function editHash(path: string, from?: string): string {
 }
 
 /**
- * Where an editor's `from` leads, if it is somewhere Back may go.
- *
- * Only a randomizer or another editor, and only one still in the library: the
- * address arrives in the URL, so it is rebuilt from the parsed route rather
- * than followed as written. That drops anything else it carries, such as a
- * `roll=1` that would roll the moment you arrived.
+ * Where an editor's `from` leads, if Back may go there: only a randomizer or
+ * another editor still in the library. The address is rebuilt from the parsed
+ * route, dropping anything else it carries (such as `roll=1`).
  */
 export function referrer(route: Route, exists: (path: string) => boolean): string | null {
   if (route.name !== "edit" || !route.from || !route.from.startsWith("#/")) return null;
@@ -133,11 +116,10 @@ export function referrer(route: Route, exists: (path: string) => boolean): strin
 }
 
 /**
- * Where Back goes: an editor returns to the screen that opened it when it
- * knows one, and otherwise to the randomizer it edits; anywhere else returns
- * to the one last played, if it is still in the library, and otherwise to the
- * plain play screen. A route, not browser history, so it never bounces
- * between two settings pages or out of the app.
+ * Where Back goes: an editor returns to the screen that opened it, else to the
+ * randomizer it edits; anywhere else goes to the last randomizer played, if it
+ * still exists, else the play screen. A route, not browser history, so it never
+ * bounces between settings pages or out of the app.
  */
 export function backTarget(route: Route, lastPath: string | null, exists: (path: string) => boolean): string {
   if (route.name === "edit") return referrer(route, exists) ?? `#/r/${encodeURIComponent(route.path)}`;
@@ -151,12 +133,8 @@ export interface SlideLinkOptions {
 }
 
 /**
- * A link to paste onto a slide.
- *
- * It addresses the randomizer by its id rather than by its path, because a
- * link on a slide outlives any tidying up of the library: renaming a wheel or
- * moving it to another folder changes its file name, and would otherwise
- * quietly break every deck that pointed at it.
+ * A link to paste onto a slide. It names the randomizer by id, not path, so
+ * renaming or moving it does not break decks that point at it.
  */
 export function slideLink(base: string, id: string, options: SlideLinkOptions = {}): string {
   const query: string[] = [];
@@ -167,8 +145,8 @@ export function slideLink(base: string, id: string, options: SlideLinkOptions = 
 }
 
 /**
- * A link with the wheel inside it. Longer than a library link and frozen at
- * today's version, but it works for anyone, anywhere — see model/link.ts.
+ * A link with the wheel inside it: longer and frozen at today's version, but it
+ * works anywhere (see model/link.ts).
  */
 export function wheelLink(base: string, payload: string, options: SlideLinkOptions = {}): string {
   const query = [`w=${payload}`];
@@ -188,10 +166,8 @@ export function appBase(): string {
 }
 
 /**
- * A link from a slide has to be an https one: browsers refuse to follow a
- * link from a web page to a local file, so a deck cannot open a downloaded
- * copy of Orangey. The dialog says so rather than handing over a link that
- * will silently do nothing.
+ * Slide links must be http(s): browsers will not follow a link from a web page
+ * to a local file.
  */
 export function isLinkableBase(base: string): boolean {
   return /^https?:\/\//i.test(base);

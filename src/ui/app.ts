@@ -32,8 +32,6 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 export function mountApp(root: HTMLElement): MascotHost {
-  // The one Orangey. It listens to the bus, plays the reactions table, and
-  // sits in whichever view offers a slot — only Play does.
   const mascot = new MascotHost({ bus: state.events, feel: () => state.prefs.feel });
   state.subscribe(() => mascot.applyFeel(), ["prefs"]);
 
@@ -46,10 +44,6 @@ export function mountApp(root: HTMLElement): MascotHost {
 
   const tabbar = h("div", { class: "tabbar", role: "tablist" });
 
-  // Back: to the randomizer you were playing. Every screen but Play shows
-  // it, because Settings, History and Import otherwise had no obvious way
-  // out. It is a route, not browser history, so it never bounces between
-  // two settings pages or out of the app.
   const back = button("← Back", () => navigate(backTarget(currentRoute(), state.prefs.lastPath, (p) => state.library.find(p)?.randomizer != null)), { class: "ghost back", title: "Back to play" });
 
   const topbar = h("div", { class: "topbar" },
@@ -64,10 +58,8 @@ export function mountApp(root: HTMLElement): MascotHost {
 
   root.append(topbar, h("div", { class: "panes" }, side, main), tabbar, toasts);
 
-  // On an iPhone or iPad in a browser tab, Safari will clear the library of a
-  // site left unopened for a week, and Add to Home Screen is what stops it.
-  // Said once, where it cannot be missed, and never again once dismissed —
-  // and never at all anywhere else. Settings keeps the same advice.
+  // Safari on iPhone and iPad clears the storage of a site left unopened for a
+  // week unless it is on the Home Screen. Said once, until dismissed.
   const advice = storageAdvice(storageEnv());
   if (advice.homeScreenNotice && !state.prefs.homeScreenNoticeSeen) {
     const notice = h("div", { class: "home-screen-notice", role: "note" },
@@ -101,8 +93,8 @@ export function mountApp(root: HTMLElement): MascotHost {
 
   function renderRoute(): void {
     const route: Route = currentRoute();
-    // Full screen is chrome, so the app owns it: clear it here, before the
-    // incoming view is built, and whatever that view asks for survives.
+    // Full screen belongs to the shell: clear it before the incoming view is built,
+    // so whatever that view asks for survives.
     document.body.classList.remove("presenting");
     ensureSide();
 
@@ -121,8 +113,6 @@ export function mountApp(root: HTMLElement): MascotHost {
         break;
       }
       case "byId": {
-        // Links on slides address a randomizer by id, so that renaming or
-        // moving it does not quietly break every deck that points at it.
         const node = state.library.findById(route.id);
         if (!node?.randomizer) {
           setMain(missingId(route.id));
@@ -134,9 +124,6 @@ export function mountApp(root: HTMLElement): MascotHost {
         break;
       }
       case "linked": {
-        // The wheel is in the address. Decoding is a decompression, so it is
-        // a promise; it takes about a millisecond, and the view swaps in when
-        // it lands — unless the reader has already gone somewhere else.
         const { payload } = route;
         const stillHere = () => {
           const now = currentRoute();
@@ -170,10 +157,8 @@ export function mountApp(root: HTMLElement): MascotHost {
         break;
       }
       case "library":
-        // On a wide screen the library is already in the sidebar, and a
-        // second copy in the main pane is two trees of the same files that
-        // both have to be kept in step. On a narrow one the sidebar is
-        // hidden, so the main pane is the only place it can be.
+        // On a wide screen the library is already in the sidebar; the main pane shows
+        // it only when the sidebar is hidden.
         setMain(sidebarVisible() ? libraryIsOnTheLeft() : createLibraryView());
         break;
       case "import":
@@ -193,9 +178,7 @@ export function mountApp(root: HTMLElement): MascotHost {
   /**
    * A card that explains why there is nothing to roll.
    *
-   * Three near-identical copies of this had already drifted apart — only two
-   * of them gave Orangey somewhere to stand. `play-card` and `broken-link`
-   * are what the browser tests select on, so they stay.
+   * The browser tests select on the `play-card` and `broken-link` classes.
    */
   function explainCard(opts: { title: string; paragraphs: string[]; extraClass?: string; mascot?: boolean }): View {
     return {
@@ -308,7 +291,6 @@ export function mountApp(root: HTMLElement): MascotHost {
   }
 
   function showShortcuts(): void {
-    // Where the keyboard came from, so it goes back there on close.
     const opener = document.activeElement as HTMLElement | null;
     const dialog = h("dialog", { "aria-label": "Keyboard shortcuts" },
       h("h2", { text: "Keyboard shortcuts" }),

@@ -1,24 +1,13 @@
 /**
- * Pop out: a randomizer or a board in a small window that stays on top of
- * other programs — for rolling while a game, a PDF or a character sheet has
- * the screen.
+ * The pop-out: a randomizer or a board in a Document Picture-in-Picture window
+ * that stays on top of other programs. This page's own code runs it, so it
+ * shares history, bags, theme and library with the tab, and everything it
+ * reaches must work in any window. One per tab; the button is not shown where
+ * the API is missing.
  *
- * It is the Document Picture-in-Picture API: a second window, always on top,
- * that this page's own code fills and runs. So the pop-out shares everything
- * with the tab that opened it — history, bags, the theme, the library — and
- * nothing has to be kept in step between two copies of the app. Desktop
- * Chrome, Edge and Firefox have it; Safari (and so the iPad) and phones do
- * not, and there the button is simply not shown. One window per tab: popping
- * out something else replaces it, and closing the tab closes it.
- *
- * What it shows is deliberately smaller than the screen it came from: the
- * cells a board is made of, and Roll all for a board — rolling, not editing.
- * A cell is its own Roll button (a click on it rolls), so the room a button
- * would take goes to the wheel, which grows with the window. An outcome that goes to another randomizer offers a
- * button to swap that cell over to it, with ← to come back: the main screen
- * opens it beside the first, and a small window has no beside. A button
- * rather than a swap at the landing, so the answer that sent you there can
- * be read first.
+ * It shows cells for rolling, not editing. An outcome that leads to another
+ * randomizer offers a button to swap the cell over to it (← comes back), so the
+ * answer can be read first.
  */
 
 import { isBoard, type Randomizer } from "../model/randomizer.ts";
@@ -38,19 +27,15 @@ function pipApi(): PipApi | null {
   return (window as unknown as { documentPictureInPicture?: PipApi }).documentPictureInPicture ?? null;
 }
 
-/** Whether this browser can pop anything out at all. */
 export function canPopOut(): boolean {
   return pipApi() !== null;
 }
 
-/** The window that is open now, and how to take its contents down. */
 let openPopout: { win: Window; destroy: () => void } | null = null;
 
 /**
- * The Pop out button for a screen, or null where it would not work — so a
- * browser without the API shows nothing rather than a button that fails.
- * `current` is asked at the press: the screen's randomizer may have been
- * edited since the button was made.
+ * The Pop out button, or null where the API is missing. `current` is read at the
+ * press, since the randomizer may have been edited in the meantime.
  */
 export function popOutButton(current: () => Randomizer): HTMLElement | null {
   if (!canPopOut()) return null;
@@ -67,9 +52,8 @@ export async function popOut(randomizer: Randomizer): Promise<void> {
   const across = board ? Math.min(3, Math.max(1, randomizer.entries.length)) : 1;
   let win: Window;
   try {
-    // First, before anything else is awaited: the browser only opens the
-    // window in answer to the press, and an await in between loses that.
-    // The size is a suggestion; the browser may keep its own.
+    // Before any other await: the browser opens the window only in direct answer
+    // to the press. The size is only a suggestion.
     win = await api.requestWindow(board ? { width: 40 + across * 280, height: 620 } : { width: 360, height: 560 });
   } catch (error) {
     state.toast(`Could not open a pop-out window: ${(error as Error).message}`);
@@ -81,9 +65,8 @@ export async function popOut(randomizer: Randomizer): Promise<void> {
   doc.title = `${randomizer.name} — Orangey`;
   copyStyles(doc);
   const syncTheme = () => {
-    // The theme is attributes and inline tokens on this page's root (see
-    // state.applyTheme); the pop-out's root gets the same, and again on every
-    // change, so switching scheme repaints both windows.
+    // Mirror the theme's root attributes and inline tokens (see state.applyTheme),
+    // now and on every change.
     const from = document.documentElement;
     const to = doc.documentElement;
     const scheme = from.getAttribute("data-scheme");
@@ -111,8 +94,7 @@ export async function popOut(randomizer: Randomizer): Promise<void> {
       return;
     }
     rollAllButton!.textContent = "Skip";
-    // Every question answered afresh: each cell goes back to its own
-    // randomizer first, as Roll all on the board closes what chains opened.
+    // Each cell goes back to its own randomizer first, as Roll all does on a board.
     for (const slot of slots) slot.reset();
     await Promise.all(slots.map((slot) => slot.roll()));
     rollAllButton!.textContent = "Roll all";
@@ -126,9 +108,8 @@ export async function popOut(randomizer: Randomizer): Promise<void> {
     rollAllButton,
   );
 
-  // The keys of the screen it came from, in the window they are pressed in:
-  // Space or Enter rolls (everything, on a board), Escape skips to the
-  // answer. A button that has the keyboard keeps its own Space and Enter.
+  // The play screen's keys: Space or Enter rolls (everything, on a board), Escape
+  // skips. A focused button keeps its own Space and Enter.
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       for (const slot of slots) slot.skip();
@@ -158,9 +139,8 @@ export async function popOut(randomizer: Randomizer): Promise<void> {
 }
 
 /**
- * This page's styles, into the pop-out, which starts with none. The built
- * app keeps them in one sheet (with its fonts inline), so a copy of the rules
- * is the whole look; a sheet that cannot be read is linked instead.
+ * Copy this page's styles into the pop-out, which starts with none. A sheet that
+ * cannot be read is linked instead.
  */
 function copyStyles(doc: Document): void {
   for (const sheet of [...document.styleSheets]) {
@@ -189,12 +169,9 @@ interface PopoutSlot {
 }
 
 /**
- * One cell of the pop-out, and the chain it can walk along in place.
- *
- * `links` is the chain as chain.ts keeps it (`advanceChain` decides what an
- * outcome adds, and stops one that would come back round); `at` is the link
- * on show. Going back keeps what is ahead, so → is still there for the
- * answer that is still on screen; rolling again replaces it.
+ * One cell of the pop-out, and the chain it can walk along in place. `links` is
+ * the chain as chain.ts keeps it and `at` the link on show; going back keeps
+ * what is ahead, rolling again replaces it.
  */
 function createPopoutSlot(root: Randomizer): PopoutSlot {
   let links: ChainLink[] = [{ id: root.id, name: root.name, from: "", found: true }];
@@ -259,7 +236,6 @@ function createPopoutSlot(root: Randomizer): PopoutSlot {
   function render(): void {
     const surface = surfaceFor(at);
     setChildren(body, surface.el);
-    // Where the answer leads sits with the answer, under it.
     surface.el.append(next, note);
     back.hidden = at === 0;
     back.textContent = at > 0 ? `← ${links[at - 1].name}` : "";

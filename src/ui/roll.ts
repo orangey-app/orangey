@@ -1,10 +1,7 @@
 /**
- * Rolling any randomizer, in one place.
- *
- * The result is produced here, complete, before any animation starts
- * (decision D7) — the animation is only a way of arriving at it. That is what
- * lets "skip" be safe and what keeps the announced result and the drawn result
- * from ever disagreeing.
+ * Rolling any randomizer, in one place. The result is decided before the
+ * animation, complete; the animation is only a way of arriving at it, which is
+ * what makes skipping safe.
  */
 
 import { flip } from "../core/coin.ts";
@@ -37,23 +34,18 @@ export interface Outcome {
   isMinimum?: boolean;
   /** The game master tagged this outcome for Orangey (wheels and coins). */
   reaction?: OutcomeReaction;
-  /** For a multiple draw: every outcome that came up, in list order positions. */
+  /** For a multiple draw: every outcome that came up, as positions in the list. */
   indices?: number[];
   /**
-   * Dice written into the outcome's text, as rolled: "2d4 [1, 2] = 3". Kept
-   * apart from `detail`, which also carries the description and the odds, so
-   * history can keep the dice behind "3 wolves" without the rest.
+   * Dice written into the outcome's text, as rolled: "2d4 [1, 2] = 3". Kept apart
+   * from `detail` so history can keep just the dice.
    */
   rolled?: string[];
-  /**
-   * The outcomes a choice was made from, when this one was picked from an
-   * offer: "chosen from A, B, C" is part of what happened, and history keeps
-   * it with the dice.
-   */
+  /** For a pick from an offer: the outcomes it was chosen from, kept in history. */
   offered?: string[];
   /**
-   * Chosen by the player from a list, not rolled. History says so, because
-   * an answer nobody rolled should never pass for a random one (P11).
+   * Chosen by the player, not rolled. History says so: a pick must never pass for
+   * a random answer.
    */
   picked?: true;
 }
@@ -61,8 +53,6 @@ export interface Outcome {
 export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
   switch (r.type) {
     case "board":
-      // A board has no outcome of its own: the board screen rolls what is on
-      // it, one randomizer at a time, and each records its own history row.
       throw new Error("a board is rolled one randomizer at a time");
     case "list":
       return rollList(r, rng);
@@ -111,16 +101,12 @@ export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
 const INLINE_DICE = /\{([^{}]{1,60})\}/g;
 
 /**
- * Roll the dice written into an outcome's text.
+ * Roll the dice written into an outcome's text: "{2d4} wolves" → "3 wolves".
+ * Only braces opt in, so prose like "2d6 × 10 gp" is untouched; anything in
+ * braces that does not parse is left as typed.
  *
- * "{2d4} wolves" should arrive at the table as "3 wolves". The braces are the
- * whole of the opt-in: without them, "a d20 system" and "2d6 × 10 gp" are
- * prose that happens to mention dice, and rolling those would be a surprise.
- * Anything inside braces that does not parse is left exactly as typed, so a
- * typo shows itself rather than vanishing.
- *
- * Drawn from the same source as the pick, and only ever after it (P12): a
- * seeded session replays if and only if the draws happen in the same order.
+ * Draws from the same source, only ever after the pick: changing that order
+ * breaks seeded rolls.
  */
 function expandInlineDice(text: string, rng: RandomSource, rolled: string[]): string {
   return text.replace(INLINE_DICE, (whole, expression: string) => {
@@ -137,18 +123,15 @@ function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
 }
 
 /**
- * One outcome of a list, as the table sees it, once the pick is made.
- *
- * Shared by a single roll and an offer, so a card in an offer says exactly
- * what the same outcome would have said had it been rolled on its own. The
- * pick is the caller's; the only draws here are the dice in the text.
+ * One outcome of a list once the pick is made, shared by a single roll and an
+ * offer so both say the same thing. The only draws here are the dice in the text.
  */
 function listOutcome(r: ListRandomizer, index: number, rng: RandomSource, picked = false): Outcome {
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
   const pct = `${percent.toFixed(percent < 10 ? 1 : 0)}%`;
-  // After the pick, never before it.
+  // After the pick, never before it (seeded rolls).
   const rolled: string[] = [];
   const label = expandInlineDice(item.label, rng, rolled);
   const description = item.description ? expandInlineDice(item.description, rng, rolled) : undefined;
@@ -168,15 +151,10 @@ function listOutcome(r: ListRandomizer, index: number, rng: RandomSource, picked
 }
 
 /**
- * Several outcomes from one list in one press.
- *
- * "Roll six wandering monsters" is one roll with six answers, not six rolls:
- * one history row, one landing, one line of text. There is no `itemIndex`,
- * so nothing chains, no picture shows and no tagged reaction fires — those
- * are all about a single winning outcome, and there is no single winner here.
- *
- * A bag draws without putting back and stops when the bag runs out; an
- * ordinary list can repeat itself, which is what "with replacement" means.
+ * Several outcomes from one list in one press: one roll with many answers, one
+ * history row. With no single winner there is no `itemIndex`, so nothing chains,
+ * no picture shows and no tagged reaction fires. A bag draws without putting
+ * back and stops when it runs out.
  */
 export function rollListMany(r: ListRandomizer, n: number, rng: RandomSource, drawn?: ReadonlySet<string>): Outcome {
   const bag = r.withoutReplacement === true;
@@ -203,27 +181,19 @@ export function rollListMany(r: ListRandomizer, n: number, rng: RandomSource, dr
 }
 
 /**
- * Make a choice: draw `m` different outcomes for the player to pick from.
- *
- * Weighted and without putting back, from what is in play — the caller hands
- * over the list with drawn (bag) outcomes already marked, exactly as it would
- * for a single roll, so indices stay those of the original list. Fewer come
- * back when fewer can come up. A path of its own (P12): no existing roll
- * draws any differently for it.
- *
- * All the picks happen first and the dice written into the offered texts
- * after them, in the order drawn, which is the order a single roll uses too.
- */
-/**
- * The outcome the player picked from a list shown as a list. The same shape
- * as a roll that landed there — picture, reaction, the randomizer it leads to
- * — with no draw behind the choice; dice written into the outcome's text
- * still roll, from `rng`, because they are part of what the outcome says.
+ * The outcome the player picked from a list shown as a list: the same shape as
+ * a roll that landed there, with no draw behind it. Dice in its text still roll
+ * from `rng`.
  */
 export function pickedOutcome(r: ListRandomizer, index: number, rng: RandomSource): Outcome {
   return { ...listOutcome(r, index, rng, true), picked: true };
 }
 
+/**
+ * Deal m different outcomes for the player to choose from, weighted and
+ * without putting back. A path of its own, so no existing roll draws any
+ * differently and seeded rolls still reproduce.
+ */
 export function offerFromList(r: ListRandomizer, m: number, rng: RandomSource): Outcome[] {
   const wanted = Math.max(1, Math.trunc(m));
   const indices = drawWithoutReplacement(r.items, Math.min(wanted, rollableIndices(r.items).length), rng);
@@ -258,23 +228,13 @@ export function whyCannotRoll(r: Randomizer, drawn?: ReadonlySet<string>): strin
   if (!r.items.some(isRollable)) {
     return "No outcomes can come up: they are all disabled or weigh nothing.";
   }
-  // An empty bag is its own answer: everything is still here, it has just
-  // all been drawn, and the way out is Refill rather than editing anything.
+  // An empty bag is its own answer: the way out is Refill, not editing.
   if (r.withoutReplacement && drawn && !withoutDrawn(r.items, drawn).some(isRollable)) {
     return "The bag is empty. Refill it to draw again.";
   }
   return null;
 }
 
-/**
- * The longest text this randomizer could ever put in the result panel.
- *
- * The panel reserves its height from this once, when the randomizer loads, so
- * that no roll ever changes the layout — we know every outcome in advance, so
- * there is no reason to discover the height one roll at a time. It is an upper
- * bound, not a prediction: dice report their widest total, a number draw its
- * widest row, a list its longest label.
- */
 /** A label with every rollable `{expr}` at its maximum. */
 function widestLabel(label: string): string {
   return label.replace(INLINE_DICE, (whole, expression: string) => {
@@ -290,9 +250,8 @@ export function longestOutcome(r: Randomizer): string {
   const longest = (texts: string[]) => texts.reduce((a, b) => (b.length > a.length ? b : a), "");
   switch (r.type) {
     case "list": {
-      // Disabled outcomes cannot come up, but enabling one must not resize
-      // the panel, so every label counts. Dice written into a label are
-      // measured at their largest, since that is the widest it can ever read.
+      // Every label counts, disabled ones too: the panel's height is reserved once
+      // from the longest text, so neither a roll nor enabling an outcome resizes it.
       return longest(r.items.map((i) => widestLabel(i.label)));
     }
     case "coin":
@@ -309,9 +268,7 @@ export function longestOutcome(r: Randomizer): string {
       try {
         const bounds = expressionBounds(r.expression);
         const widest = longest([String(bounds.min), String(bounds.max)]);
-        // An exploding roll has no ceiling, so `max` is a floor. One more
-        // character is not a guarantee, but it stops the common case — a
-        // single explosion — from resizing the panel.
+        // Exploding dice have no ceiling; one more digit covers a single explosion.
         return bounds.openEnded ? `${widest}0` : widest;
       } catch {
         return r.expression;

@@ -1,16 +1,12 @@
 /**
- * The "Your own theme" card in Settings.
+ * The "Your own theme" card in Settings: four colour choices, a live preview,
+ * and readability checks that list each failing pair and offer the closest
+ * readable version (same hues, nudged as little as will do).
  *
- * Four choices — background, text, accent, the wheel's colours — and a live
- * preview painted with everything derived from them. Readability is checked
- * as you pick: every pair that fails is listed with its numbers, and beside
- * your version the closest readable one appears, same hues, nudged as little
- * as will do. Either can be used; yours only with the warning left in view.
- *
- * It keeps its own draft and redraws only itself while you type — the rest of
- * Settings is rebuilt on other changes, which would take the focus from the
- * field under your fingers. Saving goes through `state.savePrefs`, and so
- * through `state.applyTheme()`, the one place theme colours are set.
+ * It keeps its own draft and redraws only itself while you type, because the
+ * rest of Settings is rebuilt on other changes and would take the focus. Saving
+ * goes through `state.savePrefs` and so `state.applyTheme()`, the one place
+ * theme colours are set.
  */
 
 import { deriveTheme, fixTheme, themeProblems, THEME_NAME_MAX, type CustomScheme, type ThemeProblem } from "../../core/theme.ts";
@@ -65,7 +61,7 @@ export function createThemeCard(onApplied: () => void): HTMLElement {
     wheel: [wheelField("Wheel 1", 0), wheelField("Wheel 2", 1), wheelField("Wheel 3", 2), wheelField("Spare", 3)],
   };
 
-  /** A preview box painted with a scheme: the tokens set on the box, so everything inside uses them. */
+  /** A preview painted with a scheme: its tokens are set on the box, for all inside. */
   function preview(caption: string, extraClass: string) {
     let shown = draft;
     const box = h("div", { class: `theme-preview ${extraClass}` });

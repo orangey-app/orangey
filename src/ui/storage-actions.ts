@@ -1,9 +1,6 @@
 /**
- * The things you can do to where the library is kept.
- *
- * Both the library's storage badge and the Storage card in Settings offer
- * these, so they live here rather than in either view. Nothing here draws
- * anything: each returns whether something changed, and the caller re-renders.
+ * Actions on where the library is kept, shared by the library's storage badge
+ * and Settings. Nothing here draws: each returns whether something changed.
  */
 
 import { serialize, slugify, wrap } from "../model/file.ts";
@@ -40,11 +37,8 @@ export function describeStorage(kind: string): string {
 }
 
 /**
- * Whether the browser has promised to keep this site's data.
- *
- * Without it a browser may evict the library when the disk gets tight. Asking
- * is a separate step (`askToPersist`) because Firefox prompts for it, and a
- * permission prompt nobody asked for is worse than the risk.
+ * Whether the browser has promised to keep this site's data. Asking is separate
+ * (`askToPersist`) because Firefox shows a prompt for it.
  */
 export async function isPersisted(): Promise<boolean | null> {
   try {
@@ -87,9 +81,8 @@ export async function useFolder(): Promise<boolean> {
         if (folder) await backend.mkdir(folder);
         await backend.write(file.path, serialize(wrap(file.randomizer)));
       }
-      // The pictures go too, or every wheel that has one arrives in the new
-      // folder pointing at nothing. They are not in the tree, so they are
-      // copied straight from one backend to the other.
+      // Pictures are not in the tree, so copy them backend to backend, or every wheel
+      // with one arrives pointing at nothing.
       const pictures = await previous.backend.list(IMAGE_DIR).catch(() => []);
       if (pictures.length) await backend.mkdir(IMAGE_DIR);
       for (const picture of pictures) {
@@ -113,11 +106,8 @@ export async function stopUsingFolder(): Promise<void> {
 }
 
 /**
- * A copy of a randomizer that carries its pictures inside it.
- *
- * A bare .orangey.json has nowhere to put a picture except in itself, so the
- * outcomes swap their `image` id for the picture inline. That is what makes a
- * single exported file work on a machine that has never seen this library.
+ * A copy of a randomizer with its pictures inline, so a single exported file
+ * works on a machine that has never seen this library.
  */
 export async function portableRandomizer(r: Randomizer): Promise<Randomizer> {
   if (r.type !== "list" || !r.items.some((i) => i.image)) return r;
@@ -125,16 +115,16 @@ export async function portableRandomizer(r: Randomizer): Promise<Randomizer> {
     if (!item.image) return item;
     const { image: _image, ...rest } = item;
     const inline = await imageDataUrl(item.image);
-    // A picture the store has lost takes the reference with it: an id that
-    // resolves to nothing here will resolve to nothing there either.
+    // A picture the store has lost drops the reference; it would resolve to
+    // nothing there either.
     return inline ? { ...rest, imageData: inline } : rest;
   }));
   return { ...r, items };
 }
 
 /**
- * And the way back in: the pictures a file brought with it go to the store,
- * and the outcomes go back to naming ids.
+ * The way back in: pictures a file brought go to the store, and outcomes go
+ * back to naming ids.
  */
 export async function absorbImages(r: Randomizer): Promise<Randomizer> {
   if (r.type !== "list" || !r.items.some((i) => i.imageData)) return r;
@@ -144,8 +134,7 @@ export async function absorbImages(r: Randomizer): Promise<Randomizer> {
     try {
       return { ...rest, image: await putImageData(imageData) };
     } catch {
-      // A picture that cannot be read loses the outcome nothing else: the
-      // wheel still rolls, with one segment short of a picture.
+      // An unreadable picture costs the outcome only its picture.
       return rest;
     }
   }));
@@ -163,19 +152,15 @@ export function usedImageIds(randomizers: Randomizer[]): Set<string> {
 }
 
 /**
- * The pictures for an archive, one entry each.
- *
- * An archive has room for files of its own, so it keeps them as pictures
- * rather than inlining them: the same picture on four wheels is packed once,
- * and anyone who opens the ZIP finds PNGs they can look at.
+ * The pictures for an archive, as files: packed once however many wheels use
+ * them, and viewable when the ZIP is opened.
  */
 async function pictureEntries(randomizers: Randomizer[]): Promise<ZipEntry[]> {
   const entries: ZipEntry[] = [];
   for (const id of usedImageIds(randomizers)) {
     const bytes = await imageBytes(id);
     if (!bytes) continue;
-    // Its real name, so what comes out of the archive is a file the person's
-    // computer will open rather than a JPEG called .png.
+    // Under its real extension, so the file opens rather than being a JPEG called .png.
     const name = (await imageStoredName(id)) ?? `${id}.png`;
     entries.push({ path: `${IMAGE_DIR}/${name}`, bytes });
   }
@@ -183,13 +168,8 @@ async function pictureEntries(randomizers: Randomizer[]): Promise<ZipEntry[]> {
 }
 
 /**
- * The files a board needs to work somewhere else: the board itself, and every
- * randomizer it points at.
- *
- * A board refers to randomizers by id rather than carrying copies, so it
- * travels as an archive: a link can hold one randomizer, not a table's worth.
- * A reference whose randomizer is gone is reported rather than packed, because
- * the person receiving it should know what is missing before they open it.
+ * The files a board needs elsewhere: itself and every randomizer it points at.
+ * A reference whose randomizer is gone is reported rather than packed.
  */
 export function boardBundle(
   library: LibraryService,
@@ -211,10 +191,8 @@ export function boardBundle(
 }
 
 /**
- * Boards in the library that point at something no longer there.
- *
- * Used after importing an archive: someone who is handed a board and opens it
- * should be told a piece is missing then, not when the board draws a gap.
+ * Boards in the library that point at something no longer there, reported
+ * after an archive import.
  */
 export function missingOnBoards(library: LibraryService): { name: string; missing: string[] }[] {
   return library
@@ -260,15 +238,10 @@ export async function exportLibraryZip(): Promise<void> {
 }
 
 /**
- * Chosen randomizers as one plain-text library file, for a forum post or a
- * friend (see `storage/libraryfile.ts`): the whole library, a folder, or a
- * selection. The name is asked each time — it names the file and travels
- * inside it — starting from `defaultName`.
- *
- * `base` comes off the front of the chosen paths (a folder's parent, so the
- * folder arrives as itself); `folders` are carried even when empty. What the
- * chosen ones link to comes along, and the toast says so, along with the
- * pictures that were left out.
+ * Chosen randomizers as one plain-text library file (see
+ * `storage/libraryfile.ts`), named each time starting from `defaultName`.
+ * `base` is stripped from the front of the chosen paths; `folders` are carried
+ * even when empty; linked randomizers come along.
  */
 export async function exportLibraryFile(opts: {
   paths: readonly string[];
@@ -287,8 +260,7 @@ export async function exportLibraryFile(opts: {
     state.toast("There is nothing there to export.");
     return;
   }
-  // Every folder on the way to a randomizer, and the empty ones asked for:
-  // the file says what the tree is rather than leaving it to be inferred.
+  // Every folder on the way to a randomizer, and the empty ones asked for.
   const folders = new Set(opts.folders ?? []);
   for (const entry of plan.entries) {
     const parts = segments(parent(entry.path));

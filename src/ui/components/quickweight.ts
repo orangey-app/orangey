@@ -1,13 +1,10 @@
 /**
- * Quick edit: a slice's weight, changed where the wheel is played.
+ * Quick edit: a double-tap on a slice opens a small box with that outcome's
+ * weight. Saving writes the randomizer's file as the editor would, so the change
+ * holds everywhere the wheel is used. Only library randomizers qualify: a wheel
+ * from a link, or a quick wheel, has no file.
  *
- * A double-tap on a slice opens a small box on the wheel with that outcome's
- * weight. Saving writes the randomizer's file, exactly as the editor would,
- * so the change holds everywhere the wheel is used — on its own screen, on
- * every board and in a pop-out. Only randomizers in the library can be
- * edited this way: a wheel from a link or typed as a quick wheel has no file.
- *
- * The box is made in the wheel's own document, so it works in a pop-out too.
+ * The box is made in the wheel's own document, so it works in any window.
  */
 
 import { touch, type ListRandomizer } from "../../model/randomizer.ts";
@@ -21,9 +18,9 @@ export function canQuickEdit(randomizerId: string): boolean {
 }
 
 /**
- * Save a new weight for one outcome, by its id. Returns the randomizer as
- * saved, or null when nothing was saved (gone from the library, or the weight
- * is not one the file can hold — the box refuses those before it gets here).
+ * Save a new weight for one outcome, by its id. Returns the randomizer as saved,
+ * or null when nothing was saved (gone from the library, or a weight the file
+ * cannot hold; the box refuses those first).
  */
 export async function saveOutcomeWeight(randomizerId: string, itemId: string, weight: number): Promise<ListRandomizer | null> {
   const node = state.library.findById(randomizerId);

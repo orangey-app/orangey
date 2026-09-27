@@ -1,13 +1,10 @@
 /**
- * How the app feels when it rolls (plan C10, decision D22).
+ * Animation timing and the Feel settings. Every animation duration belongs in
+ * feel.ts, so the settings panel can change all of them; `npm run check`
+ * enforces it.
  *
- * Every animation timing in Orangey comes from here. Nothing else may hold a
- * duration: that is what makes the settings panel able to change all of them,
- * and it is checked by `npm run check`.
- *
- * A randomizer may carry an override for its own type's section (a wheel for
- * the wheel settings, dice for the dice settings), saved in its file; the
- * effective settings for a roll are the global ones with that merged on top.
+ * A randomizer may override its own type's section in its file; a roll uses the
+ * global settings with that merged on top.
  */
 
 import type { CoinFeel, DiceFeel, FeelOverride, FeelSettings, MascotFeel, MotionLevel, SpinCurve, WheelFeel } from "../model/feel.ts";
@@ -20,12 +17,8 @@ export const DEFAULT_FEEL: FeelSettings = {
   dice: { style: "flat", tumbleMs: 900, bounces: 2, spread: 0.5 },
   coin: { flips: 5, durationMs: 1100, arc: 1.2 },
   haptics: false,
-  // Out of the box he speaks up only for the moments that carry something:
-  // an extreme, an outcome the game master tagged, a link that points nowhere,
-  // an import that worked. Watching every roll and reacting to every ordinary
-  // landing is available in Settings, off by default, because at the fortieth
-  // roll of the evening it is noise. A rule is stored only when it is off, so
-  // anyone who has already chosen keeps their choice.
+  // Reactions to every ordinary roll are off by default: by the fortieth roll of
+  // an evening they are noise. Rules are stored only when off.
   mascot: {
     presence: "triggers",
     wobble: 1.8,
@@ -37,9 +30,8 @@ export const DEFAULT_FEEL: FeelSettings = {
 export const MASCOT_WOBBLE_STOPS = [0, 1, 1.8] as const;
 
 /**
- * How long Orangey holds a reaction before fading back, by state. In "always"
- * presence he returns to idle; in "triggers" presence he fades out. A state
- * not listed here holds for the default.
+ * How long the mascot holds a reaction before fading back, by state; states not
+ * listed use `default`.
  */
 export const MASCOT_HOLD_MS: Record<string, number> = {
   reveal: 1600,
@@ -50,31 +42,26 @@ export const MASCOT_HOLD_MS: Record<string, number> = {
 /** A failed link is read slowly; give it a moment longer. */
 export const MASCOT_LINK_FAIL_HOLD_MS = 3200;
 /**
- * Below this gap between "roll started" and "roll landed" the anticipation
- * pose would flash for a frame nobody sees, so it is skipped. Instant mode
- * lands immediately, which is the case this exists for.
+ * Below this gap between roll start and landing the anticipation pose is
+ * skipped: it would only flash for a frame (instant mode, for one).
  */
 export const MASCOT_ANTICIPATE_MIN_MS = 120;
 
 /**
  * How long the cards of an offer take to turn face up, one after another.
- * Not a Feel setting — nothing about a choice is worth tuning — so it is a
- * constant, scaled by the motion level like everything else: instant shows
- * them at once. Kept short: the table is waiting to read them, not to watch.
+ * A constant rather than a Feel setting, but scaled by the motion level.
  */
 export const OFFER_FLIP_MS = 260;
 
 /**
- * How long typing in the quick wheel pauses before the address is rewritten.
- * The wheel itself follows every keystroke; only the link waits, because
- * compressing it on every letter is wasted work and the address bar flickers.
+ * Pause in quick-wheel typing before the address is rewritten; the wheel itself
+ * follows every keystroke.
  */
 export const QUICK_DEBOUNCE_MS = 300;
 
 /**
- * How close together two taps on the same slice must be to count as a
- * double-tap, which opens its weight for editing. Detected by hand rather than
- * from the browser's dblclick, which a touch screen spends on zooming.
+ * Two taps on a slice within this many ms are a double-tap (opens its weight).
+ * Detected by hand because touch screens spend dblclick on zooming.
  */
 export const DOUBLE_TAP_MS = 350;
 
@@ -99,7 +86,7 @@ const clamp = (v: unknown, [lo, hi]: readonly [number, number], fallback: number
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
 
-/** Older files and preferences stored the roll-back as a word. */
+/** Files and preferences may still store the roll-back as a word. */
 function settleFromLegacy(v: unknown): unknown {
   if (v === "none") return 0;
   if (v === "slight") return 4;
@@ -138,9 +125,8 @@ function normalizeCoin(raw: unknown, base: CoinFeel): CoinFeel {
 
 function normalizeMascot(raw: unknown, base: MascotFeel): MascotFeel {
   const m = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  // A rules object that is there is taken as it stands, empty included: that
-  // is someone who has switched everything on. Only a missing one falls back
-  // to what Orangey ships with.
+  // A rules object that is present is taken as it is, even empty (everything
+  // switched on); only a missing one falls back to the defaults.
   const rules: Record<string, boolean> = {};
   if (typeof m.rules === "object" && m.rules !== null) {
     for (const [id, on] of Object.entries(m.rules as Record<string, unknown>)) if (on === false) rules[id] = false;
@@ -156,8 +142,7 @@ function normalizeMascot(raw: unknown, base: MascotFeel): MascotFeel {
 
 /**
  * Load settings from storage. Everything is clamped, so a hand-edited or
- * corrupted preference cannot produce a forty-second spin that looks like the
- * app has hung.
+ * corrupted preference cannot produce, say, a forty-second spin.
  */
 export function normalizeFeel(raw: unknown): FeelSettings {
   const o = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
@@ -171,10 +156,10 @@ export function normalizeFeel(raw: unknown): FeelSettings {
   };
 }
 
-/** How long a reaction holds, scaled like every other duration by the motion level. */
+/** How long a reaction holds, scaled by the motion level. */
 export function mascotHoldMs(state: string, feel: FeelSettings, event?: string): number {
   const base = event === "link:fail" ? MASCOT_LINK_FAIL_HOLD_MS : (MASCOT_HOLD_MS[state] ?? MASCOT_HOLD_MS.default);
-  // instant mode still shows the reaction; it just does not animate it
+  // Not motionScale: instant mode still shows the reaction for its full hold.
   return base * (feel.motion === "quick" ? 0.4 : 1);
 }
 
@@ -238,33 +223,26 @@ export function coinDuration(feel: FeelSettings): number {
 }
 
 /**
- * Ease-out exponent for each curve; higher means a sharper wind-down.
- *
- * Snappy was 5, which wound down so hard that a six-turn spin had 3° of 2340°
- * left by 70 % of its duration: the last third was a wheel standing still.
+ * Ease-out exponent for each curve; higher means a sharper wind-down. Above 4 a
+ * long spin spends its last third barely moving.
  */
 export function curveExponent(curve: SpinCurve): number {
   return curve === "gentle" ? 2 : curve === "snappy" ? 4 : 3;
 }
 
 /**
- * How many wireframe dice are worth animating at once. Above this the tray
- * falls back to flat dice: forty spinning solids is a lot of work for a phone,
- * and forty tiny wireframes are unreadable anyway.
+ * Above this many dice the tray draws flat dice instead of wireframes: too much
+ * work for a phone, and too small to read.
  */
 export const WIREFRAME_DICE_LIMIT = 20;
 
 /**
- * Exploding dice and rerolls land in throws, one after another.
+ * Exploding dice and rerolls land in throws. The first throw tumbles for the
+ * dice duration; each later one starts as the previous lands and flies for
+ * `DICE_WAVE_GAP` of it. Throws past `DICE_WAVES_STAGED` land with the last one.
  *
- * The first throw tumbles for the whole dice duration. Each later throw is
- * thrown in as the one before it lands and flies for a share of that, so a
- * `3d6!` reads as a second handful rather than one handful that took longer.
- * Only the first few throws get a beat of their own: `50d6!` can explode for
- * a long time, and anything past the last staged throw lands with it.
- *
- * Not a Feel setting: dice Feel settings can travel inside a randomizer file,
- * and a new one there would be a change to the file format.
+ * Constants, not Feel settings: dice Feel settings travel in randomizer files,
+ * so a new one would change the file format.
  */
 export const DICE_WAVE_GAP = 0.4;
 export const DICE_WAVES_STAGED = 3;
@@ -301,41 +279,29 @@ export function overshootFraction(degrees: number, deltaDegrees: number): number
   return degrees / deltaDegrees;
 }
 
-/* ---- the spin curve -------------------------------------------------------
- * A wheel at rest has to be got moving, so the curve eases in as well as out.
- * The speed profile is a short sine ramp up followed by a power-law wind-down
- * whose exponent is the "curve" setting; integrating it gives the position,
- * normalised so the spin ends exactly on target. Both ends have zero speed.
- *
- * A roll-back is part of that profile, not something added after it. The
- * profile takes a single dip below zero near the end, so the wheel decelerates,
- * carries past where it is going to stop, turns once, and eases back. The dip's
- * size is solved for, so the wheel passes the target by exactly the roll-back
- * the settings ask for, whichever curve is in use.
- *
- * It used to be added on top of a finished curve, from a fixed three-quarters
- * of the way through. That addition starts moving at a speed of its own, so it
- * always stepped the wheel's speed up by about the same amount: invisible under
- * gentle, which is still turning at 7.3°/frame there, and a lurch under snappy,
- * which is down to 0.4°/frame with almost nothing left to travel.
- */
+// The spin curve. Speed is a short sine ramp up followed by a power-law
+// wind-down (exponent from `curveExponent`); its running sum, normalised, is the
+// position, so a spin ends exactly on target with zero speed at both ends.
+//
+// A roll-back is built into the speed profile: one dip below zero near the end,
+// sized so the wheel passes the target by exactly the roll-back, then turns and
+// eases back. Added on top of a finished curve instead, it makes the wheel lurch
+// forward under the snappy curve.
 const RAMP_IN = 0.15;
 const SAMPLES = 256;
 /** The turn begins where the plain curve still has this many roll-backs to travel. */
 const TURN_AT_ROLLBACKS = 4;
 /**
-  * The dip is the wind-down itself, scaled: speed = forward × (1 − depth × g),
-  * with g rising smoothly from 0 to 1 over the turn. Above depth 1 the speed
-  * crosses zero exactly once and stays below it, whatever the curve — a dip of
-  * its own shape can be outrun by a slow wind-down's tail, which put a second
-  * turn at the end of every gentle spin.
-  */
+ * Upper bound for the dip's depth. The dip is the wind-down scaled,
+ * speed = forward × (1 − depth × g) with g rising from 0 to 1 over the turn, so
+ * above depth 1 the speed crosses zero exactly once, on any curve.
+ */
 const MAX_TURN_DEPTH = 64;
-/** However large the roll-back, the wheel spends at least this much of the spin going forwards. */
+/** Bounds on where the turn may start, as a fraction of the spin. */
 const TURN_LIMITS: readonly [number, number] = [0.5, 0.92];
 
 const plainProfiles = new Map<SpinCurve, Float64Array>();
-/** Profiles with a roll-back are per spin, since the roll-back is drawn per spin. */
+/** Keyed by curve and roll-back, which is drawn per spin; hence the size limit. */
 const settleProfiles = new Map<string, Float64Array>();
 const SETTLE_CACHE_LIMIT = 32;
 
@@ -396,12 +362,9 @@ function turnStart(curve: SpinCurve, overshoot: number): number {
 }
 
 /**
- * A profile whose highest point is exactly `overshoot` past the target.
- *
- * The dip's depth is found by bisection. Deeper always means further past the
- * target — the journey is normalised by a total the dip is subtracted from —
- * so the search cannot land on a different solution, which is what ruled out
- * fitting a damped spring to the tail instead.
+ * A profile whose highest point is exactly `overshoot` past the target. The
+ * dip's depth is found by bisection: a deeper dip always carries further past
+ * the target, so the answer is unique.
  */
 function settleProfile(curve: SpinCurve, overshoot: number): Float64Array {
   const key = `${curve}:${overshoot.toFixed(6)}`;
@@ -454,12 +417,10 @@ export function spinPosition(t: number, curve: SpinCurve): number {
 }
 
 /**
- * Progress 0..1 -> eased 0..1.
- *
- * With a roll-back the wheel passes the target by `overshoot` (as a fraction of
- * the whole spin), turns once, and comes back to it. It still finishes exactly
- * on target: the result was decided before any of this started and cannot be
- * changed by how the wheel arrives.
+ * Progress 0..1 -> eased 0..1. With a roll-back the wheel passes the target by
+ * `overshoot` (a fraction of the whole spin), turns once and comes back; it
+ * always finishes exactly on target, because the result is decided before the
+ * animation.
  */
 export function easeSpin(t: number, feel: FeelSettings, overshoot = feel.wheel.settleDegrees / 360): number {
   if (t <= 0) return 0;

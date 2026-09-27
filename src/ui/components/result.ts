@@ -1,17 +1,12 @@
 /**
  * The result panel: the largest thing on the screen, and the only place a
- * result is ever announced.
+ * result is announced.
  *
- * Its height is reserved, not discovered. `reserve()` is called with the
- * longest outcome the current randomizer can produce, and from that the panel
- * fixes its type size and how many lines it keeps — so the card never grows
- * when a roll lands, and never grows again when a longer outcome comes up
- * later. An outcome that still does not fit is clipped with an ellipsis; the
- * spoken announcement is always the whole thing.
- *
- * The live region is updated when the animation ends (or immediately in
- * instant mode) so that a screen reader is never told the answer before the
- * table can see it.
+ * Its height is reserved, not discovered: `reserve()` takes the longest outcome
+ * the randomizer can produce and fixes the type size and line count, so the card
+ * never grows when a roll lands. An outcome that still does not fit is clipped;
+ * the spoken announcement is always whole, and is announced with the reveal,
+ * never before the table can see it.
  */
 
 import { h, setChildren } from "../dom.ts";
@@ -47,13 +42,13 @@ export interface OfferOptions {
   faceDown?: boolean;
   /** How long the cards take to turn over; 0 shows them at once. */
   flipMs: number;
-  /** Put the keyboard on the first card, when the press that rolled came from this panel's owner. */
+  /** Focus the first card, when the press that rolled came from this panel's owner. */
   focus?: boolean;
 }
 
 /** Beyond this many characters the result drops to the smaller type size. */
 export const RESULT_SMALL_AT = 18;
-/** Beyond this many characters a second line is kept, so wrapping cannot push. */
+/** Beyond this many characters a second line is reserved, so wrapping cannot grow it. */
 export const RESULT_TWO_LINES_AT = 12;
 
 export function resultLines(longest: string): 1 | 2 {
@@ -74,9 +69,9 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
   // picture, the name is what gets written down.
   const picture = h("img", { class: "result-picture", alt: "" });
   picture.hidden = true;
-  // The cards of an offer. The row is laid out from the moment a randomizer
-  // that offers is opened, with invisible stand-ins for every card, so the
-  // panel is already as tall as it will be when the cards arrive.
+  // The cards of an offer. Laid out with invisible stand-ins as soon as a
+  // randomizer that offers is opened, so the panel is already as tall as it will
+  // be when the cards arrive.
   const cards = h("div", { class: "offer-cards", role: "group", "aria-label": "Choose one" });
   cards.hidden = true;
   let slots = 0;
@@ -88,9 +83,9 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
   }
   const standIn = () => h("span", { class: "offer-card placeholder", "aria-hidden": "true" }, h("span", { class: "offer-text", text: "\u00a0" }));
 
-  // Arrow keys walk the row; the digits 1 to 9 pick. On the play screen the
-  // digits also work from anywhere, which the view handles; here they work
-  // wherever this panel is, a board cell included, once focus is on a card.
+  // Arrow keys walk the row; the digits 1 to 9 pick. Here they work once focus is
+  // on a card (a board cell included); the play screen also takes digits from
+  // anywhere.
   cards.addEventListener("keydown", (e) => {
     const all = [...cards.querySelectorAll<HTMLButtonElement>("button.offer-card")];
     const at = all.indexOf(el.ownerDocument.activeElement as HTMLButtonElement);
@@ -174,8 +169,8 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
       const lines = resultLines(longest);
       slot.classList.toggle("small", resultIsSmall(longest));
       el.style.setProperty("--result-lines", String(lines));
-      // Full screen uses this: two lines of the largest type is a lot of a
-      // short window, so the type there gives way rather than the wheel.
+      // Full screen uses this: two lines of the largest type take a lot of a short
+      // window, so the type gives way rather than the wheel.
       el.classList.toggle("two-lines", lines === 2);
       el.classList.toggle("seeded", seed);
     },
@@ -210,7 +205,7 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
         return card;
       });
       setChildren(cards, ...made, ...Array.from({ length: Math.max(0, slots - made.length) }, () => standIn()));
-      // Said once the cards can be read, like any answer (P15).
+      // Said once the cards can be read: announced with the reveal, like any answer.
       live.textContent = faceDown ? "" : `Choose one: ${texts.join(", ")}.`;
       if (focus && !faceDown) made[0]?.focus({ preventScroll: true });
     },

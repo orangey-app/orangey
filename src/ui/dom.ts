@@ -1,10 +1,7 @@
 /**
- * A very small DOM helper.
- *
- * Views build elements with `h`, keep references to the few nodes they update,
- * and update those in place. There is no virtual DOM and no re-render of whole
- * views: the outcome table has text fields in it, and nothing loses a user's
- * cursor faster than rebuilding the row they are typing in.
+ * A very small DOM helper. Views build elements with `h` and update the few
+ * nodes that change in place; there is no virtual DOM, so nothing rebuilds a row
+ * someone is typing in.
  */
 
 type Child = Node | string | number | null | undefined | false | Child[];
@@ -45,13 +42,7 @@ function append(el: Element, children: Child[]): void {
   }
 }
 
-/**
- * Append children to an element, skipping nulls.
- *
- * Native `append()` stringifies null into the text "null", which is exactly
- * what a conditional child produces when the condition is false. Use this
- * wherever the children are built conditionally.
- */
+/** Append children, skipping nulls (native `append()` writes them as "null"). */
 export function appendChildren(el: Element, ...children: Child[]): void {
   append(el, children);
 }
@@ -84,12 +75,7 @@ export function s(tag: string, props: Props | null = null, ...children: Child[])
   return el;
 }
 
-/**
- * Replace an element's children, skipping nulls.
- *
- * `Element.replaceChildren` stringifies null into the text "null", which is
- * exactly what a conditional child produces when the condition is false.
- */
+/** Replace an element's children, skipping nulls (see `appendChildren`). */
 export function setChildren(el: Element, ...children: Child[]): void {
   clear(el);
   append(el, children);
@@ -109,7 +95,6 @@ export function on<K extends keyof WindowEventMap>(
   return () => target.removeEventListener(type, handler as EventListener, options);
 }
 
-/** Icon-only buttons still need a name for screen readers and tooltips. */
 export function iconButton(label: string, glyph: string, onClick: () => void, extra: Props = {}): HTMLButtonElement {
   return h("button", {
     class: "icon-button",
@@ -142,12 +127,7 @@ export function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-/**
- * When a roll happened, for a list that may span days.
- *
- * "14:32" is enough for this evening's game and useless for a session three
- * weeks ago, so anything but today carries its date as well.
- */
+/** When a roll happened: the time for today, the date and time otherwise. */
 export function formatWhen(at: number): string {
   const when = new Date(at);
   const now = new Date();
@@ -157,25 +137,9 @@ export function formatWhen(at: number): string {
   return `${when.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${formatTime(at)}`;
 }
 
-/* ---- dialogs and menus ----------------------------------------------------
- * Replacements for prompt(), confirm() and ad-hoc dropdowns. They return
- * promises, close on Escape, and restore focus to the element that opened
- * them, which the browser's built-ins do not.
- */
-
 /**
- * Is the keystroke going into a field?
- *
- * A shortcut must not fire while somebody is typing a label: Space rolls,
- * but Space in a text field is a space.
- */
-/**
- * Hand the browser a file to save.
- *
- * In `dom.ts` rather than in the library view, which is where it grew: the
- * settings, the history and the archive exports all wanted it, and the
- * library view importing the archive code that imported it back was the one
- * circular import in the program.
+ * Hand the browser a file to save. Here rather than in a view because several
+ * views use it and the bundler forbids import cycles.
  */
 export function download(name: string, text: string, type: string): void {
   downloadBytes(name, new TextEncoder().encode(text), type);
@@ -193,12 +157,9 @@ export function downloadBytes(name: string, bytes: Uint8Array, type = "applicati
 }
 
 /**
- * The window a node is shown in: this page's, or a pop-out's (popout.ts).
- *
- * A pop-out is a second window run by this page's code. Its animations and
- * timers must run on its own clock: the main window may be minimised or
- * covered by a game, and a browser slows or stops the clocks of a window
- * nobody can see — a wheel spinning in the pop-out would stop with it.
+ * The window a node is shown in: this page's or the pop-out's. Run animations
+ * and timers on it rather than on `window` so they work in any window: a browser
+ * slows the clocks of a window nobody can see.
  */
 export function windowOf(node: Node): Window {
   return node.ownerDocument?.defaultView ?? window;
@@ -210,11 +171,8 @@ export function isTyping(e: Event): boolean {
 }
 
 /**
- * Show a modal, and give the keyboard back where it came from.
- *
- * Every dialog goes through this. A dialog that returns focus to nothing
- * leaves a keyboard user at the top of the document, which is how a
- * hand-built one differs from these without anyone noticing.
+ * Show a modal and give focus back to `opener` when it closes. Every dialog goes
+ * through this.
  */
 export function openDialog(dialog: HTMLDialogElement, opener?: HTMLElement | null): void {
   dialog.addEventListener("close", () => {

@@ -1,6 +1,6 @@
 /**
- * Draws a MascotFrame into the SVG. Nothing here decides anything; it writes
- * attributes. Ten-odd setAttribute calls per frame on one small SVG.
+ * Draws a MascotFrame into the SVG. It decides nothing: it writes about ten
+ * attributes per frame.
  */
 
 import { MASCOT_FEET_X, MASCOT_FEET_Y, type MascotFrame } from "./model.ts";

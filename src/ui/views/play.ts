@@ -1,10 +1,9 @@
 /**
- * The play surface: the screen a GM keeps open during a game.
+ * The play screen, which a GM keeps open during a game: one tap to roll, the
+ * result in the largest type on screen.
  *
- * One tap to roll, the result in the largest type on screen, and nothing that
- * can be pressed by accident. The quick presets belong to the plain play
- * screen; with a randomizer open from the library they are replaced by a way
- * home, so that a stray press cannot swap out what the table is rolling.
+ * With a randomizer open from the library, the quick presets are replaced by a
+ * way home, so a stray press cannot swap out what the table is rolling.
  */
 
 import { emptyRandomizer, newId, nowIso, OFFER_MAX, OFFER_MIN, type ListItem, type ListRandomizer, type Randomizer, type Rollable } from "../../model/randomizer.ts";
@@ -56,12 +55,8 @@ export function createPlayView(
   const rollButton = button("Roll", () => void doRoll(), { class: "primary roll-button", style: { width: "100%", minHeight: "52px", fontSize: "17px" } });
 
   /**
-   * Roll behind the screen.
-   *
-   * Not a preference: it is a thing you do for one roll or one scene, and a
-   * hidden roll that outlived the session it belonged to would be a nasty
-   * surprise. Play screen only — a board's cells all roll at once, so there
-   * is no "the" roll to hold back.
+   * Roll behind the screen. Deliberately not a saved preference: a hidden roll
+   * that outlived its scene would be a nasty surprise.
    */
   const hiddenBox = h("input", { type: "checkbox", class: "hidden-box", "aria-label": "Roll without showing the result" });
   hiddenBox.addEventListener("change", () => {
@@ -73,8 +68,7 @@ export function createPlayView(
   });
   const hiddenToggle = h("label", { class: "row tight hidden-toggle faint" }, hiddenBox, "Hidden");
 
-  // How many outcomes one press draws. Lists only: there is no sense in
-  // "six" of a coin flip that is already one of two things.
+  // How many outcomes one press draws; lists only.
   const countInput = h("input", {
     type: "number", min: "1", max: "20", value: "1", class: "roll-count", "aria-label": "How many to roll at once",
   });
@@ -90,8 +84,7 @@ export function createPlayView(
   }
 
   function updateHeaderControls(): void {
-    // A wheel that offers a choice is not also rolled six at a time: the two
-    // answer different questions, and together they answer neither.
+    // Offering a choice and rolling several at once do not combine.
     const many = randomizer.type === "list" && !offerSize(randomizer);
     countField.hidden = !many;
     if (!many) countInput.value = "1";
@@ -236,18 +229,13 @@ export function createPlayView(
   /** The chain beside the card, once it exists; the Recent panel asks it what is open. */
   let chainView: ChainView | null = null;
 
-  // ---- quick wheel ---------------------------------------------------------
-
   /**
-   * A wheel typed at the table: one option per line, rolled at once, kept
-   * only if saved.
+   * A wheel typed at the table: one option per line, rolled at once, kept only if
+   * saved.
    *
-   * It is a randomizer in the address like any wheel sent in a link, so a
-   * phone that locks between rolls comes back to it, and Link and Save work
-   * as they do for any other wheel. The address is rewritten in place, which
-   * does not fire `hashchange`, so the screen is not rebuilt under the typing.
-   * A preset or a dice expression replaces it outright: the text goes, and
-   * the address returns to the plain play screen.
+   * It lives in the address like any linked wheel, so a phone that locks between
+   * rolls comes back to it. The address is rewritten in place, which does not
+   * fire `hashchange`, so the screen is not rebuilt under the typing.
    */
   let quickModel: ListRandomizer | null = quick && linked?.type === "list" ? linked : null;
   let destroyed = false;
@@ -418,8 +406,6 @@ export function createPlayView(
   window.addEventListener("pagehide", keepAddress);
   document.addEventListener("visibilitychange", keepAddress);
 
-  // ---- quick bar -----------------------------------------------------------
-
   const expression = h("input", {
     type: "text",
     placeholder: "2d6 + 3",
@@ -473,9 +459,6 @@ export function createPlayView(
     expressionError,
   );
 
-  // With a randomizer open from the library the quick presets are replaced by
-  // a way back to them: pressing one used to swap out the randomizer the table
-  // was in the middle of, which is never what a press meant.
   const homeBar = h("div", { class: "quickbar home-bar" },
     button("← Home", () => navigate("#/"), { class: "ghost home-button", title: "Dice, coins and numbers" }),
   );
@@ -495,9 +478,8 @@ export function createPlayView(
     buildStage();
     updateBagLine();
     updateHeaderControls();
-    // The bag is read from the app database, so it arrives a moment later;
-    // until then the wheel simply shows everything, which is also what it
-    // shows for a randomizer that does not use a bag at all.
+    // The bag arrives from the app database a moment later; until then the wheel
+    // shows everything.
     if (next.type === "list" && next.withoutReplacement) {
       void bagLoad(next.id).then(() => {
         if (randomizer.id !== next.id) return;
@@ -523,9 +505,8 @@ export function createPlayView(
   const editLink = button("Edit", () => node && navigate(`#/edit/${encodeURIComponent(node.path)}`), { class: "ghost edit-link" });
   editLink.style.display = node ? "" : "none";
 
-  // A wheel that arrived in a link is nobody's until it is saved. The button
-  // is one more quiet item in this row rather than anything that interrupts a
-  // game: it is not offered at all in full screen, where the row is hidden.
+  // A wheel that arrived in a link is nobody's until it is saved. Not offered in
+  // full screen, where this row is hidden.
   const saveAdHoc = button(linked && !quick ? "Save to my library" : "Save to library", async () => {
     // Keep the identity it came with when nothing here already has it, so a
     // slide link by id finds this copy afterwards.
@@ -535,12 +516,9 @@ export function createPlayView(
     navigate(`#/r/${encodeURIComponent(path)}`);
   }, { class: "ghost save-randomizer" });
 
-  // The panel is about whatever is open, so its Clear takes only those rolls:
-  // the randomizer, and whatever its chain has opened beside it, because a
-  // roll made on this screen belongs in the panel on this screen. The quick
-  // screen has no one randomizer open — every preset press is a new ad-hoc
-  // one — so there it is about everything, which is also all the table can
-  // see from here.
+  // The Recent panel's Clear takes only the rolls of what is open: this randomizer
+  // and whatever its chain opened. The quick screen has no one randomizer (each
+  // preset press is a new ad-hoc one), so there it takes everything.
   const onScreen = (): { id: string; name: string }[] => {
     const all = [{ id: randomizer.id, name: randomizer.name }, ...(chainView?.present() ?? [])];
     return all.filter((r, i) => all.findIndex((o) => o.id === r.id) === i);
@@ -552,15 +530,9 @@ export function createPlayView(
 
   const header = h("div", { class: "row" }, h("div", {}, title, subtitle), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
 
-  // Orangey's place: the corner of the result panel, where he can react to
-  // the number without ever sitting on the Roll button.
+  // The mascot sits in a corner of the result panel, never over the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
-  /**
-   * How much is left in the bag, and the way to put it all back.
-   *
-   * Only shown for a list that draws without putting back; for anything else
-   * the row is hidden, so the card's height does not change under it.
-   */
+  /** How much is left in the bag, and Refill. Shown only for a list in bag mode. */
   const bagCount = h("span", { class: "faint bag-count" });
   const refillButton = button("Refill", () => {
     bagRefill(randomizer.id);
@@ -584,11 +556,8 @@ export function createPlayView(
   }
 
   /**
-   * A way back to what you actually roll, on the screen you land on.
-   *
-   * The home screen offers dice presets and nothing else, so the wheel a
-   * table has used all evening is three taps away behind the library. Only
-   * here: with a randomizer open, this is the wrong thing to be looking at.
+   * Shortcuts to what you actually roll, on the home screen: otherwise the wheel
+   * used all evening is three taps away behind the library.
    */
   const shortcuts = h("div", { class: "card home-shortcuts" });
 
@@ -640,11 +609,9 @@ export function createPlayView(
   /**
    * An outcome that points at another randomizer opens it beside this one.
    *
-   * The chain's elements are put in as siblings of the play card rather than
-   * as a box around it: the full-screen rules are written against
-   * `.play > .card`, and a wrapper would quietly take the projector with it.
-   * The two columns are a grid on `.play` that exists only while something is
-   * open, which is what the classes here say.
+   * The chain's elements are siblings of the play card, not a wrapper around it:
+   * the full-screen rules target `.play > .card`. The two-column grid on `.play`
+   * exists only while something is open.
    */
   const chain: ChainView = createChainRow({
     id: () => randomizer.id,
@@ -712,8 +679,6 @@ export function createPlayView(
     if (wheel && answerIndex !== null) void wheel.spinTo(answerIndex, { ...feelNow(), motion: "instant" });
     outcomeList?.refresh();
   }
-
-  /* ---- presenting, and links for slides -------------------------------- */
 
   const exitButton = button("Leave full screen", () => present(false), { class: "leave-presenting" });
   exitButton.hidden = true;
@@ -784,9 +749,8 @@ export function createPlayView(
       cancelAnimationFrame(wheelFrame);
       window.removeEventListener("pagehide", keepAddress);
       document.removeEventListener("visibilitychange", keepAddress);
-      // The full-screen class belongs to the app, which clears it before each
-      // render: a view being torn down must not undo what the view replacing
-      // it has already set up.
+      // No full-screen cleanup here: the app clears that class before each render,
+      // and doing it now could undo what the next view has set up.
       chain.destroy();
       unsubscribe();
     },

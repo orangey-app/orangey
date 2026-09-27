@@ -1,12 +1,8 @@
 /**
- * The five states Orangey ships with.
- *
- * Each is a pose plus what he does in it. None of them sets the squash
- * target: idle asks for a zero-mean breath, and every other pose is carried
- * by crouch and tilt, so the silhouette is always the owner's drawing.
- *
- * To add a state: register it here (or anywhere that runs before the mascot
- * mounts), then name it in a reaction. Nothing else needs to change.
+ * The five built-in states. None sets the squash target: idle asks for a
+ * zero-mean breath and every other pose is carried by crouch and tilt, so the
+ * silhouette always stays as drawn. To add a state, register it before the
+ * mascot mounts and name it in a reaction.
  */
 
 import { registerMascotState } from "./model.ts";

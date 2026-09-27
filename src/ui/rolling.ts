@@ -1,17 +1,10 @@
 /**
- * One roll, from the press to the landing.
+ * One roll, from the press to the landing, shared by the play screen, a board
+ * cell and the editor's preview. The order is the contract: the result is
+ * decided before the animation, nothing shows it until the landing, and it is
+ * announced with the reveal, together with the mascot's reaction.
  *
- * The play screen, a cell on a board and the editor's preview all roll the
- * same way, and used to say so in three places that had already begun to
- * drift apart. The order here is the contract (plan C10): the outcome is
- * decided first, nothing shows it until the animation has arrived, and the
- * answer, the announcement and the mascot's reaction all happen together at
- * the landing — never at the start.
- *
- * A caller supplies only what it has. The editor's preview has a wheel and
- * no dice tray, and rolls with `live: false`, so it neither writes history
- * nor tells the mascot: a person trying out a wheel they are building has
- * not rolled it.
+ * The editor's preview rolls with `live: false`: no history, no mascot.
  */
 
 import type { FeelSettings } from "./feel.ts";
@@ -41,10 +34,8 @@ export interface RollerOptions {
   onStart?: (willAnimate: boolean) => void;
   onEnd?: () => void;
   /**
-   * Told the outcome at the landing, with the answer on screen. A board uses
-   * it to follow an outcome's link from the cell that actually rolled — the
-   * same randomizer can be on a board twice, once as an entry and once opened
-   * by a chain, so "the last roll of this randomizer" cannot say which.
+   * Told the outcome at the landing. A board uses it to follow a link from the
+   * cell that actually rolled, since one randomizer can be in two cells.
    */
   onLanded?: (outcome: Outcome) => void;
   /** The roll whose outcome opened this randomizer, for its history row. */
@@ -52,11 +43,8 @@ export interface RollerOptions {
   /** Told after an outcome has been taken out of the bag, so a view can redraw. */
   onBagChange?: () => void;
   /**
-   * Roll behind the screen: decide the outcome, show nothing, and wait.
-   *
-   * A game master with the wheel on a projector needs to know what came up
-   * before the table does. The first press rolls and says only that it has;
-   * the second reveals, and only then does anything land or get recorded.
+   * Roll behind the screen: the first press decides the outcome and shows nothing;
+   * the second reveals it, and only then does it land and get recorded.
    */
   hidden?: () => boolean;
   /** How many outcomes one press draws. Lists only; 1 everywhere else. */
@@ -103,12 +91,11 @@ export function createRoller(opts: RollerOptions): Roller {
     | { outcome?: undefined; offer: Outcome[]; randomizer: ListRandomizer; bag: ReadonlySet<string> | null }
     | null = null;
   /**
-   * Cards on the table. The draw is done (P8: decided before anything moves);
-   * nothing lands, is announced as an answer, or is recorded until a pick.
+   * Cards on the table: drawn already, but nothing lands, is announced or is
+   * recorded until a pick.
    */
   let offered: { outcomes: Outcome[]; randomizer: ListRandomizer; bag: ReadonlySet<string> | null } | null = null;
 
-  /** How long the cards take to turn over for this roll's feel. */
   const flipMs = () => OFFER_FLIP_MS * motionScale(opts.feel().motion);
 
   function lay(outcomes: Outcome[], faceDown: boolean): void {
@@ -126,9 +113,7 @@ export function createRoller(opts: RollerOptions): Roller {
     const { outcomes, randomizer, bag } = offered;
     offered = null;
     opts.result.chose(at);
-    // Once, through the ordinary landing: the answer, the announcement, the
-    // mascot and the history row, as for any roll. The wheel stayed still
-    // while the cards were out and now simply shows the pick.
+    // One landing for the pick, like any roll: answer, announcement, mascot, history.
     await land(randomizer, chosenFromOffer(randomizer.name, outcomes, at), bag, false);
   }
 
@@ -180,9 +165,8 @@ export function createRoller(opts: RollerOptions): Roller {
       return;
     }
     const randomizer = opts.randomizer();
-    // Bag mode: the roll is made against what is still in the bag, and the
-    // list as a whole is left alone — `withoutDrawn` only marks, so every
-    // index, colour and chain target still points where it did.
+    // Bag mode rolls against what is left in the bag; `withoutDrawn` only marks
+    // items, so indices, colours and chain targets are unchanged.
     const bag = randomizer.type === "list" && randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
     const rollable = bag && randomizer.type === "list"
       ? { ...randomizer, items: withoutDrawn(randomizer.items, bag) }
@@ -195,8 +179,8 @@ export function createRoller(opts: RollerOptions): Roller {
       return;
     }
 
-    // Make a choice: several outcomes drawn at once, and the player picks.
-    // A wheel that offers is not spun and is not rolled several at a time.
+    // An offer: several outcomes drawn at once for the player to pick from. A wheel
+    // that offers is neither spun nor rolled several at a time.
     if (rollable.type === "list" && randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2) {
       let outcomes: Outcome[];
       try {
@@ -245,9 +229,8 @@ export function createRoller(opts: RollerOptions): Roller {
       return;
     }
 
-    // Hidden: it has been rolled, and that is all anybody may know yet.
-    // Nothing lands, nothing is recorded, the bag keeps its outcome, and
-    // navigating away without revealing throws the roll away.
+    // Hidden: rolled, but nothing lands, is recorded or leaves the bag until the
+    // reveal; leaving the screen throws it away.
     if (opts.hidden?.()) {
       held = { outcome, randomizer, bag };
       opts.result.pending("Rolled. Press Reveal.");
@@ -260,11 +243,9 @@ export function createRoller(opts: RollerOptions): Roller {
   }
 
   /**
-   * The landing, in the order the whole app depends on (P8): the answer, the
-   * announcement and the mascot's reaction together, once, at the end.
-   *
-   * `animated` is false for a reveal: the table has been waiting already, so
-   * the answer arrives at once rather than after another spin.
+   * The landing: the answer is shown and announced with the reveal, and the
+   * mascot reacts, together and once. `animated` is false for the reveal of a
+   * hidden roll, which shows the answer at once.
    */
   async function land(
     randomizer: Rollable,
@@ -294,8 +275,8 @@ export function createRoller(opts: RollerOptions): Roller {
     }
 
     if (willAnimate) opts.result.show(outcome);
-    // Out of the bag at the landing, never at the start: a skipped roll still
-    // lands, so it still takes, and a roll that never arrived never did.
+    // Out of the bag at the landing, not at the start: a skipped roll still lands
+    // and takes; a roll that never lands takes nothing.
     if (bag && randomizer.type === "list") {
       const taken = outcome.indices ?? (outcome.itemIndex !== undefined ? [outcome.itemIndex] : []);
       for (const at of taken) bagTake(randomizer.id, randomizer.items[at].id);

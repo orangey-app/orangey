@@ -1,10 +1,8 @@
 /**
- * The control that tags an outcome for Orangey.
- *
- * One small button that cycles none → cheer → wince → none, so a row in the
- * outcome table stays one click wide. The same control sits under each coin
- * face. The labels are what he does, matching the file format and the
- * Settings card; nothing here names a pose.
+ * The control that tags an outcome with a reaction for the mascot. One small
+ * button cycles none → cheer → wince → none, so an outcome row stays one click
+ * wide; the same control sits under each coin face. The labels are what he
+ * does, matching the file format; nothing here names a pose.
  */
 
 import { OUTCOME_REACTIONS, type OutcomeReaction } from "../../model/randomizer.ts";

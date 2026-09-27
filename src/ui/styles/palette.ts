@@ -1,11 +1,8 @@
 /**
- * The Orangey colour palette: the 157 distinct colours of the dictionary
- * (two of the 159 share a hex with another and are folded in), imported with
- * `scripts/import-palette.mjs` from the owner's data file. Names are the
- * dictionary's own.
- *
- * These are the colours offered for an outcome in the editor. The wheel's own
- * colours — red, yellow and blue in turn — are in core/palette-assign.ts.
+ * The colours offered for an outcome in the editor: 157 named colours from a
+ * colour-dictionary dataset (two of its 159 share a hex and are folded in),
+ * imported with `scripts/import-palette.mjs`. The wheel's own colours are in
+ * core/palette-assign.ts.
  */
 
 export interface PaletteColor {

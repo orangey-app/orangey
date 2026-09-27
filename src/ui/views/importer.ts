@@ -1,9 +1,6 @@
 /**
- * The import wizard (plan C7).
- *
- * Paste or drop, check what was detected, map the columns, read the report,
- * then land in the editor with the table ready to fix — importing is the start
- * of building a wheel, not the end of it (decision D21).
+ * The import wizard: paste or drop, check what was detected, map the columns,
+ * read the report, then land in the editor with the table ready to fix.
  */
 
 import { detect, guessColumns, guessHeader, type Detection } from "../../import/detect.ts";
@@ -25,10 +22,9 @@ import { navigate } from "../router.ts";
 import type { View } from "../view.ts";
 
 /**
- * What the file picker offers. Extensions for the browsers that filter by
- * them, and the matching types for the ones that do not: iOS maps `accept` to
- * its own type identifiers and, given extensions alone, greys out the
- * `.orangey.json` and `.zip` files a person is there to pick.
+ * What the file picker offers: extensions, plus matching types because iOS maps
+ * `accept` to its own type identifiers and, given extensions alone, greys out
+ * the `.orangey.json` and `.zip` files a person is there to pick.
  */
 export const IMPORT_ACCEPT = [
   ".csv", ".tsv", ".txt", ".json", ".zip",
@@ -46,9 +42,8 @@ export function createImportView(initialText = ""): View {
     "aria-label": "Data to import",
   });
   textarea.value = text;
-  // A pasted link is unmistakable, so it is read at once rather than waiting
-  // for "Read it" — nobody pastes a link expecting to press a button next.
-  // So is a library file's text, which is what a forum post holds.
+  // A pasted link or library file's text is unmistakable, so it is read at once
+  // rather than waiting for "Read it".
   textarea.addEventListener("paste", () => queueMicrotask(() => {
     if (LINK_PATTERN.test(textarea.value) || isLibraryText(textarea.value)) analyse();
   }));
@@ -229,11 +224,7 @@ export function createImportView(initialText = ""): View {
     );
   }
 
-  /**
-   * What a pasted link offers: roll it now without keeping it, or keep it. A
-   * link is how a table reaches you from someone else's deck, so both are
-   * reasonable and neither is assumed.
-   */
+  /** A pasted link offers both: roll it now without keeping it, or keep it. */
   function linkCard(): HTMLElement {
     if (linkProblem) {
       return h("div", { class: "link-import", role: "status" },
@@ -372,15 +363,16 @@ export function createImportView(initialText = ""): View {
     });
   }
 
-  /** Dropping a file anywhere on the page opens it here: outcomes, a
-   *  randomizer file, or a whole library ZIP — one door for all of them. */
+  /**
+   * Dropping a file anywhere on the page opens it here: outcomes, a randomizer
+   * file, or a whole library ZIP.
+   */
   async function handleFile(file: File, quiet = false): Promise<string | void> {
     if (file.name.toLowerCase().endsWith(".zip")) {
       try {
         const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
         const result = await state.library.importArchive(await absorbArchive(entries), askCollision);
-        // A board arriving without one of its randomizers is worth saying now,
-        // rather than leaving the person to find the gap on the board.
+        // Name any board that arrived without one of its randomizers.
         const gaps = missingOnBoards(state.library)
           .map((b) => `${b.name} is missing ${b.missing.join(", ")}`)
           .join("; ");
@@ -417,8 +409,7 @@ export function createImportView(initialText = ""): View {
         // A file dropped in twice, or one copied from another library, would
         // otherwise arrive sharing its id with a randomizer already here.
         const clash = state.library.findById(randomizer.id) !== null;
-        // Into the folder chosen on this page: the dropdown is there, and a
-        // file that always landed at the top level made it a lie.
+        // Into the folder chosen on this page.
         const path = await state.library.create(folderSelect.value, clash ? { ...randomizer, id: newId() } : randomizer);
         if (!quiet) state.toast(`Imported "${randomizer.name}"`);
         return path;
@@ -433,10 +424,9 @@ export function createImportView(initialText = ""): View {
   }
 
   /**
-   * Several files at once — a whole library's worth of `.orangey.json`
-   * picked in one go, which on an iPad is the only way to bring them over,
-   * since there is no drag and drop from another window there. One file
-   * opens as it always did; several are counted and the library is shown.
+   * Several files at once. On an iPad, picking many `.orangey.json` files is the
+   * only way to bring a library over, since there is no drag and drop from another
+   * window. One file opens as usual; several are counted and the library shown.
    */
   async function handleFiles(files: Iterable<File>): Promise<void> {
     const list = Array.from(files);
@@ -468,8 +458,6 @@ export function createImportView(initialText = ""): View {
     ),
   );
 
-  // Extensions and types both: iOS builds its file picker from the types it
-  // can map, and given only extensions it greys out the very files asked for.
   const fileInput = h("input", {
     type: "file",
     multiple: "",

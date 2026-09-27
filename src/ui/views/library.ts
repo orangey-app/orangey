@@ -1,18 +1,11 @@
 /**
  * The library: the folder tree, search, and everything you can do to a
- * randomizer that is not editing its contents.
+ * randomizer other than edit its contents.
  *
- * The tree is the library (decision D11) — there is no index file to fall out
- * of step with it — so every operation here is a plain file operation.
- *
- * Emphasis, top to bottom: the search box, the tree, and one primary action
- * (+ New). Storage, export and folder connection are secondary and live in
- * the header menu; import has a single entry point, the wizard.
- *
- * Ctrl-click (⌘ on a Mac) and Shift-click choose several randomizers, and a
- * folder's menu chooses everything in it, so a board can be given the lot in
- * one drag. A selection only adds to boards: moving and deleting stay one at
- * a time, where a slip costs one file, not twelve.
+ * The tree is the library (there is no index file to fall out of step with it),
+ * so every operation here is a plain file operation. A selection (Ctrl/⌘- or
+ * Shift-click, or a folder's menu) only adds to boards: moving and deleting stay
+ * one at a time, where a slip costs one file, not twelve.
  */
 
 import { serialize, slugify, wrap } from "../../model/file.ts";
@@ -38,8 +31,6 @@ export function createLibraryView(): View {
   let dragging: string | null = null;
   /** Whether the drag under way is a selection of several. */
   let draggingMany = false;
-
-  /* ---- selection -------------------------------------------------------- */
 
   /**
    * Rows chosen with Ctrl or Shift, by path. A Shift-click reaches back to
@@ -130,8 +121,6 @@ export function createLibraryView(): View {
     );
   }
 
-  /* ---- storage ---------------------------------------------------------- */
-
   const storageBadge = h("button", { class: "storage-badge", type: "button", "aria-label": "Where the library is stored" });
   function renderStorage(): void {
     const kind = state.library.backend.kind;
@@ -196,8 +185,6 @@ export function createLibraryView(): View {
   async function openFolder(): Promise<void> {
     if (await useFolder()) render();
   }
-
-  /* ---- tree ------------------------------------------------------------- */
 
   function render(): void {
     renderStorage();
@@ -331,7 +318,7 @@ export function createLibraryView(): View {
           selectRow(node, m);
           return;
         }
-        // A plain click opens, as it always has, and a selection is done with.
+        // A plain click opens, and ends any selection.
         if (selected.size) clearSelection();
         navigate(`#/r/${encodeURIComponent(node.path)}`);
       },
@@ -351,8 +338,8 @@ export function createLibraryView(): View {
     );
     draggable(row, node.path);
     const more = iconButton(`More for ${name}`, "⋯", () => openFileMenu(node, more));
-    // Right-click opens the same menu the ⋯ does, rather than a second one:
-    // it is where people reach for "copy the link to this".
+    // Right-click opens the same menu as the ⋯: it is where people reach for
+    // "copy the link to this".
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       openFileMenu(node, row);
@@ -453,10 +440,9 @@ export function createLibraryView(): View {
       { confirm: "Delete", danger: true, opener });
     if (!ok) return;
 
-    // A file is read before it goes, so Undo can put exactly it back — same
-    // path, same id, so every board entry and every "goes to" that pointed
-    // at it works again. Its pictures are safe meanwhile: they are swept up
-    // only when an editor closes, against the ids in use at that moment.
+    // Read before it goes, so Undo restores it exactly (same path, same id) and every
+    // board entry and "goes to" pointing at it works again. Its pictures are safe:
+    // they are pruned only when an editor closes.
     const backup = node.kind === "file" ? await state.library.backend.read(node.path).catch(() => null) : null;
     await state.library.remove(node.path);
     render();
@@ -481,9 +467,8 @@ export function createLibraryView(): View {
   }
 
   /**
-   * A create that fails used to fail in silence: the name dialog closed and
-   * nothing appeared, which on an iPad whose storage would not take a write
-   * looked like a button that did nothing. Now it says so, with the reason.
+   * Say why a create failed: otherwise the name dialog closes and nothing appears,
+   * which (on an iPad whose storage refuses writes, say) looks like a dead button.
    */
   function couldNotSave(error: unknown): null {
     state.toast(`Could not save to this browser's storage: ${(error as Error).message}`);
@@ -511,8 +496,6 @@ export function createLibraryView(): View {
     selectedFolder = path;
     render();
   }
-
-  /* ---- layout ----------------------------------------------------------- */
 
   const newButton = button("+ New", () =>
     openMenu(newButton, [

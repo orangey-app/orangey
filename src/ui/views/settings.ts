@@ -1,10 +1,8 @@
 /**
- * Settings, most of which is Feel (plan C10, decision D22).
+ * Settings, most of which is Feel.
  *
- * Every animation timing in the app is one of these values, so the sliders
- * genuinely change how rolling feels rather than nudging one hard-coded
- * constant. Each section previews itself: you cannot tune a spin you cannot
- * watch.
+ * Every animation timing in the app is one of these values, and each section
+ * previews itself: you cannot tune a spin you cannot watch.
  */
 
 import { DEFAULT_FEEL, MASCOT_WOBBLE_STOPS, normalizeFeel, prefersReducedMotion, type FeelSettings, type MascotPresence, type MotionLevel } from "../feel.ts";
@@ -193,8 +191,6 @@ export function createSettingsView(): View {
     );
   }
 
-  /* ---- a copy of the app --------------------------------------------------- */
-
   async function downloadCopy(): Promise<void> {
     try {
       const res = await fetch(SINGLE_FILE_NAME, { cache: "no-store" });
@@ -208,11 +204,9 @@ export function createSettingsView(): View {
     }
   }
 
-  /* ---- your own theme ------------------------------------------------------- */
-
   /**
-   * The sixth card: your own theme, painted from what is saved rather than
-   * from a class like the built-in ones. It can be chosen once there is one.
+   * The custom theme's card, painted from what is saved rather than from a class
+   * like the built-in ones. It can be chosen once there is one.
    */
   function customSchemeCard(): HTMLElement {
     const saved = normalizeCustomScheme(state.prefs.customScheme);
@@ -245,8 +239,6 @@ export function createSettingsView(): View {
     if (failing.length === 0) return null;
     return h("p", { class: "warning theme-warning", text: `Your theme is in use with ${failing.length === 1 ? "a problem" : `${failing.length} problems`}: ${failing.map(describeThemeProblem).join("; ")}.` });
   }
-
-  /* ---- my colours ----------------------------------------------------------- */
 
   function coloursCard(): HTMLElement {
     const colours = state.prefs.colours;
@@ -292,8 +284,6 @@ export function createSettingsView(): View {
     );
   }
 
-  /* ---- settings file --------------------------------------------------------- */
-
   function settingsFileCard(): HTMLElement {
     const fileInput = h("input", { type: "file", accept: ".json,application/json", hidden: "", "aria-label": "Settings file" });
     fileInput.addEventListener("change", async () => {
@@ -319,8 +309,6 @@ export function createSettingsView(): View {
       ),
     );
   }
-
-  /* ---- storage ----------------------------------------------------------- */
 
   function storageCard(): HTMLElement {
     const kind = state.library.backend.kind;
@@ -373,8 +361,6 @@ export function createSettingsView(): View {
       ),
     );
   }
-
-  /* ---- Orangey ---------------------------------------------------------- */
 
   function mascotCard(f: FeelSettings): HTMLElement {
     const m = f.mascot;

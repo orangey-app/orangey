@@ -1,10 +1,7 @@
 /**
- * The springs under Orangey, and the field that bends his outline.
- *
- * Pure numbers, no DOM: this is what the unit tests exercise. The one rule
- * that matters more than any other is in the model: every spring's target is
- * zero in every state, so the resting shape is the drawing and the wobble is
- * a departure from it that always comes back.
+ * The springs under Orangey, and the field that bends his outline. No DOM.
+ * Every body mode's target is zero in every state, so the resting shape is the
+ * drawing and the wobble always returns to it.
  */
 
 import { MASCOT_BASE_Y, MASCOT_CENTRE } from "./parts.ts";

@@ -1,22 +1,12 @@
 /**
- * A chain of randomizers: an outcome that sends you to another one.
+ * A chain of randomizers: an outcome with `goesTo` opens that randomizer beside
+ * the one that sent you there, and it waits to be rolled, as a table would pick
+ * up a second set of dice.
  *
- * An encounter table whose worst result says "roll on the treasure table" is
- * why this exists. The outcome carries `goesTo`, and when it comes up that
- * randomizer opens beside the wheel that sent you there — and waits. It does
- * not roll itself: the table decides when the second roll happens, the way it
- * would pick up a second set of dice.
- *
- * Only the two newest stay full size. A third opens and the first becomes an
- * icon in the strip above, carrying its name and the answer it gave, because
- * three wheels across a laptop are three wheels nobody can read. Clicking an
- * icon brings that one back.
- *
- * The rule is `advanceChain` and `chainPlacement`, which know nothing about
- * the DOM. What is full size, what is an icon, what a chain does when it
- * arrives somewhere it has already been, and what it does when the randomizer
- * an outcome points at has been deleted are all questions a test can ask
- * directly rather than by clicking.
+ * Only the newest two stay full size; earlier ones become icons in the strip
+ * above, with their name and answer, and clicking one brings it back. The rules
+ * are `advanceChain` and `chainPlacement`, which need no DOM, so tests can ask
+ * them directly.
  */
 
 import type { Randomizer } from "../../model/randomizer.ts";
@@ -42,7 +32,7 @@ export interface ChainLink {
   name: string;
   /** The outcome that opened it; empty at the root, which nothing opened. */
   from: string;
-  /** false when the library no longer has it: it opens all the same. */
+  /** False when the library no longer has it; it opens all the same. */
   found: boolean;
   /** The outcome that opened it was picked from a list rather than rolled. */
   picked?: true;
@@ -74,16 +64,15 @@ export function advanceChain(
   target: ChainTarget | null,
   look: (id: string) => { name: string } | null,
 ): ChainAdvance {
-  // Rolling a randomizer again answers its question again, so whatever its
-  // last answer had opened is no longer part of the chain. At the root that
-  // is all of it: a fresh spin of the wheel starts a fresh chain.
+  // Rolling a randomizer again answers its question again, so whatever its last
+  // answer opened leaves the chain. At the root that is all of it.
   const kept = links.slice(0, from + 1);
   if (!target) return { links: kept, note: null };
 
   const already = kept.find((link) => link.id === target.id);
   if (already) {
-    // Following it would put the same randomizer on screen twice and lead
-    // straight back here. Saying so is more use than a chain that circles.
+    // Following it would show the same randomizer twice and lead straight back
+    // here, so the chain stops and says why.
     return { links: kept, note: `${already.name} is already open here, so the chain stops rather than going round again.` };
   }
 
@@ -109,10 +98,9 @@ export function chainPlacement(count: number, focus: number): ChainSlot[] {
 }
 
 /**
- * What a link past the root looks like: the line saying what sent you here,
- * then its own cell and Roll button — or, when the library no longer has it,
- * a gap that still says where the outcome meant to send you. The play screen
- * and a board both draw links with this, so they look the same.
+ * A link past the root: the line saying what sent you here, then its own cell
+ * and Roll button, or, when the library no longer has it, a gap that still says
+ * where the outcome meant to send you. Used by the play screen and boards alike.
  */
 export function createChainSurface(
   link: ChainLink,
@@ -122,8 +110,8 @@ export function createChainSurface(
   const from = h("p", { class: "faint chain-from", text: `${sender} ${link.picked ? "picked" : "rolled"} ${link.from}` });
   const found = state.library.findById(link.id)?.randomizer ?? null;
   if (!found) {
-    // The same tone as a board's gap: the outcome still comes up and still
-    // says where it meant to send you.
+    // Like a board's gap: the outcome still comes up and still says where it meant
+    // to send you.
     return {
       cell: null,
       el: h("div", { class: "chain-link cell cell-missing" },
@@ -237,10 +225,9 @@ export function createChainRow(root: ChainRoot): ChainView {
   }
 
   /**
-   * A roll can be started by the play screen's button, by a chain link's own,
-   * by the space bar or by a click on the wheel itself, and every one of them
-   * ends in `state.record`. The chain watches for the roll that was recorded
-   * rather than wrapping the four ways of starting one.
+   * A roll can start from the play button, a link's own button, Space or a click
+   * on the wheel, and every one ends in `state.record`; the chain watches for
+   * recorded rolls rather than wrapping each way in.
    */
   let seen = state.lastOutcome;
   const unsubscribe = state.subscribe(() => {

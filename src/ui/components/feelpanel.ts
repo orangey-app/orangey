@@ -1,9 +1,7 @@
 /**
- * The controls for one section of the Feel settings — wheel, dice or coin.
- *
- * Used twice: in Settings for the global values, and in a randomizer's editor
- * for that randomizer's own override. Same sliders, same previews, so what
- * you learn in one place is true in the other.
+ * The controls for one section of the Feel settings: wheel, dice or coin. Used
+ * in Settings for the global values and in a randomizer's editor for its own
+ * override, so both look and behave the same.
  */
 
 import { DEFAULT_FEEL, LIMITS, type CoinFeel, type DiceFeel, type FeelSettings, type WheelFeel } from "../feel.ts";
@@ -36,7 +34,6 @@ export function choice<T extends string>(label: string, options: readonly T[], c
   );
 }
 
-/** A switch for a setting that is only ever on or off. */
 export function toggle(label: string, checked: boolean, onChange: (on: boolean) => void): HTMLElement {
   const input = h("input", { type: "checkbox", "aria-label": label });
   (input as HTMLInputElement).checked = checked;
@@ -52,9 +49,8 @@ export function wheelControls(values: WheelFeel, onChange: (patch: Partial<Wheel
   return h("div", { class: "feel-section" },
     slider("Spin length", values.durationMs, LIMITS.wheelDuration, 100, (v) => `${(v / 1000).toFixed(1)} s`, (v) => onChange({ durationMs: v })),
     slider("Turns", values.turns, LIMITS.turns, 1, (v) => `${v}`, (v) => onChange({ turns: v })),
-    // The wind-down used to be a three-way choice here. One wind-down is
-    // enough: the spin length is what people actually reach for. Files and
-    // links that carry a curve still load, it is simply not offered.
+    // One wind-down, not a choice of curves: the spin length is what people adjust.
+    // Files and links that carry a curve still load; it is simply not offered.
     toggle("Roll-back", values.settleDegrees > 0, (on) =>
       onChange({ settleDegrees: on ? DEFAULT_FEEL.wheel.settleDegrees : 0 })),
     h("p", { class: "faint", text: "With the roll-back on, each spin carries a little past its result and settles back onto it." }),

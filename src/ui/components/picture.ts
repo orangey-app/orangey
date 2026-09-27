@@ -1,10 +1,7 @@
 /**
- * The picture an outcome can carry.
- *
- * A game master shows the table what they have met: the wheel lands on
- * "Owlbear" and there is an owlbear. The bytes live in the image store beside
- * the library, not in the randomizer's file, so a wheel of a dozen portraits
- * is still a small readable JSON.
+ * The picture an outcome can carry. The bytes live in the image store beside the
+ * library, not in the randomizer's file, so a wheel of portraits stays a small
+ * readable JSON.
  */
 
 import { IMAGE_MAX_EDGE } from "../../model/randomizer.ts";
@@ -12,9 +9,8 @@ import { imageUrl, imageUrlSync, putImage } from "../../storage/images.ts";
 import { button, h } from "../dom.ts";
 
 /**
- * A picture chosen by a person, cut down to something a screen can use: a
- * 4000px photograph from a phone is four megabytes of library for pixels
- * nobody sees.
+ * Shrink a chosen picture to what a screen can use: a phone's 4000px photo is
+ * megabytes of pixels nobody sees.
  */
 export async function shrinkForWheel(file: File): Promise<Uint8Array> {
   const bitmap = await createImageBitmap(file);
@@ -33,10 +29,9 @@ export async function shrinkForWheel(file: File): Promise<Uint8Array> {
   }
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  // A photograph re-encoded as PNG is several times the size of the JPEG it
-  // came from, and the library carries every byte of it. WebP is a fraction
-  // of either. Anything that might have transparency stays PNG, where a
-  // lossy round trip would show.
+  // A photo re-encoded as PNG is several times its JPEG size; WebP is a fraction
+  // of either. Anything that might have transparency stays PNG, where a lossy
+  // round trip would show.
   const photo = file.type === "image/jpeg" || file.type === "image/webp";
   const type = photo ? "image/webp" : "image/png";
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85));
@@ -75,9 +70,8 @@ export function pictureCell(opts: PictureCellOptions): HTMLElement {
     }
     const url = imageUrlSync(id);
     if (!url) {
-      // Not read from the store yet: show the slot, then fill it in. A null
-      // answer means the picture is gone — say so and stop, because rendering
-      // again would ask again, and get the same answer, for ever.
+      // Not read from the store yet: show the slot, then fill it in. Null means the
+      // picture is gone: say so and stop, or rendering again would ask again forever.
       void imageUrl(id).then((found) => {
         if (found) render();
         else renderMissing();

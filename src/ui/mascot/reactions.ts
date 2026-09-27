@@ -1,14 +1,8 @@
 /**
- * What Orangey does about what happens — as a table.
- *
- * A reaction is: on this event, when this holds, play that state. The first
- * matching row wins. Every row has an id so the GM can switch it off in
- * Settings, and a salience so that a reaction only ever interrupts a held one
- * of lower salience — an Oops is never buried by a Reveal that lands a frame
- * later.
- *
- * Adding a trigger is adding a row. Nothing upstream names an animation;
- * nothing here names a randomizer.
+ * What Orangey does about what happens, as a table: on this event, when this
+ * holds, play that state. The first matching row that is switched on wins.
+ * Each row has an id so it can be switched off in Settings, and a salience so
+ * an Oops is never buried by a Reveal that lands a frame later.
  */
 
 import type { MascotEvent, MascotEventType } from "./events.ts";
@@ -21,7 +15,6 @@ export interface MascotReaction {
   then: string;
   /** Higher interrupts lower; equal restarts. */
   salience: number;
-  /** For the settings panel. */
   label: string;
 }
 
@@ -59,9 +52,8 @@ export function pickReaction(
 }
 
 /**
- * May `next` take over from `held`? Higher salience interrupts; equal
- * restarts; lower waits. The host exempts a new roll from this: a fresh roll
- * always takes over, because it is the newest fact about the table.
+ * May `next` take over from `held`? Higher salience interrupts, equal
+ * restarts, lower waits. The host lets a new roll through regardless.
  */
 export function mayInterrupt(held: MascotReaction | null, next: MascotReaction): boolean {
   return held === null || next.salience >= held.salience;

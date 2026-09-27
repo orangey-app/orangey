@@ -1,7 +1,7 @@
 /**
- * History (plan C7/L). Append-only: a roll cannot honestly be un-rolled, so
- * there is "remove entry" and no undo (decision D13). A roll that the table
- * agreed not to count is struck instead: the line stays, drawn through.
+ * History. Append-only: a roll cannot honestly be un-rolled, so there is
+ * "remove entry" and no undo. A roll the table agreed not to count is struck
+ * instead: the line stays, drawn through.
  */
 
 import { askConfirm, button, download, formatWhen, h, setChildren } from "../dom.ts";
@@ -14,12 +14,9 @@ import { navigate } from "../router.ts";
 import type { View } from "../view.ts";
 
 /**
- * The history as a spreadsheet. A struck roll is exported like any other,
- * with the column saying it was struck: the log of a session is only complete
- * if what the table set aside is in it too.
+ * The history as CSV. Struck rolls are exported too, marked in their own column.
  *
- * `details` and `from` came later and are appended, never inserted: a sheet
- * that reads these columns by position keeps working.
+ * Columns are append only, so a sheet that reads them by position keeps working.
  */
 export function historyCsv(rows: HistoryRow[]): string {
   const table = [
@@ -92,12 +89,8 @@ export function createHistoryView(): View {
   }
 
   /**
-   * Everything the store holds, not the recent slice held in memory: an
-   * export of "my history" that quietly stopped at the most recent few
-   * hundred would be wrong in the one way that matters.
-   *
-   * The rows in memory carry `struck`, which the stored ones may predate, so
-   * the two are merged on id rather than one replacing the other.
+   * Everything the store holds, not just the recent rows in memory. The rows in
+   * memory carry `struck`, which stored ones may lack, so the two are merged on id.
    */
   async function allRows(): Promise<HistoryRow[]> {
     const known = new Map(state.history.map((row) => [row.id, row]));

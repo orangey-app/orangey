@@ -1,11 +1,8 @@
 /**
- * The Recent rolls panel: the last few rolls, wherever the table can see them.
- *
- * The panel belongs to a set of randomizers — the one a play screen has open,
- * the several a board shows — and both the rows and the Clear beside the
- * heading are about that set, so Clear removes what is in front of the user
- * and nothing behind it. No ids at all means the whole history, which is what
- * the quick play screen has in front of it.
+ * The Recent rolls panel: the last few rolls of a set of randomizers (the one a
+ * play screen has open, or those on a board). The rows and Clear are both about
+ * that set, so Clear removes only what is in front of the user. No ids means the
+ * whole history.
  */
 
 import { askConfirm, button, formatTime, h, setChildren } from "../dom.ts";
@@ -41,10 +38,9 @@ export function rollDetailLines(row: HistoryRow): HTMLElement[] {
 }
 
 /**
- * What Clear is about to take, named. An empty scope is the whole history.
- *
- * The count is every roll of those randomizers, not the few rows on screen:
- * the confirm is the last chance to see how much is going.
+ * What Clear is about to take, named; an empty scope is the whole history.
+ * The count is every roll in scope, not just the rows on screen: the confirm is
+ * the last chance to see how much is going.
  */
 export function clearRollsPrompt(count: number, scope: string): string {
   if (!scope) return "Clear the whole history?";
@@ -67,8 +63,8 @@ export function createRecentRolls(opts: RecentRollsOptions): RecentRollsView {
       state.toast("There is nothing here to clear.");
       return;
     }
-    // The app's own dialog rather than the browser's: it returns the keyboard
-    // where it came from, and it looks like the rest of Orangey.
+    // The app's own dialog, not the browser's: it returns the keyboard where it came
+    // from and matches the rest of the app.
     const sure = await askConfirm("Clear these rolls", clearRollsPrompt(rows.length, ids.length === 0 ? "" : opts.scopeName()), {
       confirm: "Clear",
       danger: true,

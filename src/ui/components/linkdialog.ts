@@ -1,10 +1,7 @@
 /**
- * The dialog that hands over a link for a slide.
- *
- * Out of `play.ts` because it is a self-contained piece of explaining: two
- * kinds of link with different trade-offs, a size warning, and the awkward
- * truth that a copy of Orangey opened from a file cannot be linked to at all.
- * None of that is about playing.
+ * The dialog that hands over a link to a randomizer, e.g. for a slide: two kinds
+ * of link, a size warning, and the fact that a copy opened from a file cannot be
+ * linked to.
  */
 
 import type { Randomizer } from "../../model/randomizer.ts";
@@ -15,13 +12,11 @@ import { appBase, isLinkableBase, slideLink, wheelLink } from "../router.ts";
 import { LINK_HARD_LIMIT, LINK_SOFT_LIMIT, encodeRandomizer } from "../../model/link.ts";
 
 /**
- * Two kinds of link, side by side.
- *
- * "With the wheel inside" carries the randomizer in the address, so it
- * rolls on anyone's machine and keeps rolling whatever happens to the
- * library — frozen at today's version, and longer. "To my library" is short
- * and follows every edit, but only works where the library is. The first is
- * offered first, because it is what most people pasting into a deck mean.
+ * "With the wheel inside" carries the randomizer in the address: it rolls on
+ * any machine whatever happens to the library, but is frozen at today's version
+ * and longer. "To my library" is short and follows edits, but only works where
+ * the library is. The first comes first: it is what most people pasting into a
+ * deck mean.
  */
 export async function openLinkDialog(randomizer: Randomizer, node: LibraryNode | null): Promise<void> {
   // Where the keyboard came from, so it goes back there on close.

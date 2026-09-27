@@ -1,11 +1,7 @@
 /**
- * What a drag from the library carries, shared by the library (which starts
- * it) and a board (which takes it).
- *
- * Every drag carries one path as text/plain, which is what a folder and a
- * board have always read. A drag of a selection also carries all of its
- * paths, as JSON under a type of Orangey's own, so a board can take the lot;
- * anything that does not know that type still gets the row that was dragged.
+ * What a drag from the library carries. Every drag sets one path as text/plain;
+ * a drag of a selection also sets all its paths as JSON under
+ * `LIBRARY_PATHS_TYPE`, so a board can take the lot.
  */
 
 export const LIBRARY_PATHS_TYPE = "text/orangey-paths";

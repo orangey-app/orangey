@@ -1,18 +1,14 @@
 /**
- * The one Orangey the app shows.
+ * The one Orangey the app shows: a single host owning a single mascot element.
+ * It looks each mascot event up in the reactions table and plays the result
+ * according to the presence setting:
  *
- * There is a single host, and it owns a single mascot element — so "one
- * Orangey however many dice" is true by construction, not by discipline. It
- * listens to the app's mascot events, looks each one up in the reactions
- * table, and plays the result under the GM's presence setting:
- *
- *   hidden    — nothing mounted, events ignored, zero cost
- *   triggers  — mounted but invisible; a reaction shows him, plays, holds,
- *               fades out again
+ *   hidden    — nothing mounted, events ignored
+ *   triggers  — invisible until a reaction plays, then fades out again
  *   always    — visible and idling; reactions play over the idle
  *
- * Every duration used here comes from feel.ts. The host never writes any
- * app state: it reads events and moves an element.
+ * The mascot only reads: the host listens to events and moves an element, and
+ * never writes app state.
  */
 
 import type { FeelSettings, MascotPresence } from "../feel.ts";
@@ -42,7 +38,7 @@ const REAL_TIMERS: MascotTimers = {
   now: () => (typeof performance !== "undefined" ? performance.now() : Date.now()),
 };
 
-/** How long an anticipation may hold with no landing before he gives up. Not a tuning: a safety net. */
+/** How many anticipation holds to wait for a landing before giving up: a safety net. */
 const ANTICIPATE_SAFETY_MULTIPLIER = 6;
 
 export class MascotHost {
@@ -148,7 +144,6 @@ export class MascotHost {
 
     if (reaction.on === "roll:start") {
       if (this.#pendingAnticipate !== null) return;
-      // a new roll starting also ends whatever he was doing about the last one
       this.#clearHold();
       this.#pendingAnticipate = this.#timers.set(() => {
         this.#pendingAnticipate = null;
@@ -157,9 +152,8 @@ export class MascotHost {
       return;
     }
 
-    // A new roll is the freshest fact about the table and always takes his
-    // attention; salience only arbitrates between everything else (an import
-    // finishing while an Oops is held, a link failing during a celebration).
+    // A new roll always takes his attention; salience only arbitrates between
+    // other events (an import finishing while an Oops is held, say).
     const freshRoll = reaction.on === "roll:land";
     if (!freshRoll && !mayInterrupt(this.#held, reaction)) return;
     this.#play(reaction, mascotHoldMs(reaction.then, feel, event.type));

@@ -1,10 +1,9 @@
 /**
- * The editor, and inside it the outcome table (plan C9).
+ * The editor, and inside it the outcome table.
  *
- * This is where a randomizer actually gets built, and where an imported table
- * lands, so it is built for fixing forty rows quickly: every row can be
- * disabled, duplicated or deleted in place, destructive edits are undoable for
- * ten seconds, and everything is reachable from the keyboard.
+ * Built for fixing a freshly imported table quickly: every row can be disabled,
+ * duplicated or deleted in place, destructive edits are undoable for ten
+ * seconds, and everything is reachable from the keyboard.
  */
 
 import { displayPercents, isRollable } from "../../core/weighted.ts";
@@ -34,10 +33,9 @@ import { effectiveFeel, normalizeOverride, type FeelOverride } from "../feel.ts"
 import { coinControls, diceControls, sectionFor, wheelControls } from "../components/feelpanel.ts";
 
 /**
- * The Feel card in an editor: this randomizer's own animation settings,
- * merged over the global ones. Only the section for its type is shown — a
- * wheel gets the wheel controls — and one button returns it to the global
- * settings.
+ * The Feel card: this randomizer's own animation settings, merged over the
+ * global ones. Only its type's section is shown, and one button returns it to
+ * the global settings.
  */
 function feelCard(get: () => Randomizer, set: (feel: FeelOverride | undefined) => void, preview?: () => void): HTMLElement {
   const card = h("div", { class: "card feel-card" });
@@ -92,10 +90,8 @@ function inLibrary(path: string): boolean {
 }
 
 /**
- * The editor's own Back, which goes exactly where the top bar's does, so the
- * two can never disagree. It names the place when that is not simply this
- * randomizer's play screen: "Back to play" from a new wheel made on a board
- * would be a promise the button does not keep.
+ * Goes exactly where the top bar's Back does. It names the place when that is
+ * not this randomizer's play screen (for example, the board that made it).
  */
 function editorBackButton(): HTMLElement {
   const there = referrer(currentRoute(), inLibrary);
@@ -108,8 +104,6 @@ function formatWeight(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-/* -------------------------------------------------------------------------- */
-
 function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: string): View {
   let model: ListRandomizer = structuredClone(initial);
   let selection = new Set<string>();
@@ -119,12 +113,9 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   const savedLabel = h("span", { class: "faint", text: "All changes saved" });
 
   /**
-   * Save, unless the draft is one the app could not read back.
-   *
-   * The file on disk keeps the last good state and the draft stays in the
-   * editor, marked invalid, so the half-typed weight or the empty label can
-   * be finished rather than thrown away. `source` is the field whose handler
-   * asked to save, which is the one to mark.
+   * Save, unless the draft is one the app could not read back: then the file keeps
+   * its last good state and the draft stays here, marked invalid, so it can be
+   * finished. `source` is the field to mark.
    */
   const save = (source?: HTMLElement) => {
     const problem = draftProblem(model);
@@ -135,20 +126,16 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     }
     for (const marked of el.querySelectorAll("[aria-invalid]")) marked.removeAttribute("aria-invalid");
     savedLabel.textContent = "Saving…";
-    // Queue it and nothing more. The library debounces the write; flushing
-    // here meant every keystroke serialised the whole file and waited for the
-    // disk.
+    // Queue only: the library debounces the write, so a keystroke does not
+    // serialise the whole file.
     model = { ...model, modified: new Date().toISOString() };
     state.library.save(node.path, model);
   };
 
   /**
-   * A structural change: a button, not a keystroke.
-   *
-   * Typing is debounced by the library, but a press that also moves focus
-   * fires `focusout` on mousedown — before the handler that changes anything
-   * — so a blur alone would leave the change it made waiting on the timer.
-   * These are rare and deliberate, so they go to disk at once.
+   * For button presses, not typing: written at once. A press that moves focus
+   * fires `focusout` on mousedown, before the change is made, so the blur flush
+   * would miss it.
    */
   const saveNow = (source?: HTMLElement) => {
     save(source);
@@ -177,8 +164,6 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   });
   const result = createResultPanel("Try it");
 
-  // ---- header --------------------------------------------------------------
-
   const nameInput = h("input", { type: "text", value: model.name, "aria-label": "Name" });
   nameInput.addEventListener("input", () => {
     model = { ...model, name: nameInput.value };
@@ -200,8 +185,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     save(descInput);
   });
 
-  // Bag mode. Editing the outcomes does not empty or refill the bag: what has
-  // been drawn is per device and lives in the app database, not in the file.
+  // Editing the outcomes does not empty or refill the bag: what has been drawn is
+  // per device, kept in the app database, not in the file.
   const bagToggle = h("input", { type: "checkbox", class: "bag-toggle", checked: model.withoutReplacement === true });
   bagToggle.addEventListener("change", () => {
     model = { ...model, withoutReplacement: bagToggle.checked || undefined };
@@ -210,9 +195,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   });
   const bagField = h("label", { class: "row tight" }, bagToggle, "Draw without putting back");
 
-  // Make a choice. Empty is off. What is typed is kept in the draft even when
-  // it is out of range, so it can be finished; `draftProblem` holds the file
-  // at its last good state meanwhile, as for any other field.
+  // "Make a choice"; empty is off. An out-of-range value stays in the draft so it
+  // can be finished, while `draftProblem` holds the file at its last good state.
   const offerInput = h("input", {
     type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "offer-input",
     value: model.offer !== undefined ? String(model.offer) : "", placeholder: "–",
@@ -245,10 +229,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   };
   renderViewToggle();
 
-  // A wheel's own colours, over the theme's. Three in turn and an optional
-  // spare, chosen with the same fields as the theme card; the same check runs
-  // on them, and its findings are shown, not enforced — as with an outcome's
-  // own colour, a clash the person chose is reported, not refused.
+  // A wheel's own colours, over the theme's: three in turn and an optional spare.
+  // The theme card's check runs on them; its findings are shown, not enforced.
   const paletteGroup = h("div", { class: "segmented palette-toggle", role: "group", "aria-label": "Slice colours" });
   const paletteField = h("div", { class: "row tight palette-field" }, h("span", { class: "faint", text: "Colours" }), paletteGroup);
   const paletteFields = h("div", { class: "palette-fields" });
@@ -309,9 +291,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     renderPaletteProblems();
   };
 
-  // What a slice with a picture shows. Offered only where it changes
-  // something — a wheel with at least one picture — and written to the file
-  // only when it is not the default, so most files never carry it.
+  // What a slice with a picture shows. Offered only on a wheel with a picture, and
+  // written to the file only when it is not the default.
   const slicesGroup = h("div", { class: "segmented", role: "group", "aria-label": "Slices show" });
   const slicesField = h("div", { class: "row tight slices-field" }, h("span", { class: "faint", text: "Slices show" }), slicesGroup);
   const SLICE_NAMES = { pictures: "Pictures", names: "Names", both: "Both" } as const;
@@ -330,8 +311,6 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       ),
     );
   };
-
-  // ---- table ---------------------------------------------------------------
 
   const tbody = h("tbody");
   const footer = h("div", { class: "faint" });
@@ -371,12 +350,9 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   }
 
   /**
-   * How many rows the table draws at once.
-   *
-   * An imported table can be thousands of outcomes, and a browser asked for
-   * a thousand rows of eleven cells each — with an input in four of them —
-   * stops being usable. The filter still searches every outcome; this is
-   * only how many are on screen.
+   * How many rows the table draws at once. An imported table can hold thousands
+   * of outcomes, too many table rows for a browser to stay usable; the filter
+   * still searches every outcome.
    */
   const ROW_BLOCK = 300;
   let rowLimit = ROW_BLOCK;
@@ -470,9 +446,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
 
   function renderRows(focusItemId?: string, focusField: "label" | "weight" = "label"): void {
     const percents = displayPercents(model.items);
-    // Before the colours are read, not after: `refresh` is what recomputes
-    // them, so asking first showed each row the colour its outcome had one
-    // edit ago.
+    // Before the colours are read: `refresh` is what recomputes them.
     wheel.refresh();
     // A picture added or removed decides whether the choice is offered at all.
     renderSlicesToggle();
@@ -514,16 +488,14 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     const tr = h("tr", { dataset: { item: item.id, index: String(index) }, draggable: "true" });
     if (item.disabled) tr.classList.add("disabled");
 
-    // No listeners on the row itself: `tbody` carries one of each for the
-    // whole table (see `delegate` below). Forty rows used to mean six hundred
-    // listeners, all of them torn down and rebuilt on every edit.
+    // No listeners on the row itself: `tbody` carries one of each for the whole
+    // table (see `delegate` below), so an edit does not rebuild hundreds of them.
     const check = h("input", { type: "checkbox", class: "row-select", checked: selection.has(item.id), "aria-label": `Select ${item.label}` });
 
     const swatch = h("button", {
       class: `swatch${item.color ? "" : " auto"}`,
       type: "button",
-      // The "A" on an automatic swatch in whichever ink reads on that colour:
-      // white vanished on a pale theme's wheel colours.
+      // The "A" on an automatic swatch uses whichever ink reads on that colour.
       style: `background: ${item.color ?? autoColor}; --auto-ink: ${labelFor(item.color ?? autoColor).ink}`,
       title: item.color ? `Colour ${item.color}` : "Automatic colour",
       "aria-label": item.color ? `Colour, currently ${item.color}` : "Colour, currently automatic",
@@ -550,10 +522,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       onChange: (id) => update(item.id, (i) => ({ ...i, image: id })),
     });
 
-    // Where this outcome sends you. A table that points at another table is
-    // how encounter tables have always been written. A dropdown of every
-    // randomizer was fine with six of them; a real game has folders, so this
-    // opens the library instead.
+    // Where this outcome sends you, picked from the library (a dropdown does not
+    // scale to folders).
     const target = item.goesTo ? state.library.findById(item.goesTo) : null;
     const goesToLabel = item.goesTo
       ? (target?.randomizer?.name ?? "(not in your library)")
@@ -635,8 +605,6 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     }
   }
 
-  // ---- mutations -----------------------------------------------------------
-
   function update(id: string, fn: (item: ListItem) => ListItem, redraw = true, source?: HTMLElement): void {
     model = { ...model, items: model.items.map((i) => (i.id === id ? fn(i) : i)) };
     save(source);
@@ -658,11 +626,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   }
 
   /**
-   * At most one wheel redraw per frame.
-   *
-   * Typing a label fires an input event per character, and each redraw lays
-   * out and re-measures every slice. The screen only updates once a frame in
-   * any case, so the ones in between were work nobody saw.
+   * At most one wheel redraw per frame: typing a label fires an input event per
+   * character, and each redraw re-measures every slice.
    */
   let wheelFrame = 0;
   function refreshWheelSoon(): void {
@@ -782,11 +747,8 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     );
   }
 
-  // ---- try it --------------------------------------------------------------
-
-  // A preview, not a roll: `live: false` keeps it out of history and says
-  // nothing to Orangey, because trying out a wheel you are building is not
-  // the table rolling it.
+  // A preview, not a roll: `live: false` keeps it out of history and away from
+  // the mascot.
   const previewRoller = createRoller({
     randomizer: () => model,
     result,
@@ -815,8 +777,6 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     },
     () => void rollNow(),
   );
-
-  // ---- layout --------------------------------------------------------------
 
   const table = h("table", { class: "outcomes" },
     h("thead", {},
@@ -896,17 +856,14 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   };
 }
 
-/* -------------------------------------------------------------------------- */
-
 /** Dice, coin and number randomizers have a handful of fields each. */
 function createSimpleEditor(node: LibraryNode): View {
   let model = structuredClone(node.randomizer!) as Randomizer;
   const savedLabel = h("span", { class: "faint", text: "All changes saved" });
   const el = h("div");
 
-  // As in the list editor: a draft the app could not read back is kept in the
-  // editor and marked, and the file on disk keeps its last good state. Half a
-  // dice expression is the ordinary way to type a whole one.
+  // As in the list editor, a draft the app could not read back is kept here and
+  // marked: half a dice expression is the ordinary way to type a whole one.
   const save = (source?: HTMLElement) => {
     const problem = draftProblem(model);
     if (problem) {

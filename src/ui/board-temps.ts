@@ -1,31 +1,24 @@
 /**
- * Temporary cells on a board: a quick wheel or a dice expression put beside
- * the board's own randomizers for tonight, without editing the board.
+ * Temporary cells on a board: a quick wheel or a dice expression added for one
+ * session without editing the board.
  *
- * They are not part of the board — its file is what the owner assembled, and
- * a throwaway 3d20 should not end up in it or in a shared copy — so they live
- * in the app database, per board and per device, like a bag's draws (P19).
- * That is also what brings them back after a phone locks and reloads the tab.
- * "Save to library" is how one stops being temporary.
+ * They are per device, like a bag's draws: kept in the app database, never in
+ * the board's file, which also brings them back after a phone reloads the tab.
  */
 
 import { appdb } from "../storage/appdb.ts";
 import type { DiceRandomizer, ListRandomizer } from "../model/randomizer.ts";
 
-/** A quick wheel or a dice expression; nothing else is made on a board. */
 export type TempRandomizer = ListRandomizer | DiceRandomizer;
 
-/**
- * How many a board may carry at once. The board's own limit is about its
- * file; this one only keeps a busy evening from turning into a wall of cells.
- */
+/** At most this many at once, so a board does not become a wall of cells. */
 export const BOARD_TEMP_LIMIT = 6;
 
 function tempsKey(boardId: string): string {
   return `board-temp:${boardId}`;
 }
 
-/** Only what could have been written here: an old or damaged record is dropped, not trusted. */
+/** Accepts only what this module writes; an old or damaged record is dropped. */
 function isTemp(v: unknown): v is TempRandomizer {
   if (typeof v !== "object" || v === null) return false;
   const r = v as Record<string, unknown>;

@@ -1,13 +1,10 @@
 /**
- * A board: several randomizers on one screen.
- *
- * The case is a game master who rolls the same handful of things all evening —
- * an encounter table, the weather, a treasure wheel — and wants them in front
- * of them at once rather than swapping between library entries.
+ * A board: several randomizers on one screen, for a game master who rolls the
+ * same handful of things all evening.
  *
  * A board points at randomizers by id rather than holding copies, so editing a
- * table updates every board it is on. The price is that a deleted randomizer
- * leaves a gap, which the board says plainly instead of quietly shrinking.
+ * table updates every board it is on. A deleted randomizer leaves a named gap
+ * instead of the board quietly shrinking.
  */
 
 import { BOARD_LIMIT, emptyRandomizer, newId, nowIso, OFFER_MAX, OFFER_MIN, touch, type BoardRandomizer, type DiceRandomizer, type ListRandomizer, type Randomizer } from "../../model/randomizer.ts";
@@ -35,21 +32,16 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   let cells: CellView[] = [];
 
   /**
-   * An outcome's `goesTo`, followed on a board.
+   * Each entry's chain of followed `goesTo` links, with the same rules as the play
+   * screen (see chain.ts). An opened randomizer gets a cell of its own straight
+   * after the one that sent you there, and is not saved to the board.
    *
-   * The same rules as the play screen (see chain.ts): the randomizer it points
-   * at opens and waits, rolling a cell again replaces whatever its last answer
-   * had opened, and a chain that would come back round stops and says so. On
-   * a board the opened randomizer is a cell of its own, straight after the one
-   * that sent you there, and is not saved: the board is still what it was.
-   *
-   * Per entry, `links` and `els` run in step; `els[0]` is the entry's own
-   * holder and the rest are the cells its chain opened.
+   * `links` and `els` run in step; `els[0]` is the entry's own holder.
    */
   let chains = new Map<string, { links: ChainLink[]; els: HTMLElement[] }>();
   /** Roll all answers every question afresh, so it follows no links. */
   let rollingAll = false;
-  /** Tonight's temporary cells (see "temporary cells" below); up here because Recent rolls reads it. */
+  /** Tonight's temporary cells; declared up here because Recent rolls reads it. */
   let temps: TempRandomizer[] = [];
 
   function landed(entryId: string, el: HTMLElement, randomizer: Randomizer, outcome: Outcome): void {
@@ -89,14 +81,10 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   const addButton = button("Add…", () => void openPicker(), { class: "ghost add-to-board" });
 
   /**
-   * Changing what is on the board happens in edit mode only.
-   *
-   * A board is played at a table, often on a projector, and one stray click
-   * on a cell's ✕ used to take a randomizer off and save the board at once —
-   * putting it back meant finding it in the library again. Play mode only
-   * plays; Edit board brings out Add…, the ✕s and dragging. A chain's own ✕
-   * is not a change to the board, so it stays. An empty board has nothing to
-   * play, so it opens ready to edit.
+   * Changing what is on the board happens in edit mode only: a board is played at
+   * a table, often on a projector, where one stray click on a ✕ must not take a
+   * randomizer off. A chain's own ✕ is not a change to the board, so it stays. An
+   * empty board opens ready to edit.
    */
   let editing = board.entries.length === 0;
   const editButton = button("Edit board", () => setEditing(!editing), { class: "ghost edit-board" });
@@ -139,8 +127,6 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
 
   function render(): void {
     const resolved = resolve();
-    // Cells are rebuilt whenever the board changes, so their handles are
-    // rebound with them rather than tracked.
     cells = [];
     // Rebuilt cells are fresh answers-to-be, so whatever they had opened goes.
     chains = new Map();
@@ -152,8 +138,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
         quickEdit: true,
       });
       cells.push(cell);
-      // A cell of its own to roll: one roll on a board is often the point, and
-      // only a cell's own roll follows an outcome's link.
+      // Each cell has its own Roll: only a cell's own roll follows an outcome's link.
       holder = wrap(entry, cell.el, cellRollButton(cell, "ghost cell-roll"));
       chains.set(entry.id, { links: [{ id: randomizer.id, name: randomizer.name, from: "", found: true }], els: [holder] });
       return holder;
@@ -197,9 +182,9 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   }
 
   /**
-   * Put several on at once — from the Add… window or a selection dragged
-   * from the library — in one save. What is already there, what is a board,
-   * and what would go past the limit are left off, and the toast says which.
+   * Add several in one save, from the Add… window or a selection dragged from the
+   * library. Duplicates, boards and anything past the limit are left off, and the
+   * toast says which.
    */
   async function addEntries(rs: readonly Randomizer[]): Promise<void> {
     const entries = [...board.entries];
@@ -215,7 +200,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     const added = entries.length - board.entries.length;
     if (added > 0) await save({ ...board, entries });
     if (rs.length === 1) {
-      // One at a time keeps the messages it always had.
+      // A single randomizer gets a short, specific message instead of a count.
       if (over) state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
       else if (boards) state.toast("A board cannot go on a board.");
       return;
@@ -228,9 +213,8 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   }
 
   /**
-   * Take one off, and offer it back. The randomizer itself is untouched — only
-   * the board's reference to it goes — so Undo is a matter of putting the
-   * entry back where it was.
+   * The randomizer itself is untouched, only the board's reference to it goes, so
+   * Undo puts the entry back where it was.
    */
   async function removeEntry(id: string): Promise<void> {
     const at = board.entries.findIndex((e) => e.id === id);
@@ -257,9 +241,8 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   }
 
   /**
-   * What goes on the board: anything in the library, or something made here.
-   * A board is usually assembled while thinking about tonight, and half of
-   * what you want does not exist yet.
+   * Add from the library, or make something new here: half of what a board needs
+   * often does not exist yet.
    */
   async function openPicker(): Promise<void> {
     const picked = await pickRandomizers({
@@ -281,10 +264,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     }
   }
 
-  /**
-   * Every cell at once, each at its own speed: a board is rolled to get all of
-   * tonight's answers in one go, not to watch a sequence.
-   */
+  /** Every cell at once, each at its own speed. */
   async function rollEverything(): Promise<void> {
     // Tonight's temporary cells are on the table too, so Roll all rolls them.
     const all = [...cells, ...tempCells()];
@@ -304,12 +284,9 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   }
 
   /**
-   * A board is shared as a file, not inside a link.
-   *
-   * One randomizer fits in an address; a board is several of them, and the
-   * link would outgrow what decks and chat apps carry. The link here opens
-   * this board in the library it is already in — which is what a slide needs —
-   * and the archive is what goes to someone else.
+   * A board is shared as a file, not inside a link: several randomizers would
+   * outgrow what decks and chat apps carry. The link here only opens the board in
+   * the library it is already in, which is what a slide needs.
    */
   function openShare(): void {
     // Where the keyboard came from, so it goes back there on close.
@@ -358,9 +335,8 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   };
   document.addEventListener("keydown", onKey);
 
-  // The library tree drags a path as text/plain, so dropping a randomizer from
-  // the sidebar onto the board is the same gesture as dropping it in a folder.
-  // A selection dragged from the library also carries every path it holds.
+  // The library tree drags a path as text/plain (a selection also carries every
+  // path it holds), so dropping here is the same gesture as dropping into a folder.
   grid.addEventListener("dragover", (e) => {
     if ((e as DragEvent).dataTransfer?.types.includes("text/plain")) e.preventDefault();
   });
@@ -379,14 +355,10 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     void addEntries(dropped);
   });
 
-  // ---- temporary cells ----------------------------------------------------
+  // Temporary cells: a dice expression or a quick wheel for tonight, beside the
+  // board's cells but not part of the board (see board-temps.ts). Closing one is
+  // not a change to the board; "Save to library" puts it on the board for good.
 
-  /**
-   * A dice expression or a quick wheel for tonight, beside the board's own
-   * cells without being part of the board (see board-temps.ts). Each has a ✕
-   * that is always there — closing one is not a change to the board — and
-   * "Save to library", which saves it and puts it on the board for good.
-   */
   /** Built once per temporary cell and kept, so a board redraw keeps its answer. */
   const tempViews = new Map<string, { holder: HTMLElement; cell: () => CellView | null }>();
 
@@ -394,10 +366,9 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     temps.map((t) => tempViews.get(t.id)?.cell() ?? null).filter((c): c is CellView => c !== null);
 
   /**
-   * Stored on every change, keystrokes included. It is one small record, and
-   * a write held back for a pause in the typing was lost whenever the page
-   * went away inside that pause: a write begun while a page unloads does not
-   * reliably finish.
+   * Stored on every change, keystrokes included: it is one small record, and a
+   * write delayed for a pause in the typing can be lost if the page unloads during
+   * that pause.
    */
   function storeTemps(): void {
     void saveBoardTemps(board.id, temps);
@@ -462,8 +433,6 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
 
     let editor: HTMLElement | null = null;
     if (t.type === "list") {
-      // The options live in the cell, so the wheel can be changed at any
-      // time, as the one on the home screen can.
       const area = h("textarea", {
         class: "quick-options temp-options", rows: "3", spellcheck: "false",
         placeholder: "Goblins\nBandits | 2\nNothing x3", "aria-label": "Options, one per line",
@@ -524,7 +493,6 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     return view;
   }
 
-  // The bar that makes them: a dice box and a quick wheel, nothing more.
   const diceBox = h("input", {
     type: "text", class: "board-dice", placeholder: "3d20", spellcheck: "false",
     "aria-label": "Dice to put on the board for now",
@@ -563,8 +531,8 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
       addButton, editButton, shareButton, presentButton,
       popOutButton(() => state.library.findById(board.id)?.randomizer ?? board),
     ),
-    // Outside the bar, which full screen hides: inside it, the one visible way
-    // out was hidden with it, and only Escape — no use on a tablet — was left.
+    // Outside the bar, which full screen hides: otherwise the only way out would be
+    // Escape, which a tablet does not have.
     exitButton,
     h("div", { class: "card board-card" },
       heading,
@@ -578,10 +546,9 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   );
 
   /**
-   * What the cells are built from: the entries, and the state of each
-   * randomizer they point at. Rebuilding on every change of state would throw
-   * away the results the cells are showing — including, one frame later, the
-   * result of the roll that caused the change.
+   * What the cells are built from. Rebuilding on every state change would throw
+   * away the answers the cells show, including the one whose roll caused the
+   * change.
    */
   function signature(): string {
     return resolve()
@@ -601,11 +568,9 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   }
 
   /**
-   * The same randomizers in the same places, only some of them edited — a
-   * quick edit of a weight, or a change saved in another tab: those cells
-   * take the new version and every other cell keeps its answer. Anything more
-   * (an entry added, removed or gone, a wheel turned into a list) is a
-   * rebuild.
+   * Same randomizers in the same places, some edited (a weight changed, or a save
+   * from another tab): those cells take the new version and the rest keep their
+   * answers. Anything else is a rebuild.
    */
   function updateInPlace(now: string): boolean {
     const shape = (sig: string) => sig.replace(/:[^|]*/g, "");
