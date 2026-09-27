@@ -1,13 +1,11 @@
 /**
- * Build.
+ * Builds the app.
  *
  *   node scripts/build.mjs            -> dist/ (static site: index.html + app.js + assets)
  *   node scripts/build.mjs --single   -> dist/orangey.html as well (one self-contained file)
  *
  * Every path the page uses is relative and the service worker's scope is ".",
- * so dist/ works wherever it is served from: the root of a domain, a project
- * subpath, or a folder on a local server. There is no base path to configure
- * and so no way to get it wrong.
+ * so dist/ works wherever it is served from, with no base path to configure.
  */
 
 import { createHash } from "node:crypto";
@@ -23,18 +21,14 @@ const single = process.argv.includes("--single");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 /**
- * The two fonts, embedded as data: URLs so the app shows them offline and the
- * single file stays one file. The OFL asks for its notice to travel with the
- * font, so each licence goes in, in full, as a comment beside its face.
- * See assets/fonts/README.md for what each file is and how it was made.
- */
-/**
- * A text file as the build uses it: LF line endings whatever the checkout has,
- * so orangey.html and the cache name in sw.js come out byte for byte the same
- * on Windows and Linux.
+ * Reads with LF line endings whatever the checkout has, so the build is byte for
+ * byte the same on Windows and Linux.
  */
 const readText = (path) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
 
+// Fonts are embedded as data: URLs, so they work offline and the single file
+// stays one file. The OFL asks for its notice to travel with the font, so each
+// licence goes in, in full, beside its face (see assets/fonts/README.md).
 const fontFace = (family, file, licence, extra = "") => {
   const data = readFileSync(join(root, "assets/fonts", file)).toString("base64");
   const notice = readText(join(root, "assets/fonts", licence)).trim();
@@ -93,8 +87,7 @@ const manifest = {
   icons: [
     { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
     { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-    // The maskable copy is inset, so a phone cropping it to a circle never
-    // clips the sides of his head.
+    // Inset, so a phone cropping it to a circle never clips the mascot's head.
     { src: "icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
 };
@@ -104,13 +97,9 @@ writeFileSync(join(dist, "icon-512.png"), makeIcon(512));
 writeFileSync(join(dist, "icon-512-maskable.png"), makeIcon(512, { inset: 0.78 }));
 
 /**
- * The cache is named from the content, not from the version alone.
- *
- * The worker serves cache-first and only ever re-fetches when `sw.js` itself
- * changes. Named from the version, a deploy without a version bump reached
- * nobody who had already opened the app: they kept the old code until the
- * next release. With the hash in it, sw.js changes whenever the app does, the
- * browser installs the new worker, and `activate` drops the old cache.
+ * The cache is named from a hash of the content, not from the version: the
+ * worker serves cache-first and only updates when sw.js itself changes, so every
+ * change to the app must change sw.js.
  */
 const hash = createHash("sha256").update(js).update(css).digest("hex").slice(0, 8);
 
@@ -153,9 +142,8 @@ if (single) {
     scriptTag: `<script type="module">\n${js}\n</script>`,
   });
   writeFileSync(join(dist, "orangey.html"), html);
-  // The same file at the root of the repository, where it is committed: the
-  // whole app as one file someone can be handed, download from GitHub, or open
-  // from a memory stick, with nothing installed and nothing to serve.
+  // Also written to the repository root, where it is committed: the whole app as
+  // one file anyone can download and open, with nothing to install or serve.
   writeFileSync(join(root, "orangey.html"), html);
 }
 

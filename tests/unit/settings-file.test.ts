@@ -40,12 +40,12 @@ describe("settings file", () => {
     assert.equal(back.feel.mascot.presence, "always");
     assert.deepEqual(back.feel.mascot.rules, { "roll-max": false });
     assert.equal(back.seed, "table 7");
-    // My colours come back normalised: the hash added, the hex lower-cased.
+    // Colours come back normalised: the hash added, the hex lower-cased.
     assert.deepEqual(back.colours, [{ name: "Campaign red", hex: "#b3202a" }]);
     assert.equal(serializeSettings(back), text, "the file did not survive a second round trip");
 
-    // Your own theme travels, at the end of the file (P17), and comes back
-    // canonical; a file from 0.5 has none, and loads as it always did.
+    // A custom theme travels at the end of the file (the settings file is append
+    // only) and comes back canonical; a file without one still loads.
     const theme = { name: "Night market", bg: "#1B2230", ink: "#e8e2d6", accent: "#e0862f", wheel: ["#c2412f", "#d9a441", "#3d7c8a", "#6b8e4e"] };
     const withTheme = serializeSettings(portableSettings({ ...prefs(), scheme: "custom", customScheme: theme as never }));
     assert.deepEqual(Object.keys(JSON.parse(withTheme).settings).at(-1), "customScheme");

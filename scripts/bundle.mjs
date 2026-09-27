@@ -1,15 +1,11 @@
 /**
- * A small ES-module bundler.
+ * A small, strict ES-module bundler: strips TypeScript types with Node's own
+ * stripper and concatenates the modules into one script in dependency order.
  *
- * Vite could not be installed in the build sandbox (no package registry), so
- * this does the two things the project actually needs: strip TypeScript types
- * with Node's own stripper, and concatenate the modules into one script in
- * dependency order.
- *
- * It is deliberately strict rather than clever: only relative imports, no
- * default exports, no re-exports, and every top-level name must be unique
- * across the whole program. Those rules are checked here and violating one is
- * a build error, not a mystery at runtime.
+ * The build has no dependencies, so this does only what the project needs. It is
+ * strict rather than clever: only relative imports, no default exports, no
+ * re-exports, and every top-level name must be unique, since all modules end up
+ * in one shared scope. Breaking a rule is a build error, not a mystery at runtime.
  */
 
 import { readFileSync } from "node:fs";
@@ -27,10 +23,7 @@ export function bundle(entryPath, options = {}) {
 
 /**
  * The bundled source plus the files that went into it, in load order.
- *
- * `check.mjs` needs the file list to tell a source file that nothing reaches
- * from one that is simply new; `build.mjs` only wants the string, so `bundle`
- * above keeps that shape.
+ * `check.mjs` needs the file list; `build.mjs` only wants the string.
  */
 export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
   const entry = resolve(entryPath);
@@ -42,8 +35,7 @@ export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
     if (modules.has(file)) return;
     modules.set(file, null); // placeholder, marks "in progress"
 
-    // A Windows checkout may hand us CRLF; the bundle is LF whatever the
-    // machine, so the same source always builds the same bytes.
+    // LF whatever the checkout has, so the same source always builds the same bytes.
     const source = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
     let stripped;
     try {
@@ -56,7 +48,7 @@ export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
     for (const match of stripped.matchAll(IMPORT_RE)) {
       const clause = match[1] ?? "";
       const spec = match[2];
-      // The bundle shares one scope, so an alias would silently vanish.
+      // In the shared scope an alias would silently vanish.
       if (/\bas\b/.test(clause) && !/\*\s+as\b/.test(clause)) {
         throw new Error(`${relative(root, file)}: renaming imports is not supported (${clause.trim()})`);
       }
@@ -95,9 +87,8 @@ export function bundleProgram(entryPath, { root = process.cwd() } = {}) {
 
   load(entry);
 
-  // Forward slashes in the section headers on every platform: they are part
-  // of the committed orangey.html, which otherwise changed on every line of
-  // this kind whenever the other operating system built it.
+  // Forward slashes on every platform: these headers are part of the committed
+  // orangey.html, which must not depend on the OS that built it.
   const label = (file) => relative(root, file).split(sep).join("/");
   const code = order
     .map((file) => `\n// ---- ${label(file)} ${"-".repeat(Math.max(0, 60 - label(file).length))}\n${modules.get(file).trim()}\n`)

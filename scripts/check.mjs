@@ -1,11 +1,10 @@
 /**
  * Project checks, run as `npm run check`.
  *
- * Node has no type checker built in, so this does what it can without one:
- * every module must strip and bundle cleanly (which catches syntax errors,
- * unsupported TypeScript, duplicate top-level names, aliased imports and
- * missing files), the palette must pass its own curation rules, and no
- * animation timing may be hard-coded outside the Feel module.
+ * Node has no type checker built in, so this checks what it can without one:
+ * every module must strip and bundle cleanly under the bundler's rules, every
+ * source file must be reachable, and no animation timing may be hard-coded
+ * outside feel.ts.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -35,12 +34,9 @@ try {
 
 // 2. Every source file is reachable from the entry point or from the tests.
 //
-// The bundler's own file list is not enough on its own: Node's type stripper
-// erases `import type` before the imports are read, so a module that holds
-// only types never joins the bundle even though deleting it would break the
-// type check. So the reachable set is the bundled files plus a walk over the
-// raw text, which sees the type-only edges too, started from the entry point
-// and from every unit test.
+// The bundle's own file list misses modules that hold only types, because
+// Node's type stripper erases `import type` first; so this also walks the raw
+// import text from the entry point and from every unit test.
 const sources = walk(join(root, "src"));
 if (program) {
   const SPECIFIER = /\bfrom\s*["'](\.[^"']+)["']/g;
@@ -68,9 +64,7 @@ if (program) {
 const TIMING = /(\d+)\s*ms/;
 for (const file of sources) {
   const rel = relative(root, file);
-  // Compare with forward slashes: `relative` uses the platform separator, and
-  // on Windows a backslash path would never match, quietly turning off the
-  // one exemption this rule has.
+  // Forward slashes: with Windows backslashes this one exemption would never match.
   if (rel.split(sep).join("/").endsWith("ui/feel.ts")) continue;
   const text = readFileSync(file, "utf8");
   text.split("\n").forEach((line, i) => {
@@ -81,7 +75,7 @@ for (const file of sources) {
   });
 }
 
-// 4. No stray focus on production debug hooks.
+// 4. The debug hook stays behind ?debug.
 const main = readFileSync(join(root, "src/main.ts"), "utf8");
 if (!main.includes('URLSearchParams(location.search).has("debug")')) {
   problems.push("src/main.ts: the debug hook must stay behind ?debug");

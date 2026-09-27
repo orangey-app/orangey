@@ -26,7 +26,6 @@ describe("wheel geometry", () => {
       assert.equal(w.start + w.local, position, `position ${position}: the window points elsewhere`);
       assert.ok(w.end <= liveCount, `position ${position}: the window runs off the end`);
     }
-    // A list shorter than the window is the whole list.
     const small = tickerWindow(3, 2);
     assert.deepEqual(small, { start: 0, end: 3, local: 2 });
   });
@@ -37,7 +36,6 @@ describe("wheel geometry", () => {
     [180, 72, 72, 36].forEach((expected, i) => {
       assert.ok(Math.abs(spans[i] - expected) <= 0.5, `segment ${i}: ${spans[i]} vs ${expected}`);
     });
-    // With no gaps the slices meet edge to edge and end where they started.
     const tight = layout([{ weight: 3 }, { weight: 1 }, { weight: 1 }], { padAngle: 0 });
     assert.equal(tight[0].startAngle, 0);
     assert.ok(Math.abs(tight[tight.length - 1].endAngle - 360) < 1e-9);
@@ -101,7 +99,7 @@ describe("wheel geometry", () => {
       assert.ok(plan.rotation > rotation, "a spin must always go forwards");
       rotation = plan.rotation;
     }
-    // A one-in-a-thousand slice is the case that used to slip past the pointer.
+    // A one-in-a-thousand slice is the hardest target to land on.
     const thin = layout([{ weight: 999 }, { weight: 1 }]);
     const thinRng = new SeededSource("thin");
     for (let i = 0; i < 2000; i++) {
@@ -175,16 +173,14 @@ describe("radial labels", () => {
     for (let span = 1; span <= 360; span += 0.25) {
       const r = room(span);
       const has = r !== null;
-      // Once a slice is wide enough to be labelled, every wider one is too.
       assert.ok(!labelled || has, `span ${span} lost its label after a smaller one had one`);
       labelled ||= has;
       if (!r) continue;
-      // The text stops before the slice gets narrower than a line of it…
+      // The text stops before the slice gets narrower than a line of it.
       const half = (Math.min(span, 180) * Math.PI) / 360;
       assert.ok(2 * r.inner * Math.sin(half) >= 1.15 * r.fontSize - 1e-9, `span ${span}: the text runs into the slice's edges`);
       assert.ok(r.inner >= 22, `span ${span} reaches into the hub`);
       assert.ok(r.length > 0, `span ${span} has no room to write in`);
-      // …and a bigger slice is never given smaller type than a smaller one.
       if (span >= 5) {
         assert.ok(r.fontSize >= last, `span ${span} got smaller type than the slice before it`);
         last = r.fontSize;
@@ -226,7 +222,8 @@ describe("radial labels", () => {
       sliceLayout(span, { radius: 154, rim: 135, hub: 22, picture, content, labels });
     for (let span = 1; span <= 360; span += 0.5) {
       const half = (Math.min(span, 180) * Math.PI) / 360;
-      // Without a picture, or asked for names, a slice is labelled exactly as before.
+      // Without a picture, or asked for names, a slice is labelled exactly as
+      // radialLabelRoom would label it.
       for (const layout of [at(span, "pictures", false), at(span, "names"), at(span, "both", false)]) {
         assert.equal(layout.medallion, null, `span ${span}: a medallion with nothing to show`);
         assert.deepEqual(layout.label, room(span), `span ${span}: the name moved`);

@@ -1,13 +1,10 @@
 /**
- * The app icon: Orangey's head on the brand black tile, exactly as
+ * The app icon: Orangey's head (the mascot) on the brand black tile, as
  * assets/mascot/logo.svg draws it.
  *
- * The geometry is imported from src/ui/mascot/parts.ts rather than copied, so
- * a redrawn head reaches the favicon and the installed icon along with the
- * app itself. Everything below is a small scanline rasteriser and a tiny PNG
- * writer, because the build has no dependencies: the four cubic segments of
- * the outline are flattened to a polygon, the stem and eyes are solved
- * analytically per row, and four-by-four supersampling does the smoothing.
+ * The geometry is imported from src/ui/mascot/parts.ts rather than copied, so a
+ * redrawn head reaches the icon too. The build has no dependencies, hence the
+ * small scanline rasteriser and PNG writer below.
  *
  * The artwork is the Orangey character: Copyright (c) 2026 Amogh Kinikar,
  * all rights reserved — see LICENSE. The code around it is MIT like the rest.
@@ -31,7 +28,7 @@ const PAINTS = [
   [245, 236, 194], // #f5ecc2 the eyes
 ];
 
-/** Samples per pixel per axis. Sixteen samples is smooth at every size used. */
+/** Samples per pixel per axis (16 per pixel). */
 const SS = 4;
 
 /** The outline's four cubic segments, flattened once into a polygon. */
@@ -123,9 +120,8 @@ function chunk(type, data) {
 /**
  * The logo as a square PNG of any size.
  *
- * `inset` shrinks the artwork about the tile's centre while the tile stays
- * full-bleed: 0.78 keeps every part of him inside the safe circle a maskable
- * icon may be cropped to, so the head is never clipped on a phone.
+ * `inset` shrinks the artwork about the centre while the tile stays full-bleed;
+ * 0.78 keeps it inside the safe circle a maskable icon may be cropped to.
  */
 export function makeIcon(size, { inset = 1 } = {}) {
   const tile = MASCOT_LOGO_TILE;

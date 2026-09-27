@@ -75,7 +75,7 @@ describe("RandomSource", () => {
     const seqC = Array.from({ length: 100 }, () => c.int(1, 20));
     assert.deepEqual(seqA, seqB);
     assert.notDeepEqual(seqA, seqC);
-    // Recorded fixture: this is the sequence a shared seed must keep producing.
+    // Recorded fixture: seeded rolls must keep producing this sequence.
     assert.deepEqual(seqA.slice(0, 6), [4, 8, 18, 10, 8, 8]);
     assert.equal(new SeededSource("abc").seed, "abc");
     assert.equal(new CryptoSource().seed, undefined, "an unseeded roll cannot be replayed");
@@ -90,7 +90,7 @@ describe("RandomSource", () => {
 
 describe("weighted selection", () => {
   test("frequencies match weights within 1 % over 100000 draws", () => {
-    // Orangey's whole promise: a 20 % slice comes up a fifth of the time.
+    // The core promise: a 20 % slice comes up a fifth of the time.
     const items = [{ weight: 50 }, { weight: 30 }, { weight: 20 }];
     const rng = new SeededSource("weights");
     const counts = [0, 0, 0];
@@ -163,7 +163,6 @@ describe("weighted selection", () => {
       // colours, the chain and the bag all read it.
       assert.equal(list.items[o.itemIndex!].label, o.text);
     }
-    // The same seed deals the same hand.
     assert.deepEqual(offerFromList(list, 3, new SeededSource("offer")).map((o) => o.text), offer.map((o) => o.text));
 
     // A pick is that outcome, with what it was chosen from and not its odds.

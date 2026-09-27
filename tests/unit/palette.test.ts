@@ -10,8 +10,8 @@ describe("the palette", () => {
     assert.equal(new Set(PALETTE.map((c) => c.name)).size, PALETTE.length, "two colours share a name");
     assert.equal(new Set(PALETTE.map((c) => c.hex)).size, PALETTE.length, "two colours are the same hex");
     for (const c of PALETTE) assert.match(c.hex, /^#[0-9a-f]{6}$/);
-    // The wheel's own colours stand in for the curation the old pool had: each
-    // takes black or white text at 4.5:1 without being nudged lighter or darker.
+    // Each wheel colour takes black or white text at 4.5:1 without being nudged
+    // lighter or darker.
     for (const hex of [...WHEEL_COLOURS, WHEEL_SPARE]) {
       const label = labelFor(hex);
       assert.ok(label.ratio >= 4.5 && label.nudges === 0, `${hex} carries a ${label.ratio.toFixed(1)}:1 label after ${label.nudges} nudges`);

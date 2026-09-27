@@ -43,14 +43,12 @@ describe("a storage backend", () => {
     assert.deepEqual(await b.list(""), [{ name: "D&D", kind: "folder" }]);
     assert.deepEqual(await b.list("D&D/Encounters"), [{ name: "forest.orangey.json", kind: "file" }]);
 
-    // Moving a folder takes everything under it along.
     await b.write("D&D/Treasure/coins.orangey.json", "gold");
     await b.move("D&D", "Campaign");
     assert.equal(await b.read("Campaign/Encounters/forest.orangey.json"), "hello");
     assert.equal(await b.read("Campaign/Treasure/coins.orangey.json"), "gold");
     await assert.rejects(() => b.read("D&D/Encounters/forest.orangey.json"));
 
-    // As does removing it.
     await b.remove("Campaign");
     assert.deepEqual(await b.list(""), []);
     await assert.rejects(() => b.read("nope.txt"), /nope/);
@@ -158,7 +156,6 @@ describe("paths", () => {
     assert.ok(isInside("a/b/c", "a"));
     assert.ok(isInside("a", ""));
     assert.ok(!isInside("ab/c", "a"), "a prefix of a name is not a parent folder");
-    // Names sort naturally, so Chapter 2 comes before Chapter 10 (decision D11).
     assert.deepEqual(["Chapter 10", "Chapter 2", "Chapter 1"].sort(naturalCompare), ["Chapter 1", "Chapter 2", "Chapter 10"]);
   });
 
@@ -322,7 +319,7 @@ describe("the library", () => {
     const renamed = JSON.parse(await backend.read(moved)) as Record<string, unknown>;
     assert.deepEqual(renamed["x-note"], { by: "some other tool", keep: true });
 
-    // A copy is a new file of this version's making, and starts clean.
+    // A copy is a new file, and starts clean.
     const copy = await library.duplicate(moved);
     assert.equal(JSON.parse(await backend.read(copy))["x-note"], undefined);
   });

@@ -1,11 +1,9 @@
 /**
  * Browser tests, driving the built app in headless Chromium over CDP.
  *
- * These are the paths a person actually walks: loading the app, building a
+ * They cover the paths a person actually walks: loading the app, building a
  * randomizer, rolling it, sharing it, and coming back to it later. Anything a
- * unit test can answer on its own — geometry, parsing, validation, palette
- * maths, Orangey's reaction rules — is left to tests/unit, so what is here is
- * only what needs a real browser to be true.
+ * unit test can answer on its own is left to tests/unit.
  */
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -23,17 +21,15 @@ let server;
 const results = [];
 
 /**
- * No single test may hold the suite up; a stuck one fails and is named.
+ * No single test may hold the suite up: a stuck one fails and is named.
  *
- * The harness's own waits are 15 to 30 seconds and a healthy test takes a few,
- * so 45 seconds means a hang costs 45 seconds rather than two minutes. A
- * slower machine or CI runner raises it through the environment.
+ * The harness's own waits are 15 to 30 seconds and a healthy test takes a few.
+ * A slower machine or CI runner raises the limit through the environment.
  */
 const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS ?? 45000);
 
 async function test(name, fn) {
-  // On CI the name goes out before the test runs, so a hang can be attributed
-  // from the log rather than guessed at.
+  // On CI, print the name first so a hang can be attributed from the log.
   if (process.env.CI) console.log(`# → ${name}`);
   const page = await browser.newPage();
   const started = Date.now();
@@ -62,11 +58,9 @@ async function test(name, fn) {
 /**
  * Wait for the page's storage writes to finish.
  *
- * A roll is on screen a moment before its history row is stored. A page
- * closed in between let that row land after the next test had wiped storage,
- * so the next test started with rolls it never made (seen on Windows as the
- * hidden-roll test finding one or two history rows before its first roll).
- * Bounded, because a page that has navigated away has nothing to wait for.
+ * A roll is on screen a moment before its history row is stored; a page closed
+ * in between let that row land after the next test had wiped storage. Bounded,
+ * because a page that has navigated away has nothing to wait for.
  */
 async function settle(page) {
   await Promise.race([
@@ -81,14 +75,13 @@ async function settle(page) {
 }
 
 /**
- * Open the app. Tests share one browser, so by default this wipes the origin's
- * storage first — otherwise one test's library turns up in the next one's
- * assertions. Pass { fresh: false } to reload and keep what was stored.
+ * Open the app at `hash`. With { fresh: true } the origin's storage is wiped
+ * first: tests share one browser, so otherwise one test's library turns up in
+ * the next one's assertions. Without it, this reloads and keeps what was stored.
  */
 const open = async (page, hash = "", { fresh = false } = {}) => {
-  // Whatever the page is still writing lands before it goes: a bag's draw is
-  // stored a moment after it shows, and a reload in that moment brought the
-  // bag back one draw fuller than it was.
+  // Let pending writes land first: a bag's draw is stored a moment after it
+  // shows, and a reload in that moment brought the bag back one draw fuller.
   await settle(page);
   if (fresh) {
     await page.goto(`${server.origin}/index.html?debug&noseed`);
@@ -96,8 +89,8 @@ const open = async (page, hash = "", { fresh = false } = {}) => {
     // lands after the wipe instead.
     await page.waitForFunction("window.orangey");
     await settle(page);
-    // When the wipe happened, so a test that still finds rows can say whether
-    // they were written before it (the wipe did not take) or after (a late write).
+    // Recorded so a test that still finds rows can tell a wipe that did not take
+    // from a late write.
     page.wipedAt = Date.now();
     await page.clearStorage(server.origin);
   }
@@ -119,10 +112,9 @@ const createList = (page, name, items, view = "wheel") =>
   `);
 
 /**
- * Whether the answer's lowest-hanging glyphs clear the clip around it: how far
- * past the answer's box they would reach, in pixels (0 or less is fine).
- * Measured for the glyphs that hang lowest in the answer's font rather than
- * for whatever came up, so the check does not depend on the roll.
+ * How far the answer's lowest-hanging glyphs would reach past its clip, in
+ * pixels (0 or less is fine). Measured with the font's deepest glyphs rather
+ * than whatever came up, so the check does not depend on the roll.
  */
 const answerOverhang = (page) =>
   page.evaluate(`
@@ -149,8 +141,8 @@ async function main() {
 
   await test("the app loads, renders and makes no network requests after load", async (page) => {
     await open(page, "", { fresh: true });
-    // data: URLs are not the network — the embedded fonts arrive as those —
-    // so they are left out of both counts, not only the second.
+    // data: URLs (the embedded fonts) are not the network, so they are left out
+    // of both counts.
     const network = () => page.requests.filter((u) => !u.startsWith("data:"));
     const before = network().length;
     await page.click(".quickbar button");
@@ -167,8 +159,8 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Ready"`);
     const value = Number(await page.evaluate(`return document.querySelector(".result-value").textContent`));
     assert.ok(value >= 1 && value <= 20, `got ${value}`);
-    // The dice font's old-style 3, 4, 5, 7 and 9 hang below the line, and the
-    // clip that keeps an answer to its lines used to cut their feet off.
+    // The dice font's old-style 3, 4, 5, 7 and 9 hang below the line; the clip
+    // that keeps an answer to its lines must not cut them off.
     await page.evaluate("await document.fonts.ready");
     const overhang = await answerOverhang(page);
     assert.ok(overhang <= 0, `a dice answer's digits reach ${overhang}px past the answer's box`);
@@ -193,11 +185,9 @@ async function main() {
     assert.equal(kind, "opfs");
   });
 
-  // Safari 18 — and so every browser on iOS 18 — has an origin-private
-  // filesystem that lists but cannot write: createWritable() is not there.
-  // The app used to pick it on the strength of getDirectory() alone and then
-  // hang on "Loading…" at the first write. Chromium is made to look like that
-  // here, and the library has to land in IndexedDB and stay there.
+  // Safari 18, and so every browser on iOS 18, has an origin-private file system
+  // that lists but cannot write: there is no createWritable(). Chromium is made
+  // to look like that here, and the library must land in IndexedDB and stay there.
   await test("an OPFS that cannot be written to is passed over for IndexedDB", async (page) => {
     await open(page, "", { fresh: true });
     await page.send("Page.addScriptToEvaluateOnNewDocument", {
@@ -218,7 +208,7 @@ async function main() {
     const names = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
     assert.ok(names.includes("Made on Safari 18"), `the wheel did not survive a reload: ${names.join(", ")}`);
     assert.equal(await page.evaluate(`return window.orangey.state.library.backend.kind`), "idb");
-    // Nothing of the probe may be left where the tree would show it.
+    // The app's write probe must leave nothing where the library tree would show it.
     const stray = await page.evaluate(`
       const root = await navigator.storage.getDirectory();
       const lib = await root.getDirectoryHandle("library");
@@ -229,8 +219,8 @@ async function main() {
     assert.deepEqual(stray, []);
   });
 
-  // The same iPad after an update to a Safari that can write: the library in
-  // IndexedDB must still be the one shown, not a fresh, empty filesystem.
+  // An iPad updated to a Safari that can write: the library already in IndexedDB
+  // must still be the one shown, not a fresh, empty file system.
   await test("a library already in IndexedDB is kept over an empty OPFS", async (page) => {
     await open(page, "", { fresh: true });
     await page.evaluate(`
@@ -253,8 +243,8 @@ async function main() {
     await page.setViewport(1280, 900);
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".side")).display`), "block");
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".tabbar")).display`), "none");
-    // The library scrolls on its own: a long one used to lengthen the whole
-    // page, and scrolling to its end took the randomizer out of view.
+    // The library scrolls on its own, so a long one cannot lengthen the page and
+    // take the randomizer out of view.
     const scroll = await page.evaluate(`
       const { state } = window.orangey;
       const now = new Date().toISOString();
@@ -299,7 +289,6 @@ async function main() {
     await page.evaluate(`window.orangey.navigate("#/edit/" + encodeURIComponent(${JSON.stringify(path)}))`);
     await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 3`);
 
-    // Disable the second row: it keeps its weight and the wheel loses a segment.
     const segmentsBefore = await page.evaluate(`return document.querySelectorAll(".wheel-svg path[data-index]").length`);
     await page.click(".outcomes tbody tr:nth-child(2) .disable-button");
     await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr.disabled").length === 1`);
@@ -313,13 +302,11 @@ async function main() {
     assert.ok(stored.includes('"disabled": true'), "disabled flag is not in the file");
     assert.ok(stored.includes('"weight": 30'), "the weight was not preserved");
 
-    // Re-enable: the original weight and percentage come back.
     await page.click(".outcomes tbody tr:nth-child(2) .disable-button");
     await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr.disabled").length === 0`);
     const percents = await page.evaluate(`return [...document.querySelectorAll(".outcomes tbody .pct")].map((c) => c.textContent)`);
     assert.deepEqual(percents, ["50.0%", "30.0%", "20.0%"]);
 
-    // Duplicate, then delete and undo.
     await page.click(".outcomes tbody tr:nth-child(1) .duplicate-button");
     await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr").length === 4`);
     const labels = await page.evaluate(`return [...document.querySelectorAll(".label-cell input")].map((i) => i.value)`);
@@ -332,8 +319,7 @@ async function main() {
     const restored = await page.evaluate(`return [...document.querySelectorAll(".label-cell input")].map((i) => i.value)`);
     assert.deepEqual(restored, labels, "undo did not restore the row in its original place");
 
-    // Reorder by dragging the last row onto the first: the table and the file
-    // on disk must agree on the new order.
+    // Drag the last row onto the first; the table and the file must agree.
     await page.evaluate(`
       const rows = [...document.querySelectorAll(".outcomes tbody tr")];
       const dt = new DataTransfer();
@@ -402,16 +388,14 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".link-button")`);
     await page.click(".link-button");
     await page.waitForFunction(`document.querySelector(".link-dialog")`);
-    // This test is about the library link; the dialog opens on the embedded
-    // one, which has a test of its own.
+    // The dialog opens on the embedded link, which has a test of its own; this one
+    // is about the library link.
     await page.click(".link-kind-library");
 
     const link = await page.evaluate(`return document.querySelector(".link-dialog input[type=text]").value`);
     assert.match(link, /#\/id\/Forest%20Encounters\?roll=1&present=1$/, link);
-    // The link must address the randomizer by identity, not by file name.
     assert.ok(!link.includes(".orangey.json"), "a slide link should not depend on the file name");
 
-    // Unticking an option changes the link.
     await page.evaluate(`
       const boxes = [...document.querySelectorAll(".link-dialog input[type=checkbox]")];
       boxes[1].click();
@@ -420,24 +404,20 @@ async function main() {
     assert.match(withoutPresent, /\?roll=1$/, withoutPresent);
     await page.evaluate(`document.querySelector(".link-dialog").close()`);
 
-    // Follow it the way a slide would.
     await page.goto(link);
     await page.waitForFunction("window.orangey");
     assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), true);
-    // The chrome is out of the way.
     const chrome = await page.evaluate(`
       return ["topbar", "side", "tabbar", "quickbar"].map((c) => getComputedStyle(document.querySelector("." + c)).display);
     `);
     assert.deepEqual(chrome, ["none", "none", "none", "none"], "the chrome should be hidden while presenting");
-    // And nothing sits above the card: an empty chain strip once left a band.
+    // Nothing sits above the card, not even an empty chain strip.
     const cardTop = await page.evaluate(`return document.querySelector(".play-card").getBoundingClientRect().top`);
     assert.ok(cardTop < 2, `the full-screen card starts ${cardTop}px down`);
-    // And it rolled on arrival.
     await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`, 15000);
     const result = await page.evaluate(`return document.querySelector(".result-value").textContent`);
     assert.ok(["Goblin patrol", "Merchant", "Wolf pack"].includes(result), result);
     assert.equal(await page.evaluate(`return window.orangey.state.history.length`), 1);
-    // At full-screen size too, a g or a p keeps its tail.
     await page.evaluate("await document.fonts.ready");
     const overhang = await answerOverhang(page);
     assert.ok(overhang <= 0, `the answer's descenders reach ${overhang}px past its box`);
@@ -461,12 +441,11 @@ async function main() {
 
     await page.click(".roll-button");
     await new Promise((r) => setTimeout(r, 400));
-    // Mid-spin the answer must not be on screen yet.
     assert.equal(await page.evaluate(`return document.querySelector(".result-value").textContent`), "Rolling…");
     await page.key("Escape");
     await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Roll"`);
-    // Skipping shows the result that was actually rolled — the one history kept
-    // — rather than picking a fresh one when the animation is cut short.
+    // The result is decided before the animation, so skipping shows the one
+    // history kept rather than a fresh one.
     const skipped = await page.evaluate(`
       return { shown: document.querySelector(".result-value").textContent, recorded: window.orangey.state.history[0].resultText };
     `);
@@ -540,8 +519,7 @@ async function main() {
     await open(page, "#/library", { fresh: true });
     await page.waitForFunction(`document.querySelector(".new-button")`);
 
-    // Create: + New → Wheel, named in the app's own dialog. Creating opens the
-    // editor, so come back to the library to watch the tree.
+    // Creating opens the editor, so go back to the library to watch the tree.
     const newThing = async (kind, name) => {
       await page.click(".new-button");
       await page.waitForFunction(`document.querySelector(".menu")`);
@@ -556,11 +534,9 @@ async function main() {
     await page.waitForFunction(`[...document.querySelectorAll(".tree-row")].some((r) => r.textContent.includes("Draggable"))`);
     assert.deepEqual(await page.evaluate(`return window.orangey.state.library.files().map((f) => f.path)`), ["draggable.orangey.json"]);
 
-    // A folder to move it into, made the same way.
     await newThing("Folder", "Target");
     await page.waitForFunction(`document.querySelector(".folder-row")`);
 
-    // Move: drag the file onto the folder.
     await page.evaluate(`
       const file = [...document.querySelectorAll(".tree-row")].find((r) => r.textContent.includes("Draggable"));
       const folder = [...document.querySelectorAll(".folder-row")].find((r) => r.textContent.includes("Target"));
@@ -586,12 +562,10 @@ async function main() {
     await page.evaluate(`document.querySelector("dialog[open] form").requestSubmit()`);
     await page.waitForFunction(`window.orangey.state.library.files().some((f) => f.randomizer && f.randomizer.name === "Renamed by dialog")`);
 
-    // Delete, through the confirmation it insists on.
     await fileMenu("Renamed by dialog", "Delete…");
     await page.waitForFunction(`document.querySelector("dialog[open] .danger-primary")`);
     await page.click("dialog[open] .danger-primary");
     await page.waitForFunction(`window.orangey.state.library.files().length === 0`);
-    // the tree lost the file and kept the folder it was in
     assert.equal(
       await page.evaluate(`return [...document.querySelectorAll(".tree-row")].some((r) => r.textContent.includes("Renamed by dialog"))`),
       false,
@@ -599,8 +573,8 @@ async function main() {
     );
     assert.ok(await page.evaluate(`return document.querySelectorAll(".folder-row").length >= 1`), "the folder went with it");
 
-    // Undo brings it back, at the same path and with the same id, so boards
-    // and "goes to" links that pointed at it work again.
+    // Undo restores it at the same path with the same id, so boards and "goes to"
+    // links that pointed at it work again.
     await page.evaluate(`[...document.querySelectorAll(".toast button")].find((b) => b.textContent === "Undo").click()`);
     await page.waitForFunction(`window.orangey.state.library.files().length === 1`);
     const restored = await page.evaluate(`
@@ -630,7 +604,6 @@ async function main() {
     assert.equal(controls.windDown, false, "the wind-down choice should be gone");
     assert.equal(controls.checked, true, "the roll-back ships on");
 
-    // Off, and it stays off across a reload.
     await page.click('input[aria-label="Roll-back"]');
     await page.waitForFunction(`window.orangey.state.prefs.feel.wheel.settleDegrees === 0`);
     await open(page, "#/settings", { fresh: false });
@@ -638,11 +611,10 @@ async function main() {
     assert.equal(await page.evaluate(`return document.querySelector('input[aria-label="Roll-back"]').checked`), false);
     assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.settleDegrees`), 0);
 
-    // And back on, at the value the app ships with.
     await page.click('input[aria-label="Roll-back"]');
     await page.waitForFunction(`window.orangey.state.prefs.feel.wheel.settleDegrees > 0`);
     assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.settleDegrees`), 11);
-    // A curve in an old settings file is still honoured; it simply has no control.
+    // A curve in a settings file is still honoured; it just has no control.
     await page.evaluate(`window.orangey.state.setFeel({ wheel: { ...window.orangey.state.prefs.feel.wheel, curve: "snappy" } })`);
     assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.curve`), "snappy");
     assert.deepEqual(page.consoleErrors, []);
@@ -653,7 +625,6 @@ async function main() {
     const path = await createList(page, "Own feel", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
     await open(page, `#/edit/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".feel-card input[type=range]")`);
-    // Spin length is the first slider in the wheel section.
     await page.type('.feel-card input[aria-label="Spin length"]', "600");
     const stored = await page.evaluate(`
       const { state } = window.orangey;
@@ -675,7 +646,6 @@ async function main() {
     `);
     assert.ok(measured < 1500, `the override of 600 ms should win over the global 3000 ms; spin took ${measured.toFixed(0)} ms`);
 
-    // Back to global.
     await open(page, `#/edit/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".reset-feel")`);
     await page.click(".reset-feel");
@@ -724,7 +694,6 @@ async function main() {
       { label: "Beta", weight: 1 },
     ]);
 
-    // Wheel.
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "full", wheel: { durationMs: 1200, turns: 3, curve: "standard", settle: "bouncy" } })`);
     let samples = await page.evaluate(`
@@ -740,7 +709,6 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".result-value").textContent !== "Rolling…"`);
     assert.ok(["Alpha", "Beta"].includes(await page.evaluate(`return document.querySelector(".result-value").textContent`)));
 
-    // Dice.
     await open(page, "#/");
     await page.evaluate(`window.orangey.state.setFeel({ motion: "full", dice: { tumbleMs: 1200, bounces: 2, spread: 0.5 } })`);
     samples = await page.evaluate(`
@@ -754,7 +722,6 @@ async function main() {
     `);
     assert.ok(samples.every((s) => s === "Rolling…"), `dice leaked the result: ${samples.join(", ")}`);
 
-    // Coin.
     await open(page, "#/");
     await page.evaluate(`window.orangey.state.setFeel({ motion: "full", coin: { flips: 5, durationMs: 1200 } })`);
     samples = await page.evaluate(`
@@ -808,10 +775,10 @@ async function main() {
     const kept = settled.values.slice().sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0);
     assert.equal(settled.total, kept, "the total must be the three kept dice");
 
-    // Exploding dice land in throws: the die an explosion added waits, unseen,
-    // until the first throw is down, and the answer waits for the last. The
-    // seed fixes the roll — seed "table" makes the first 2d2! a 1 and a 2,
-    // and the 2 explodes into a 1 — so this is one roll, not a hunt for one.
+    // Exploding dice land in throws: the die an explosion adds waits, unseen, until
+    // the first throw is down, and the answer waits for the last. Seed "table"
+    // makes the first 2d2! a 1 and a 2, and the 2 explodes into a 1, so this is one
+    // fixed roll, not a hunt for one.
     await page.evaluate(`
       const { state } = window.orangey;
       await state.savePrefs({ seed: "table" });
@@ -841,8 +808,8 @@ async function main() {
     assert.equal(await page.evaluate(`return document.querySelector(".result-value").textContent`), "4");
     assert.equal(await page.evaluate(`return [...document.querySelectorAll(".dice-tray .die")].map((d) => d.textContent).join(",")`), "1,2,1");
     assert.equal(await page.evaluate(`return document.querySelectorAll(".die-flight.waiting, .die.rolling").length`), 0);
-    // Finish only once the roll's history row is stored: a page closed in the
-    // middle of that write is a suspect in a later test's storage failing.
+    // Finish only once the roll's history row is stored, so the write cannot land
+    // in a later test's storage.
     await page.evaluate(`
       for (let i = 0; i < 100; i++) {
         const stored = await new Promise((resolve, reject) => {
@@ -872,7 +839,6 @@ async function main() {
     assert.equal(await page.evaluate(`return document.querySelectorAll(".die-canvas").length`), 0);
     assert.equal(await page.evaluate(`return document.querySelectorAll(".dice-tray .die").length`), 1);
 
-    // Switch it in Settings and reload.
     await open(page, "#/settings");
     await page.evaluate(`
       const groups = [...document.querySelectorAll('[aria-label="Style"] button')];
@@ -883,23 +849,19 @@ async function main() {
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     await page.click(".quickbar button:nth-child(6)");
     await page.waitForFunction(`document.querySelectorAll(".die-canvas").length === 1`);
-    // Instant mode draws the solid at rest with its value, without animating.
     const value = await page.evaluate(`return Number(document.querySelector(".die-value").textContent)`);
     assert.ok(value >= 1 && value <= 20, `got ${value}`);
-    // …and the number sits on the face it came to rest on, square in the
-    // middle of the die. Placing it from the pose the die started in put it
-    // off to one side whenever nothing animated (a slip in the dice-waves change).
+    // The number sits square in the middle of the face the die came to rest on,
+    // even when nothing animated: it is placed from the resting pose, not the
+    // starting one.
     const offset = await page.evaluate(`
       const [x, y] = (document.querySelector(".die-value").style.transform.match(/-?[0-9.]+/g) ?? ["NaN", "NaN"]).map(Number);
       return Math.hypot(x, y);
     `);
-    // A few pixels either way are the digits' own ink being centred; being
-    // placed from the wrong pose put it 25 px off.
+    // A few pixels either way are the digits' own ink being centred; placing from
+    // the wrong pose puts it about 25 px off.
     assert.ok(offset < 8, `the number sits ${offset.toFixed(1)} px from the middle of the die`);
 
-    // The two embedded fonts load, and each goes where it belongs: the dice
-    // numbers and the dice total in Young Serif, the wordmark, the page and
-    // a button in Arapey, and only a wheel's slice labels in the system font.
     const type = await page.evaluate(`
       await document.fonts.ready;
       const family = (sel) => getComputedStyle(document.querySelector(sel)).fontFamily;
@@ -960,7 +922,6 @@ async function main() {
     assert.match(hit, /Forest Encounters/);
     assert.match(hit, /outcome: Goblin patrol/);
 
-    // A favourite is offered on the screen you land on, not only in here.
     await page.evaluate(`
       const { state } = window.orangey;
       state.toggleFavourite(state.library.files()[0].randomizer.id);
@@ -1005,7 +966,7 @@ async function main() {
   await test("O the README walkthrough works end to end, offline, from a clean start", async (page) => {
     await open(page, "", { fresh: true });
 
-    // 1–3: import the example CSV and create the wheel.
+    // The README's "A first run": import the example CSV and create the wheel.
     await page.evaluate(`window.orangey.navigate("#/import")`);
     await page.waitForFunction(`document.querySelector(".importer textarea")`);
     await page.type(".importer textarea", readmeCsv);
@@ -1017,10 +978,9 @@ async function main() {
     // ".outcomes", and with five rows it would otherwise match first.
     await page.waitForFunction(`document.querySelectorAll(".outcomes .weight-cell input").length === 5`);
 
-    // From here on, nothing may touch the network.
     await page.setOffline(true);
 
-    // 4: set the dragon's weight, disable the merchant, roll.
+    // Set the dragon's weight, disable the merchant, roll.
     await page.type(".outcomes tbody tr:nth-child(5) .weight-cell input", "1");
     await page.click(".outcomes tbody tr:nth-child(2) .disable-button");
     await page.waitForFunction(`document.querySelectorAll(".outcomes tbody tr.disabled").length === 1`);
@@ -1031,7 +991,7 @@ async function main() {
     assert.ok(["Goblin patrol", "Wolf pack", "Nothing", "Young green dragon"].includes(rolled), rolled);
     assert.notEqual(rolled, "Merchant", "a disabled outcome came up");
 
-    // 5: reload — it is still there, still offline.
+    // Reload, still offline: it is still there.
     await open(page);
     const saved = await page.evaluate(`
       const node = window.orangey.state.library.files()[0];
@@ -1050,14 +1010,12 @@ async function main() {
   });
 
   // ---- P: Orangey the mascot ---------------------------------------------
-  // What he does with a landing is unit-tested; what is left for a browser is
-  // that he really appears when something happens, and that there is only ever
-  // one of him on the screen.
+  // His reactions are unit-tested; here, only that he really appears, and only
+  // ever once on the screen.
 
   /**
-   * Show him, with every reaction switched on. Orangey ships with four of them
-   * off — the noisy ones — but this is about the machinery, so it starts from
-   * all of them on.
+   * Show him with every reaction switched on (four ship switched off), since
+   * this tests the machinery, not the defaults.
    */
   const mascotOn = (page, presence = "always", motion = "instant") =>
     page.evaluate(`
@@ -1191,11 +1149,9 @@ async function main() {
     assert.equal(after.seed, "table 7");
     assert.deepEqual(after.colours, [{ name: "Campaign red", hex: "#b3202a" }]);
     assert.equal(after.scheme, "ocean", "the scheme is applied to the page at once");
-    // it survives a reload
     await open(page, "#/settings");
     assert.equal(await page.evaluate(`return window.orangey.state.prefs.feel.wheel.durationMs`), 4200);
 
-    // a bad file: nothing changes, and the toast names the problem
     await page.evaluate(`
       const input = document.querySelector('.settings-file-card input[type="file"]');
       const dt = new DataTransfer();
@@ -1245,12 +1201,10 @@ async function main() {
       assert.equal(boot.single, 200, "Settings → Download could not find orangey.html");
       assert.equal(boot.icon, 200, "the manifest's icon is not beside the app");
       // The same registration call index.html makes on load, run here so the
-      // assertion is about the scope it resolves to rather than about when
-      // the harness happens to fire load. (That it registers at all on load
-      // is what N8's offline test proves, at the root.) It is raced against a
-      // clock because registration is the one step here that depends on a
-      // background thread the runner may be slow to start, and a promise that
-      // never settles would take the whole suite with it.
+      // assertion is about the scope it resolves to, not about when load fires (the
+      // offline walkthrough test covers registering on load). Raced against a clock:
+      // registration depends on a background thread the runner may be slow to start,
+      // and a promise that never settles would hang the suite.
       const scope = await page.evaluate(`
         const reg = await Promise.race([
           navigator.serviceWorker.register("sw.js", { scope: "." }).catch(() => null),
@@ -1263,7 +1217,6 @@ async function main() {
         assert.equal(scope, "/tools/orangey/", `the worker claimed the wrong scope: ${scope}`);
       }
 
-      // and it actually rolls, with history, from down here
       await page.click(".quickbar button:nth-child(2)");
       await page.waitForFunction("window.orangey.state.history.length === 1");
       const value = await page.evaluate(`return document.querySelector(".result-value").textContent`);
@@ -1303,7 +1256,6 @@ async function main() {
     }
     assert.ok(texts.size >= 3, `only saw ${texts.size} distinct outcomes: ${[...texts]}`);
 
-    // the longest one is held to two lines and clipped rather than allowed to push
     const shape = await page.evaluate(`
       const value = document.querySelector(".result-value");
       const slot = document.querySelector(".result-slot");
@@ -1325,7 +1277,6 @@ async function main() {
   await test("S a randomizer from the library shows a way home, not the dice presets", async (page) => {
     await open(page, "", { fresh: true });
     const path = await createList(page, "Opened", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
-    // the plain play screen keeps its presets
     assert.equal(await page.evaluate(`return document.querySelectorAll(".quickbar .preset").length`), 7);
     assert.equal(await page.evaluate(`return !!document.querySelector(".home-button")`), false);
 
@@ -1334,7 +1285,6 @@ async function main() {
     assert.equal(await page.evaluate(`return document.querySelectorAll(".quickbar .preset").length`), 0, "a press must not be able to swap out the randomizer");
     assert.equal(await page.evaluate(`return document.querySelectorAll(".quickbar input").length`), 0);
     assert.equal(await page.evaluate(`return !!document.querySelector(".home-button")`), true);
-    // and it goes back to the presets
     await page.click(".home-button");
     await page.waitForFunction(`location.hash === "#/"`);
     await page.waitForFunction(`document.querySelectorAll(".quickbar .preset").length === 7`);
@@ -1357,9 +1307,9 @@ async function main() {
     assert.match(card.text, /clearing this site's data/);
     assert.equal(card.zip, true, "no ZIP export");
     assert.equal(card.persistState, true, "nothing said about eviction");
-    // Chrome has a folder picker, so it is told nothing extra. Take the picker
-    // away and pretend to be an iPhone tab: the card says what to do instead,
-    // and no longer claims Chrome or Edge could help — on an iPhone they cannot.
+    // Chrome has a folder picker, so it is told nothing extra. Take the picker away
+    // and pretend to be an iPhone tab: the card says what to do instead, without
+    // suggesting Chrome or Edge, which cannot help on an iPhone.
     assert.equal(await page.evaluate(`return document.querySelector(".storage-advice")`), null);
     await page.evaluate(`
       Object.defineProperty(window, "showDirectoryPicker", { value: undefined, configurable: true });
@@ -1372,7 +1322,6 @@ async function main() {
     const advice = await page.evaluate(`return document.querySelector(".storage-advice").textContent`);
     assert.match(advice, /Add Orangey to your Home Screen/);
     assert.doesNotMatch(advice, /Chrome and Edge/);
-    // the ZIP export really produces the library
     await page.evaluate(`
       window.__downloads = [];
       const real = URL.createObjectURL.bind(URL);
@@ -1383,7 +1332,6 @@ async function main() {
     const size = await page.evaluate(`return (await window.__downloads[0].arrayBuffer()).byteLength`);
     assert.ok(size > 0, "the export was empty");
 
-    // the menu entry that used to lead nowhere now leads here
     await open(page, "#/library");
     await page.waitForFunction(`document.querySelector(".storage-badge")`);
     await page.click(".storage-badge");
@@ -1482,14 +1430,11 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".play-card")`);
     assert.equal(await page.evaluate(`return document.querySelector(".play-card h1").textContent`), "Forest Encounters");
     assert.equal(await page.evaluate(`return window.orangey.state.library.files().length`), 0, "opening a link must not put anything in the library");
-    // it is a fixed randomizer, like one from the library: no presets to press
     assert.equal(await page.evaluate(`return document.querySelectorAll(".quickbar .preset").length`), 0);
     assert.equal(await page.evaluate(`return !!document.querySelector(".home-button")`), true);
-    // it rolls by itself, because the link says roll=1…
     assert.match(link, /[?&]roll=1(&|$)/);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     await autoRollLanded(page);
-    // …and again when asked
     await page.click(".roll-button");
     await page.waitForFunction(`window.orangey.state.history.length === 2`);
     const text = await page.evaluate(`return document.querySelector(".result-value").textContent`);
@@ -1515,7 +1460,6 @@ async function main() {
     assert.match(embedded, /#\/roll\?w=/);
     assert.match(library, /#\/id\/enc-linked/);
     assert.ok(embedded.length > library.length, "the embedded link is the longer one");
-    // the library link still opens the library copy
     await page.goto(localise(library));
     await page.waitForFunction(`document.querySelector(".play-card")`);
     assert.equal(await page.evaluate(`return document.querySelector(".play-card h1").textContent`), "Forest Encounters");
@@ -1540,7 +1484,6 @@ async function main() {
     await page.waitForFunction(`location.hash.startsWith("#/edit/")`);
     assert.equal(await page.evaluate(`return window.orangey.state.library.files().length`), 1);
 
-    // a payload with a hole in it is explained rather than opened
     await open(page, "#/import", { fresh: true });
     await page.waitForFunction(`document.querySelector("textarea")`);
     const damaged = link.replace(/w=(.{10})(.{10})/, "w=$1");
@@ -1567,16 +1510,15 @@ async function main() {
   });
 
   await test("T a link with present=1 fills the screen even when the app is already open", async (page) => {
-    // Following a slide link inside a tab that already has Orangey open goes
-    // through hashchange: the outgoing view is torn down after the incoming
-    // one is built, and it used to take the full-screen class with it.
+    // Following a slide link in a tab that already has Orangey open goes through
+    // hashchange: the outgoing view is torn down after the incoming one is built,
+    // and must not take the full-screen class with it.
     await open(page, "", { fresh: true });
     const path = await createList(page, "Deck", [{ label: "A", weight: 1 }, { label: "B", weight: 1 }]);
     assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), false);
     await page.evaluate(`location.hash = "#/r/${encodeURIComponent(path)}?present=1"`);
     await page.waitForFunction(`document.querySelector(".play-card")`);
     assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), true, "the link did not fill the screen");
-    // and leaving that randomizer leaves full screen behind
     await page.evaluate(`location.hash = "#/settings"`);
     await page.waitForFunction(`document.querySelector(".storage-card")`);
     assert.equal(await page.evaluate(`return document.body.classList.contains("presenting")`), false);
@@ -1651,8 +1593,8 @@ async function main() {
     await page.goto(`file://${join(dist, "orangey.html")}?debug&noseed`);
     await page.waitForFunction("window.orangey");
     const backend = await page.evaluate(`return window.orangey.state.library.backend.kind`);
-    // A page opened from disk gets no OPFS; it must fall to IndexedDB, never
-    // to memory — that is exactly the bug where a new wheel disappeared.
+    // A page opened from disk gets no OPFS; it must fall back to IndexedDB, never
+    // to memory, or a new wheel would vanish on reload.
     assert.equal(backend, "idb", `expected the IndexedDB backend on file://, got ${backend}`);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     await page.click(".quickbar button:nth-child(6)");
@@ -1670,7 +1612,7 @@ async function main() {
 
   // ---- X: boards --------------------------------------------------------
 
-  /** A board holding the randomizers at `paths`, saved in the library. */
+  /** A board holding the randomizers with these ids, saved in the library. */
   const createBoard = (page, name, ids) =>
     page.evaluate(`
       const { state } = window.orangey;
@@ -1698,12 +1640,9 @@ async function main() {
     const shown = await page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((el) => el.textContent)`);
     assert.ok(["Goblins", "Nothing"].includes(shown[0]), `first cell shows ${shown[0]}`);
     assert.ok(["Rain", "Sun"].includes(shown[1]), `second cell shows ${shown[1]}`);
-    // Each cell records under its own name, so history reads as two rolls.
     const names = await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName).sort()`);
     assert.deepEqual(names, ["Encounters", "Weather"]);
 
-    // Full screen, the board fills the window — it used to shrink to one
-    // cell's width, a third of a desktop screen — and the way out is on it.
     await page.click(".present-button");
     await page.waitForFunction(`document.body.classList.contains("presenting")`);
     const fill = await page.evaluate(`return document.querySelector(".board").getBoundingClientRect().width / innerWidth`);
@@ -1714,7 +1653,6 @@ async function main() {
     await page.click(".leave-presenting");
     await page.waitForFunction(`!document.body.classList.contains("presenting")`);
 
-    // Rolling one cell leaves the other cell's answer where it was.
     const before = shown[1];
     // A wheel rolls from its hub; a click on a slice does nothing (a
     // double-tap there edits the slice's weight).
@@ -1726,9 +1664,8 @@ async function main() {
     const after = await page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((el) => el.textContent)`);
     assert.equal(after[1], before, "rolling one cell should not disturb the others");
 
-    // An outcome's link is followed from a cell's own Roll — here a list shown
-    // as a list, which had no way to roll on its own before — and what it
-    // opens sits right after it and waits. Roll all closes it again.
+    // An outcome's link is followed from a cell's own Roll (here a list shown as a
+    // list), and what it opens sits right after it and waits. Roll all closes it.
     await createList(page, "Hoard", [{ label: "Gold", weight: 1 }]);
     await createList(page, "Ambush", [{ label: "Wolves", weight: 1, goesTo: "Hoard" }], "list");
     const chained = await createBoard(page, "Chains", ["Ambush"]);
@@ -1759,7 +1696,6 @@ async function main() {
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".add-to-board")`);
 
-    // Add through the picker.
     await page.click(".add-to-board");
     await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
     await page.click(".picker-choice");
@@ -1771,7 +1707,6 @@ async function main() {
     `);
     assert.deepEqual(saved, [{ id, name: "Encounters" }], "the board should be saved with what was added");
 
-    // Delete the randomizer: the board says what is missing rather than shrinking.
     await page.evaluate(`await window.orangey.state.library.remove(${JSON.stringify(listPath)})`);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".cell-missing")`);
@@ -1779,9 +1714,9 @@ async function main() {
     assert.match(text, /Encounters/);
     assert.match(text, /not in your library/);
 
-    // Take it off again. A board with something on it opens in play mode,
-    // where a stray click cannot take anything off; Edit board brings the ✕s
-    // out, and Undo puts back what one took.
+    // A board with something on it opens in play mode, where a stray click cannot
+    // take anything off; Edit board brings out the ✕s, and Undo puts back what one
+    // took.
     const visible = (sel) => page.evaluate(`const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.offsetParent !== null`);
     assert.equal(await visible(".cell-holder > .cell-remove"), false, "no ✕ in play mode");
     assert.equal(await visible(".add-to-board"), false, "no Add… in play mode");
@@ -1814,7 +1749,6 @@ async function main() {
     assert.equal(await page.evaluate(`return Boolean(document.querySelector(".export-board"))`), true);
     await page.evaluate(`document.querySelector(".share-dialog").close()`);
 
-    // That link opens the board itself, not a play screen.
     await page.goto(`${server.origin}/index.html?debug&noseed#/id/Tonight`);
     await page.waitForFunction(`document.querySelector(".board-grid")`);
     assert.equal(await page.evaluate(`return document.querySelectorAll(".cell-holder").length`), 1);
@@ -1841,10 +1775,8 @@ async function main() {
     await page.click(".roll-button");
     await page.waitForFunction(`document.querySelector(".chain-link")`);
     assert.equal(await page.evaluate(`return document.querySelector(".chain-link .cell-name").textContent`), "Hoard");
-    // It waits: one roll has happened, and what opened is still Ready.
     assert.equal(await page.evaluate(`return window.orangey.state.history.length`), 1);
     assert.equal(await page.evaluate(`return document.querySelector(".chain-link .result-value").textContent`), "Ready");
-    // Beside the wheel that sent you there, not underneath it.
     const beside = await page.evaluate(`
       const card = document.querySelector(".play-card").getBoundingClientRect();
       const opened = document.querySelector(".chain-link").getBoundingClientRect();
@@ -1855,19 +1787,16 @@ async function main() {
     await page.click(".chain-roll");
     await page.waitForFunction(`window.orangey.state.history.length === 2`);
     assert.equal(await page.evaluate(`return document.querySelector(".chain-link .result-value").textContent`), "Gold");
-    // Ordinary rows, one per randomizer, each under its own name.
     assert.deepEqual(
       await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName)`),
       ["Hoard", "Encounters"],
     );
-    // …but the second says what sent you there, and the first says nothing.
     assert.deepEqual(
       await page.evaluate(`return window.orangey.state.history.map((h) => h.from ?? null)`),
       [{ randomizerName: "Encounters", label: "The dragon's hoard" }, null],
     );
-    // Both rolls were made on this screen, so both are in its Recent rolls:
-    // the panel once showed only the wheel's own, and the chained roll looked
-    // as if it had never been recorded.
+    // Both rolls were made on this screen, so both belong in its Recent rolls,
+    // the chained one included.
     await page.waitForFunction(`document.querySelectorAll(".recent-rolls li").length === 2`);
     assert.deepEqual(
       await page.evaluate(`return [...document.querySelectorAll(".recent-rolls li .name")].map((n) => n.textContent)`),
@@ -1876,8 +1805,6 @@ async function main() {
     await open(page, "#/history");
     await page.waitForFunction(`[...document.querySelectorAll(".history-list .roll-from")].some((e) => e.textContent === "from Encounters → The dragon's hoard")`);
 
-    // The randomizer an outcome points at is deleted: the outcome still comes
-    // up, and says what is missing rather than quietly doing nothing.
     await page.evaluate(`await window.orangey.state.library.remove(${JSON.stringify(hoard)})`);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".roll-button")`);
@@ -1899,7 +1826,6 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".roll-button")`);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
 
-    // Encounters opens Hoard: two of them, both full size.
     await page.click(".roll-button");
     await page.waitForFunction(`document.querySelectorAll(".chain-link").length === 1`);
     assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-icon").length`), 0);
@@ -1923,7 +1849,6 @@ async function main() {
     );
     assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-link").length`), 2, "nothing should have opened a fourth time");
 
-    // Clicking the icon brings Encounters back to full size.
     await page.click(".chain-icon");
     await page.waitForFunction(`!document.querySelector(".play-card").hidden`);
     assert.equal(await page.evaluate(`return document.querySelectorAll(".chain-link").length`), 0);
@@ -1951,18 +1876,15 @@ async function main() {
     // The picture is drawn one refresh after the wheel: its bytes are read
     // asynchronously, so counting the moment the wheel appears is a race.
     await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
-    // The slice carries a thumbnail, clipped so it cannot spill into its neighbour.
     const drawn = await page.evaluate(`
       const img = document.querySelector(".wheel-rotor image");
       return { count: document.querySelectorAll(".wheel-rotor image").length, clipped: Boolean(img && img.getAttribute("clip-path")) };
     `);
     assert.equal(drawn.count, 1, "only the outcome with a picture should have one");
     assert.equal(drawn.clipped, true);
-    // By default a slice shows its picture or its name, never one over the other.
     const labelled = () => page.evaluate(`return [...document.querySelectorAll(".wheel-rotor .wheel-label")].map((l) => l.dataset.index)`);
     assert.deepEqual(await labelled(), ["1"], "the pictured slice should carry no name, the other its name");
 
-    // The editor offers the override only because a picture is on the wheel.
     await open(page, `#/edit/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".slices-field") && !document.querySelector(".slices-field").hidden`);
     await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
@@ -1973,7 +1895,6 @@ async function main() {
       await window.orangey.state.library.flush();
       return JSON.parse(await window.orangey.state.library.backend.read(${JSON.stringify(path)})).randomizer.slices ?? null;
     `);
-    // Both: the picture moves out to the rim and the name ends before it.
     await choose("Both");
     await page.waitForFunction(`document.querySelectorAll(".wheel-rotor .wheel-label").length === 2`);
     const apart = await page.evaluate(`
@@ -1988,7 +1909,6 @@ async function main() {
     `);
     assert.ok(apart.nameEnds <= apart.pictureStarts, `the name reaches ${apart.nameEnds}, the picture starts at ${apart.pictureStarts}`);
     assert.equal(await stored(), "both");
-    // Names: no pictures on the wheel at all.
     await choose("Names");
     await page.waitForFunction(`!document.querySelector(".wheel-rotor image")`);
     assert.deepEqual(await labelled(), ["0", "1"]);
@@ -2000,7 +1920,6 @@ async function main() {
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".wheel-rotor image")`);
 
-    // The answer shows it when that outcome comes up, and not before.
     assert.equal(await page.evaluate(`return document.querySelector(".result-picture").hidden`), true);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     for (let i = 0; i < 40; i++) {
@@ -2012,12 +1931,11 @@ async function main() {
       if (text === "Owlbear") break;
     }
 
-    // A link carries the wheel but never the picture: that is what keeps a
-    // shared link short enough for a slide.
+    // A link carries the wheel but never the picture, which keeps a shared link
+    // short enough for a slide.
     const link = await makeLink(page, path);
-    // What the link itself carries, decoded from the link text.
-    // The link has a ? before the hash too (?debug), so read the query of the
-    // route, not of the page.
+    // Decode what the link carries. It has a ? before the hash too (?debug), so
+    // read the route's query, not the page's.
     const payload = new URLSearchParams(link.slice(link.lastIndexOf("?") + 1)).get("w");
     const carried = await page.evaluate(`return await window.orangey.decodeRandomizer(${JSON.stringify(payload)})`);
     assert.ok(link.length < 2000, `${link.length} characters`);
@@ -2075,17 +1993,12 @@ async function main() {
     await page.click(".outcomes tbody tr:first-child .goes-to-button");
     await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
 
-    // The library arrives as a tree — a real game has folders, which is why
-    // this is not a dropdown any more.
     const folders = await page.evaluate(`return [...document.querySelectorAll(".picker-folder")].map((e) => e.textContent.trim())`);
     assert.ok(folders.some((f) => f.includes("Monsters")), `folders: ${folders.join(", ")}`);
 
-    // Typing flattens it to matches, named as the randomizer is named, with
-    // the folder it lives in.
     await page.type(".picker-dialog input[type=search]", "dragon");
-    // Search matches outcomes as well as names, so the wheel being edited —
-    // which has "A dragon!" on it — is here too, greyed out: an outcome
-    // pointing at its own wheel is a circle by construction.
+    // Search matches outcomes as well as names, so the wheel being edited (it has
+    // "A dragon!") is listed too, greyed out: pointing at itself would be a circle.
     await page.waitForFunction(`[...document.querySelectorAll(".picker-choice")].some((e) => e.textContent.startsWith("Which dragon"))`);
     const hits = await page.evaluate(`return [...document.querySelectorAll(".picker-choice")].map((e) => [e.textContent, e.disabled])`);
     assert.ok(hits.some(([text]) => text === "Which dragon — Monsters"), `hits: ${JSON.stringify(hits)}`);
@@ -2147,8 +2060,6 @@ async function main() {
       [...dialog.querySelectorAll("button")].find((b) => /create/i.test(b.textContent)).click();
     `);
 
-    // It goes on the board, and opens where you can fill it in — a new wheel
-    // is empty, so leaving you on the board would leave you nothing to roll.
     await page.waitForFunction(`location.hash.startsWith("#/edit/")`);
     const entries = await page.evaluate(`
       const { state } = window.orangey;
@@ -2156,15 +2067,11 @@ async function main() {
       return JSON.parse(await state.library.backend.read(${JSON.stringify(path)})).randomizer.entries.map((e) => e.name);
     `);
     assert.deepEqual(entries, ["Weather"]);
-    // Back from that editor returns to the board rather than stranding you
-    // on the new wheel's play screen, which has no Back of its own.
     await page.waitForFunction(`!document.querySelector(".topbar .back").hidden`);
     await page.click(".topbar .back");
     await page.waitForFunction(`location.hash === ${JSON.stringify(`#/r/${encodeURIComponent(path)}`)}`);
     await page.waitForFunction(`window.orangey.state.prefs.lastPath === ${JSON.stringify(path)}`);
 
-    // Dice typed into the picker's search box go straight onto the board,
-    // with no editor on the way, and are kept in one folder.
     const typeNotation = async (text) => {
       await page.waitForFunction(`document.querySelector(".edit-board")`);
       // Adding is an edit; a board with something on it opens in play mode.
@@ -2188,7 +2095,6 @@ async function main() {
     await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 2`);
     assert.equal(await page.evaluate(`return location.hash`), `#/r/${encodeURIComponent(path)}`);
     assert.deepEqual(await quickDice(), ["2d6 + 3"]);
-    // On another board the same roll is the same file, not a second one.
     const other = await createBoard(page, "Tomorrow", []);
     await open(page, `#/r/${encodeURIComponent(other)}`);
     await typeNotation("2d6 + 3");
@@ -2217,9 +2123,8 @@ async function main() {
     await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 2`);
 
     await page.click(".roll-all");
-    // Both trays must be drawing. The loop is shared by every tray on the
-    // page, and a tray starting a roll once cleared the whole of it, which
-    // left the other tray's dice painted but frozen (bug 4).
+    // Both trays must be drawing: every tray on the page shares one animation loop,
+    // and one tray starting a roll must not freeze the other's dice.
     await page.waitForFunction(`document.querySelectorAll(".die-canvas").length >= 7`);
     const sample = () => page.evaluate(`
       return [...document.querySelectorAll(".cell")].map((cell) => {
@@ -2234,9 +2139,8 @@ async function main() {
     assert.notDeepEqual(first[0], second[0], "the first tray stopped tumbling");
     assert.notDeepEqual(first[1], second[1], "the second tray stopped tumbling");
 
-    // And they land: four Fate dice, each reading as a sign. Wait for the
-    // dice themselves to settle — a cell's result panel says "Rolling…"
-    // while the tray is still in the air, which is not "Ready" either.
+    // Wait for the dice themselves to settle: a cell's result panel says
+    // "Rolling…" while the tray is still in the air, which is not "Ready" either.
     await page.waitForFunction(`document.querySelectorAll(".die-slot.rolling").length === 0`, 20000);
     // Captions are in the system font: the dice font's old-style 1 and 2
     // are too small to read at caption size.
@@ -2269,7 +2173,6 @@ async function main() {
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".bag-count") && document.querySelector(".bag-count").textContent === "3 of 3 left"`);
 
-    // Three draws, three different answers: that is the whole point of a bag.
     const seen = [];
     for (let n = 0; n < 3; n++) {
       const left = 2 - n;
@@ -2280,7 +2183,6 @@ async function main() {
     assert.equal(new Set(seen).size, 3, `the same outcome came up twice: ${seen.join(", ")}`);
     await page.waitForFunction(`document.querySelector(".bag-count").textContent === "0 of 3 left"`);
 
-    // The fourth press has nothing left to draw and says so.
     await page.click(".roll-button");
     await page.waitForFunction(`/bag is empty/i.test(document.querySelector(".result-value").textContent)`);
 
@@ -2293,10 +2195,8 @@ async function main() {
     await page.click(".roll-button");
     await page.waitForFunction(`document.querySelector(".bag-count").textContent === "2 of 3 left"`);
 
-    // On a board the same bag is drawn from, and the cell says so: its count
-    // and Refill are there, and a drawn outcome leaves the wheel as the next
-    // roll starts. A cell's wheel used to keep every slice until a reload,
-    // and an empty bag on a board could not be refilled from it.
+    // On a board the cell draws from the same bag, shows its count and Refill, and
+    // a drawn outcome leaves the wheel as the next roll starts.
     const bagId = await page.evaluate(`
       const { state } = window.orangey;
       const node = state.library.find(${JSON.stringify(path)});
@@ -2332,8 +2232,8 @@ async function main() {
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".hidden-box")`);
-    // The ×N field beside it sits on one line with its ×; the general rule
-    // for number inputs once stretched it to full width, onto a line below.
+    // The ×N field sits on one line with its ×, not stretched to full width by the
+    // general rule for number inputs.
     const count = await page.evaluate(`
       const field = document.querySelector(".roll-count-field"), input = field.querySelector("input");
       return { width: input.getBoundingClientRect().width, field: field.getBoundingClientRect().height, input: input.getBoundingClientRect().height };
@@ -2342,8 +2242,8 @@ async function main() {
     assert.ok(count.field < count.input * 1.5, `the × and its field take ${count.field}px for a ${count.input}px field`);
 
     const rows = () => page.evaluate(`return window.orangey.state.history.length`);
-    // Diagnostic for a leak seen only on Windows: name what is there and when
-    // it was written, relative to the wipe this test started with.
+    // Diagnostic for a leak seen only on Windows: name what is there and when it
+    // was written, relative to the wipe this test started with.
     const leaked = await page.evaluate(`return window.orangey.state.history.map((h) => ({ name: h.randomizerName, result: h.resultText, at: h.at }))`);
     assert.equal(leaked.length, 0, [
       `${leaked.length} history row(s) before the first roll; storage was wiped at ${new Date(page.wipedAt).toISOString()}`,
@@ -2355,7 +2255,6 @@ async function main() {
     await page.click(".roll-button");
     await page.waitForFunction(`document.querySelector(".roll-button").textContent === "Reveal"`);
 
-    // Rolled, but the table is told nothing and nothing is written down.
     const held = await page.evaluate(`return document.querySelector(".result-value").textContent`);
     assert.doesNotMatch(held, /Ambush|Nothing/, `the answer leaked: "${held}"`);
     assert.equal(await rows(), 0, "a hidden roll was recorded before it was revealed");
@@ -2367,11 +2266,8 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  // ---- AD–AG: quick wheel, theme, stories ------------------------------------
+  // ---- AD–AG: quick wheel, your own theme, a board's temporary cells ---------
 
-  // A wheel typed at the table: it rolls at once, survives the phone locking
-  // (a reload), and is thrown away by a preset unless it is saved. Then the
-  // same wheel offers two cards, and the pick is what lands and is recorded.
   await test("AD a quick wheel rolls as it is typed, comes back after a reload, offers a choice, and saves", async (page) => {
     await open(page, "", { fresh: true });
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
@@ -2384,13 +2280,13 @@ async function main() {
     await page.waitForFunction(`/^(Ambush|Merchant|Storm)$/.test(document.querySelector(".result-value").textContent)`);
     await page.waitForFunction(`/[?&]quick=1/.test(location.hash)`);
 
-    // The phone locked: the address brings the wheel and its text back.
+    // A reload stands in for the phone locking: the address brings the wheel and
+    // its text back.
     await open(page, await page.evaluate(`return location.hash`));
     await page.waitForFunction(`document.querySelector(".quick-wheel textarea")?.value.length > 0`);
     assert.equal(await page.evaluate(`return document.querySelector(".quick-wheel textarea").value`), "Ambush\nMerchant | 2\nStorm | 3");
     assert.equal(await page.evaluate(`return document.querySelector(".quick-wheel").hidden`), false);
 
-    // Make a choice: two cards, nothing recorded until one is taken.
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     const before = await page.evaluate(`return window.orangey.state.history.length`);
     await page.type(".quick-offer", "2");
@@ -2402,8 +2298,6 @@ async function main() {
     assert.equal(await page.evaluate(`return window.orangey.state.history.length`), before, "an offer was recorded before anything was picked");
     const overflow = await page.evaluate(`return document.documentElement.scrollWidth - document.documentElement.clientWidth`);
     assert.ok(overflow <= 0, `the page scrolls sideways by ${overflow}px at 375px with the cards out`);
-    // Full screen shows the wheel and its cards, not the box the wheel was
-    // typed into — which, coming first, once took the play card with it.
     await page.click(".present-button");
     const shown = await page.evaluate(`return [".quick-wheel", ".play-card", "button.offer-card"].map((s) => getComputedStyle(document.querySelector(s)).display !== "none")`);
     assert.deepEqual(shown, [false, true, true], "full screen: quick box hidden, play card and cards shown");
@@ -2416,14 +2310,13 @@ async function main() {
     assert.equal(row.resultText, cards[1]);
     assert.ok(row.parts?.some((p) => p.includes(cards[0]) && p.includes(cards[1])), `the row does not say what was offered: ${JSON.stringify(row.parts)}`);
 
-    // Save keeps it; the library opens it like any other file.
     await page.click(".save-randomizer");
     await page.waitForFunction(`location.hash.startsWith("#/r/")`);
     const saved = await page.evaluate(`return window.orangey.state.library.files().map((f) => [f.randomizer.name, f.randomizer.offer ?? null])`);
     assert.deepEqual(saved, [["Quick wheel", 2]]);
 
-    // Unsaved, a preset throws it away and the address goes home. (With no
-    // hash at all the app reopens the last randomizer played, so "#/".)
+    // Unsaved, a preset throws it away and the address goes home. (With no hash at
+    // all the app reopens the last randomizer played, hence "#/".)
     await open(page, "#/");
     await page.click(".quick-wheel-toggle");
     await page.type(".quick-wheel textarea", "Left\nRight");
@@ -2434,10 +2327,6 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  // Your own theme: typed in Settings, checked as it is typed, applied to the
-  // whole app and its wheels, kept over a reload, and gone without a trace
-  // when a built-in scheme is chosen. A wheel's own palette then wins over
-  // whatever the theme is.
   await test("AE your own theme paints the app and its wheels, suggests a readable version, and a wheel's own palette wins", async (page) => {
     await open(page, "#/settings", { fresh: true });
     await page.waitForFunction(`document.querySelector(".theme-card")`);
@@ -2449,7 +2338,6 @@ async function main() {
     await page.click(".use-theme");
     await page.waitForFunction(`document.documentElement.dataset.scheme === "custom"`);
 
-    // Grey text on this ground fails, and the suggestion is a readable one.
     await setHex("ink", "#888888");
     await page.waitForFunction(`document.querySelector(".theme-suggestion") && !document.querySelector(".theme-suggestion").hidden`);
     assert.ok((await failing()).some((line) => line.startsWith("Text on the background")));
@@ -2462,7 +2350,6 @@ async function main() {
     await page.waitForFunction(`getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() === "#e8e2d6"`);
     assert.equal(await bg(), "#1b2230");
 
-    // The theme's wheel colours are every wheel's, and a reload keeps them.
     const path = await createList(page, "Weather", [{ label: "Rain", weight: 1 }, { label: "Sun", weight: 1 }, { label: "Fog", weight: 1 }]);
     const firstSlice = () => page.evaluate(`return document.querySelector('.wheel-rotor path[data-index="0"]').getAttribute("fill")`);
     await open(page, `#/r/${encodeURIComponent(path)}`);
@@ -2470,11 +2357,9 @@ async function main() {
     assert.equal(await firstSlice(), "#c2412f");
     assert.equal(await bg(), "#1b2230");
 
-    // A built-in scheme takes every inline token away with it.
     await page.evaluate(`await window.orangey.state.savePrefs({ scheme: "night" })`);
     assert.equal(await page.evaluate(`return document.documentElement.style.getPropertyValue("--bg")`), "");
 
-    // A wheel's own palette, set in its editor, wins over the scheme's.
     await open(page, `#/edit/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelector(".palette-own")`);
     await page.click(".palette-own");
@@ -2487,10 +2372,8 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
-  // Tonight's dice and a quick wheel go on a board without editing it: they
-  // roll with Roll all, come back after a reload, and either close or are
-  // saved — saving puts them on the board for good. The board file is only
-  // touched by the save.
+  // Temporary cells are per device: the board file changes only when one is
+  // saved onto it.
   await test("AG a board takes dice and a quick wheel for now, keeps them over a reload, and saves one onto the board", async (page) => {
     await open(page, "", { fresh: true });
     const boardPath = await page.evaluate(`
@@ -2517,22 +2400,18 @@ async function main() {
       (await page.evaluate(`return window.orangey.state.history.map((h) => h.randomizerName)`)).sort(),
       ["3d20", "Quick wheel", "Weather"],
     );
-    // Not part of the board until saved.
     const entries = () => page.evaluate(`return window.orangey.state.library.findById("tonight").randomizer.entries.map((e) => e.name)`);
     assert.deepEqual(await entries(), ["Weather"]);
 
-    // A phone that locks and reloads the tab still has them, text and all.
     await open(page, `#/r/${encodeURIComponent(boardPath)}`);
     await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 2`);
     assert.equal(await page.evaluate(`return document.querySelector(".cell-temp .temp-options").value`), "Goblins\nBandits | 2");
 
-    // Save keeps the wheel: in the library, and on the board where it stood in.
     await page.click(".cell-temp:has(.temp-options) .temp-save");
     await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 1`);
     await page.waitForFunction(`window.orangey.state.library.findById("tonight").randomizer.entries.length === 2`);
     assert.deepEqual(await entries(), ["Weather", "Quick wheel"]);
 
-    // The ✕ closes the dice, and they stay closed.
     await page.click(".cell-temp .temp-close");
     await page.waitForFunction(`document.querySelectorAll(".cell-temp").length === 0`);
     await open(page, `#/r/${encodeURIComponent(boardPath)}`);
@@ -2556,7 +2435,7 @@ async function main() {
       return await state.library.create("", { id: "Tonight", type: "board", name: "Tonight", created: now, modified: now,
         entries: [{ id: "Encounters", name: "Encounters" }, { id: "Damage", name: "Damage" }] });
     `);
-    // The window opens only in answer to a press, so the click is sent as one.
+    // The window opens only in answer to a user gesture, so the click is sent as one.
     const press = (selector) => page.send("Runtime.evaluate", {
       expression: `document.querySelector(${JSON.stringify(selector)}).click()`,
       userGesture: true,
@@ -2568,17 +2447,13 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".popout-button")`);
     await press(".popout-button");
     await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-single .cell")`);
-    // It carries the page's look: its styles and theme were copied in.
     assert.equal(
       await pip(`return getComputedStyle(d.body).backgroundColor`),
       await page.evaluate(`return getComputedStyle(document.body).backgroundColor`),
     );
 
-    // No Roll buttons: the randomizer is the button, and says so.
     assert.equal(await pip(`return d.querySelectorAll(".popout-roll, .cell-roll, .chain-roll").length`), 0);
     assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Click to roll");
-    // The wheel fills the window it is given — it used to stop at 300 pixels
-    // however large the window was — and never spills out of it.
     const fit = await pip(`
       const w = d.querySelector(".wheel-svg").getBoundingClientRect();
       const win = documentPictureInPicture.window;
@@ -2587,16 +2462,14 @@ async function main() {
     assert.ok(fit.wheel > Math.min(fit.width, fit.height) * 0.6, `the wheel is ${Math.round(fit.wheel)}px in a ${fit.width}x${fit.height} window`);
     assert.ok(fit.wheel <= fit.width && !fit.scrolls, "the wheel spills out of the window");
 
-    // A wheel rolls from its hub: a click on a slice is left for a double
-    // click, which edits it, so it rolls nothing.
+    // A wheel rolls from its hub; a click on a slice is left for a double-click,
+    // which edits it.
     await pip(`d.querySelector(".wheel-rotor path[data-index]").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
     await new Promise((r) => setTimeout(r, 200));
     assert.equal(await rows(), 0, "a click on a slice in the pop-out rolled the wheel");
-    // Rolled in the pop-out by a click on its hub, recorded in the tab like any roll.
     await pip(`d.querySelector(".wheel-hub").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
     await page.waitForFunction(`window.orangey.state.history.length === 1`);
     assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Dragon");
-    // Where the answer leads: a button, and the swap happens in place.
     assert.equal(await pip(`return d.querySelector(".popout-next").textContent`), "→ Hoard");
     await pip(`d.querySelector(".popout-next").click()`);
     await pip(`d.querySelector(".chain-link .cell").click()`);
@@ -2607,19 +2480,16 @@ async function main() {
     await pip(`d.querySelector(".popout-back").click()`);
     assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Dragon", "going back shows the answer it left");
     assert.equal(await pip(`return d.querySelector(".popout-next").hidden`), false, "and still offers the way forward");
-    // Its keys work in its own window.
     await pip(`d.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))`);
     await page.waitForFunction(`window.orangey.state.history.length === 3`);
     await page.evaluate(`documentPictureInPicture.window.close()`);
     await page.waitForFunction(`!documentPictureInPicture.window`);
 
-    // A board pops out as its cells and Roll all.
     await open(page, `#/r/${encodeURIComponent(boardPath)}`);
     await page.waitForFunction(`document.querySelector(".popout-button")`);
     await press(".popout-button");
     await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-roll-all")`);
     assert.equal(await pip(`return d.querySelectorAll(".popout-slot").length`), 2);
-    // One cell, clicked, rolls on its own.
     const before = await rows();
     await pip(`d.querySelectorAll(".popout-slot .cell")[1].click()`);
     await page.waitForFunction(`window.orangey.state.history.length === ${before + 1}`);
@@ -2630,7 +2500,8 @@ async function main() {
     await page.waitForFunction(`!documentPictureInPicture.window`);
     assert.deepEqual(page.consoleErrors, []);
 
-    // A browser without the window gets no button, rather than one that fails.
+    // A browser without Document Picture-in-Picture gets no button rather than one
+    // that fails.
     await page.send("Page.addScriptToEvaluateOnNewDocument", {
       source: `Object.defineProperty(window, "documentPictureInPicture", { value: undefined })`,
     });
@@ -2650,12 +2521,10 @@ async function main() {
     const pick = (scope, label) => page.evaluate(`
       [...document.querySelectorAll(${JSON.stringify(`${scope} .outcome-pick`)})].find((b) => b.textContent.includes(${JSON.stringify(label)})).click()`);
 
-    // Every outcome of a list shown as a list is a button, with its odds.
     await open(page, `#/r/${encodeURIComponent(path)}`);
     await page.waitForFunction(`document.querySelectorAll(".outcome-pick").length === 3`);
     await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".outcome-list")).overflowY`), "auto", "a long list scrolls within itself");
-    // Pressing one makes it the answer — recorded as picked, not rolled.
     await pick(".play-card", "Dragon");
     await page.waitForFunction(`window.orangey.state.history.length === 1`);
     assert.deepEqual(
@@ -2663,12 +2532,10 @@ async function main() {
       ["Dragon", ["picked, not rolled"]],
     );
     assert.equal(await page.evaluate(`return document.querySelector(".outcome-pick[aria-current=true] .outcome-label").textContent`), "Dragon");
-    // Where it goes opens beside it, as a roll's would, and says it was picked.
     await page.waitForFunction(`document.querySelector(".chain-link")`);
     assert.equal(await page.evaluate(`return document.querySelector(".chain-link .cell-name").textContent`), "Hoard");
     assert.match(await page.evaluate(`return document.querySelector(".chain-from").textContent`), /picked Dragon/);
 
-    // On a board, without editing it.
     const board = await createBoard(page, "Tonight", ["Weather", "Encounters"]);
     await open(page, `#/r/${encodeURIComponent(board)}`);
     await page.waitForFunction(`document.querySelector('[data-entry="Weather"] .wheel-hub') && document.querySelector('[data-entry="Encounters"] .outcome-pick')`);
@@ -2687,7 +2554,6 @@ async function main() {
     const shown = await answers();
     assert.equal(shown[1], "Goblins");
 
-    // A double tap on a slice opens its weight; one tap does not.
     const tap = (times) => page.evaluate(`
       const el = document.querySelector('[data-entry="Weather"] .wheel-rotor path[data-index="0"]');
       const r = el.getBoundingClientRect();
@@ -2704,7 +2570,6 @@ async function main() {
       const input = document.querySelector(".weight-input");
       input.value = "4";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));`);
-    // Saved to the file, as the editor would have…
     await page.waitForFunction(`!document.querySelector(".weight-editor")`);
     const weights = () => page.evaluate(`
       const { state } = window.orangey;
@@ -2712,7 +2577,6 @@ async function main() {
       return JSON.parse(await state.library.backend.read(state.library.findById("Weather").path)).randomizer.items.map((i) => i.weight);`);
     for (let i = 0; i < 20 && (await weights())[0] !== 4; i++) await new Promise((r) => setTimeout(r, 100));
     assert.deepEqual(await weights(), [4, 1]);
-    // …and the board kept every answer it had.
     await new Promise((r) => setTimeout(r, 200));
     assert.deepEqual(await answers(), shown, "an edit wiped the board's answers");
     assert.deepEqual(page.consoleErrors, []);
@@ -2738,7 +2602,6 @@ async function main() {
       row.dispatchEvent(new MouseEvent("click", { bubbles: true, ...${JSON.stringify(mods)} }));`);
     const entries = () => page.evaluate(`return window.orangey.state.library.findById("Tonight").randomizer.entries.map((e) => e.name)`);
 
-    // In the Add… window: Ctrl-click one, Shift-click to the end of a run.
     await open(page, `#/r/${encodeURIComponent(board)}`);
     await page.waitForFunction(`document.querySelector(".add-to-board")`);
     await page.click(".add-to-board");
@@ -2753,7 +2616,6 @@ async function main() {
     await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 3`);
     assert.deepEqual(await entries(), ["Alpha", "Bravo", "Charlie"]);
 
-    // A right-click on a folder chooses what in it is not there yet.
     await page.click(".add-to-board");
     await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
     await page.evaluate(`[...document.querySelectorAll(".picker-folder")].find((r) => r.textContent.includes("Tables"))
@@ -2762,8 +2624,6 @@ async function main() {
     await page.click(".picker-close");
     await page.waitForFunction(`!document.querySelector(".picker-dialog[open]")`);
 
-    // In the library: Ctrl-click chooses rather than opens, and dragging one
-    // chosen row carries them all; the one already there is left off.
     await click(".library .tree-row", "Bravo", { ctrlKey: true });
     await click(".library .tree-row", "Delta", { ctrlKey: true });
     assert.equal(await page.evaluate(`return location.hash`), `#/r/${encodeURIComponent(board)}`, "a Ctrl-click opened the randomizer");
@@ -2780,7 +2640,6 @@ async function main() {
     assert.deepEqual(await entries(), ["Alpha", "Bravo", "Charlie", "Delta"]);
     await page.waitForFunction(`[...document.querySelectorAll(".toast")].some((t) => t.textContent.includes("1 was already on it"))`);
 
-    // A folder's menu selects everything in it; Escape lets it go.
     await page.evaluate(`[...document.querySelectorAll(".library .folder-row")].find((r) => r.textContent.includes("Tables"))
       .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
     await page.waitForFunction(`document.querySelector(".menu-item")`);
@@ -2789,7 +2648,6 @@ async function main() {
     await page.evaluate(`document.querySelector(".library .tree-row.selected").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
     assert.equal(await page.evaluate(`return document.querySelectorAll(".library .tree-row.selected").length`), 0);
     assert.equal(await page.evaluate(`return document.querySelector(".library-selection").hidden`), true);
-    // A plain click still opens.
     await click(".library .tree-row", "Alpha");
     await page.waitForFunction(`location.hash.includes("alpha")`);
     assert.deepEqual(page.consoleErrors, []);
@@ -2828,8 +2686,6 @@ async function main() {
         document.querySelector("dialog[open] button[type=submit]").click();`);
     };
 
-    // A folder, from its menu: named after the folder unless changed, and
-    // what it links to comes along even though it lives elsewhere.
     await page.waitForFunction(`document.querySelector(".library .folder-row")`);
     await page.evaluate(`[...document.querySelectorAll(".library .folder-row")].find((r) => r.textContent.includes("Forest"))
       .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
@@ -2847,7 +2703,6 @@ async function main() {
     assert.ok(folderFile.text.includes("\n  "), "the file is laid out to be read");
     await page.waitForFunction(`[...document.querySelectorAll(".toast")].some((t) => /1 of them because something chosen goes to it.*1 picture was left out/.test(t.textContent))`);
 
-    // A selection, from the bar the selection shows.
     await page.evaluate(`
       for (const name of ["Encounters", "Weather"]) {
         [...document.querySelectorAll(".library .tree-row")].find((r) => r.textContent.includes(name))
@@ -2861,7 +2716,6 @@ async function main() {
     assert.deepEqual(JSON.parse(selectionFile.text).randomizers.map((r) => r.path),
       ["Forest/encounters.orangey.json", "weather.orangey.json", "Treasure/hoard.orangey.json"]);
 
-    // Pasted into a library that has none of it: the tree and the link arrive.
     await open(page, "#/import", { fresh: true });
     await page.waitForFunction(`document.querySelector(".importer textarea")`);
     await page.evaluate(`
@@ -2878,8 +2732,6 @@ async function main() {
       return [enc.id, enc.items[0].goesTo, state.library.findById(enc.items[0].goesTo)?.path, enc.items.map((i) => i.weight)];`);
     assert.deepEqual(arrived, ["enc", "hoard", "Treasure/hoard.orangey.json", [1, 3]]);
 
-    // Dropped as a file on top of itself: Keep both makes copies, and the
-    // copied wheel goes to the copied hoard, not the one already here.
     await open(page, "#/import");
     await page.waitForFunction(`document.querySelector(".importer textarea")`);
     await page.evaluate(`

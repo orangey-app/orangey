@@ -42,7 +42,6 @@ describe("the image store", () => {
     assert.deepEqual(await backend.readBytes(`images/${id}.png`), bytes, "the file is where the archive expects it");
     assert.equal(await imageBytes("not-a-picture"), null);
 
-    // Inline, for a file that has to carry the picture with it.
     const inline = (await imageDataUrl(id))!;
     assert.match(inline, /^data:image\/png;base64,/);
     const second = await putImageData(inline);
@@ -74,12 +73,10 @@ describe("the image store", () => {
     await deleteImage(id);
     assert.equal(imageUrlSync(id), null, "and the URL goes with the picture");
 
-    // An outcome can outlive its picture. A wheel asks on every frame, so a
-    // miss has to be remembered, or the wheel reads the backend for ever.
-    //
-    // The hard case is a picture the store still believes in: the file was
-    // taken out of the library folder behind its back. An id it has never
-    // heard of never reaches the backend at all.
+    // An outcome can outlive its picture, and a wheel asks on every frame, so a
+    // miss must be remembered or the wheel reads the backend for ever. The hard
+    // case is a file taken out of the library folder while the store still
+    // believes in it; an id it has never heard of never reaches the backend.
     let reads = 0;
     const readBytes = store.readBytes.bind(store);
     store.readBytes = async (p) => {

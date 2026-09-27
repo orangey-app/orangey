@@ -1,19 +1,13 @@
 /**
- * Replace the colour palette from a data file.
+ * Replaces the colour palette from a data file.
  *
  *   node scripts/import-palette.mjs path/to/colors.json
  *
- * Accepts the common shapes such a file comes in:
- *   - an array of { name, hex }                       (most datasets)
- *   - an array of { name, color } or { title, hex }
- *   - an object whose values are such entries
- *   - a CSV/TSV with a name column and a hex column
- *
- * It rewrites the PALETTE array in src/ui/styles/palette.ts between the
- * palette:begin / palette:end markers and nothing else; the curated segment
- * pool and the tests are derived from PALETTE, so they follow automatically.
- * Run `npm test` afterwards: the palette tests re-verify contrast and
- * neighbour distinctness against the new colours.
+ * Accepts an array (or object) of { name, hex }, { name, color } or
+ * { title, hex } entries, or a CSV/TSV with a name column and a hex column.
+ * Rewrites only the PALETTE array in src/ui/styles/palette.ts, between the
+ * palette:begin / palette:end markers. Run `npm test` afterwards: the palette
+ * tests re-check contrast and distinctness.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -50,7 +44,7 @@ let colours = [];
 const trimmed = text.trim();
 if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
   const doc = JSON.parse(trimmed);
-  // { colors: [...] } is the shape the dictionary dataset comes in.
+  // Some datasets wrap the entries as { colors: [...] }.
   const inner = !Array.isArray(doc) && Array.isArray(doc.colors) ? doc.colors : doc;
   const list = Array.isArray(inner) ? inner : Object.values(inner);
   colours = list.map(fromEntry).filter(Boolean);

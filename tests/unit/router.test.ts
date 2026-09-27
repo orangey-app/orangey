@@ -31,8 +31,8 @@ describe("routes", () => {
       ["a path route with no path", "#/r/", { name: "play" }],
       ["an id route with no id", "#/id/", { name: "play" }],
       ["an editor with nothing to edit", "#/edit/", { name: "library" }],
-      // a half-typed or mangled escape used to throw out of the router and
-      // leave the app with nothing on screen at all
+      // a half-typed or mangled escape must not throw out of the router and leave
+      // nothing on screen
       ["a malformed escape", "#/r/%", { name: "play" }],
       ["a malformed escape in an id", "#/id/%zz", { name: "play" }],
       ["a malformed escape in an editor path", "#/edit/%E0%A4%A", { name: "library" }],

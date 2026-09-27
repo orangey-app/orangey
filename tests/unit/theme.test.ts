@@ -20,10 +20,10 @@ test("a theme derives every token, button ink that reads, and lifted cards on a 
   assert.ok(L(night["--bg-sunken"]) < L(night["--bg"]));
   assert.match(night["--shadow"], /rgba\(0, 0, 0/, "a dark page's shadow is black, not a glow");
 
-  // The error red, the warning amber and the success green keep their hues
-  // but not their exact values: on a strong magenta page the built-in red
-  // was nearly invisible, so it is moved until it reads, and a danger
-  // button's label follows it.
+  // The error red, warning amber and success green keep their hues but not their
+  // exact values: on a strong magenta page the built-in red would be nearly
+  // invisible, so it is moved until it reads, and a danger button's label
+  // follows it.
   const magenta = deriveTheme({ ...orangey, bg: "#b0005a", ink: "#ffffff" });
   const on = (a: string, b: string) => contrastRatio(hexToRgb(a), hexToRgb(b));
   for (const token of ["--ok", "--warn", "--error"] as const) {

@@ -49,10 +49,8 @@ describe("feel settings", () => {
         ["coin.arc", LIMITS.coinArc[1]],
       ]],
       ["a motion level nobody ships", { motion: "sideways" }, [["motion", "full"]]],
-      // Counts of whole things cannot be fractional: half a turn is not a turn.
       ["fractional turns and bounces", { wheel: { turns: 4.7 }, dice: { bounces: 1.4 } }, [["wheel.turns", 5], ["dice.bounces", 1]]],
-      // The roll-back used to be a word, and settings files written then are
-      // still on people's machines.
+      // Settings files may still hold the roll-back as a word.
       ["the old word 'none'", { wheel: { settle: "none" } }, [["wheel.settleDegrees", 0]]],
       ["the old word 'slight'", { wheel: { settle: "slight" } }, [["wheel.settleDegrees", 4]]],
       ["the old word 'bouncy'", { wheel: { settle: "bouncy" } }, [["wheel.settleDegrees", 11]]],
@@ -108,8 +106,7 @@ describe("the spin curve", () => {
     assert.ok(spinPosition(0.5, "standard") > spinPosition(0.5, "gentle"));
     assert.equal(curveExponent("gentle"), 2);
     assert.equal(curveExponent("snappy"), 4);
-    // At exponent 5 a six-turn snappy spin had 3° of 2340° left by t=0.70: the
-    // last third of the duration was a wheel standing still.
+    // Too steep a curve makes the last third of the spin a wheel standing still.
     const delta = 6 * 360 + 180;
     assert.ok((1 - spinPosition(0.7, "snappy")) * delta > 15, `${((1 - spinPosition(0.7, "snappy")) * delta).toFixed(1)}° left at t=0.70`);
     // …and it is still the sharpest wind-down of the three.
@@ -154,8 +151,6 @@ describe("the spin curve", () => {
       for (const degrees of ROLLBACKS) {
         let peak = -Infinity;
         for (let t = 0; t <= 1; t += 0.0005) peak = Math.max(peak, (easeSpin(t, feel, degrees / delta) - 1) * delta);
-        // It used to be whatever the curve happened to be doing at t=0.75:
-        // the same 11° setting gave 4.7° on gentle and 10.1° on snappy.
         assert.ok(Math.abs(peak - degrees) < degrees * 0.02, `${curve} with ${degrees}° went ${peak.toFixed(2)}° past`);
       }
     }
@@ -173,9 +168,8 @@ describe("the spin curve", () => {
   });
 
   test("the wheel never speeds up while it is still going forwards", () => {
-    // The old roll-back was added on top of a finished curve from t=0.75, and
-    // began with a speed of its own: under snappy that more than doubled the
-    // wheel's speed from one frame to the next — the halt-then-jump.
+    // A roll-back added on top of a finished curve would start with a speed of its
+    // own and make the wheel jump forwards near the end.
     for (const curve of CURVES) {
       for (const degrees of ROLLBACKS) {
         const v = speeds(curve, degrees / (6 * 360 + 180));
@@ -191,8 +185,7 @@ describe("the spin curve", () => {
     for (const curve of CURVES) {
       for (const durationMs of [400, 1280, 3200, 8000]) {
         const v = speeds(curve, 11 / (6 * 360 + 180), 6 * 360 + 180, durationMs);
-        // No frame may change the speed by more than the spin's own average
-        // speed; a step of that size is the lurch this replaced.
+        // No frame may change the speed by more than the spin's own average speed.
         const average = v.reduce((a, b) => a + Math.abs(b), 0) / v.length;
         // The ramp-in is a deliberate change of speed; the wind-down is what
         // this is about, so start once the wheel is up to speed.
@@ -206,8 +199,8 @@ describe("the spin curve", () => {
 
 describe("roll-back and bounce", () => {
   test("a roll-back is a fixed number of degrees, between half the setting and all of it, and the landing bounce follows it", () => {
-    // Half to all, so no two spins settle identically, but the setting is
-    // still what the GM sees on the wheel.
+    // Half to all, so no two spins settle identically, but the setting is still
+    // what the game master sees on the wheel.
     const seen = [0, 0.25, 0.5, 0.999].map((r) => settleForSpin(DEFAULT_FEEL, () => r));
     assert.ok(Math.abs(seen[0] - 5.5) < 1e-9, `at the low end ${seen[0]}`);
     assert.ok(seen[3] < 11 && seen[3] > 10.9);

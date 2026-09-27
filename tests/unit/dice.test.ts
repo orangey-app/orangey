@@ -21,10 +21,9 @@ describe("dice notation", () => {
       ["1d20 + 5 - 2", "d20 + 5 - 2"],
       ["  2D6  +  3 ", "2d6 + 3"],
       ["-d4+10", "-d4 + 10"],
-      // Space before keep/drop is how people write it, and DICE.md says so.
+      // Space before keep/drop is how people write it (see DICE.md).
       ["4d6 kh3", "4d6kh3"],
       ["2d20  kl1", "2d20kl1"],
-      // 0.4 notation.
       ["2d6!", "2d6!"],
       ["2d6r1", "2d6r1"],
       ["2d6r=1", "2d6r1"],
@@ -62,7 +61,7 @@ describe("dice notation", () => {
     assert.ok(Number.isInteger(n) && n >= 2 && n <= 8, `"${outcome.text}" is not 2d4`);
     assert.match(outcome.text, /^\d+ wolves$/);
     assert.match(outcome.detail ?? "", /2d4 \[/, outcome.detail);
-    // Kept apart from the description and the odds, for history to keep.
+    // The dice rolled are also listed on their own, for the history.
     assert.equal(outcome.rolled?.length, 2, "both the 2d4 and the 1d6");
     assert.match(outcome.rolled?.[0] ?? "", /^2d4 \[\d, \d\] = \d$/);
     // Braces around something that is not dice are left exactly as typed.
@@ -84,7 +83,6 @@ describe("dice notation", () => {
       ["4d6kh5", 3, /cannot keep 5 of 4/],
       ["4d6dl4", 3, /cannot drop 4 of 4/],
       ["2d6 3", 4, /expected \+ or -/],
-      // 0.4 notation.
       ["4dF!", 3, /Fate dice cannot explode/],
       ["d6r<7", 2, /reroll every face/],
       ["2d6kh1!", 6, /the order is/],
@@ -103,11 +101,8 @@ describe("dice notation", () => {
   });
 
   /**
-   * A source that hands out the values a test asks for, in order.
-   *
-   * Seeds are fine for "does this stay the same", but useless for "what
-   * happens when a 6 explodes into a 6": you end up hunting for a seed that
-   * happens to do it. This states the dice instead.
+   * A source that hands out the values a test asks for, in order, so a test can
+   * state the dice ("a 6 explodes into a 6") instead of hunting for a seed.
    */
   function scripted(values: number[]): RandomSource {
     let at = 0;
@@ -156,7 +151,6 @@ describe("dice notation", () => {
     assert.match(speakResult(pool), /3 successes/);
     assert.deepEqual(expressionBounds("5d10>=8"), { min: 0, max: 5, openEnded: false });
 
-    // One success reads as one, not "1 successes".
     const single = evaluate(parse("5d10>=8"), scripted([9, 3, 2, 4, 1]));
     assert.match(formatResult(single), /= 1 success$/);
 
@@ -172,8 +166,7 @@ describe("dice notation", () => {
     assert.deepEqual(expressionBounds("4dF"), { min: -4, max: 4, openEnded: false });
     assert.match(formatResult(fate), /\[\+1, -1, 0, \+1\]/);
 
-    // All four at the top is a maximum; one at the top on its own is not a
-    // minimum, which the old "value === 1" rule would have called it.
+    // All four at the top is a maximum; one at the top on its own is not a minimum.
     const best = evaluate(parse("4dF"), scripted([3, 3, 3, 3]));
     assert.equal(best.isMaximum, true);
     assert.equal(best.isMinimum, false);
@@ -245,9 +238,8 @@ describe("dice notation", () => {
       }
     }
     assert.ok(sawMax && sawMin, "expected to see both extremes in 2000 d20 rolls");
-    // The rule is per die, not per total: a 1 and a 20 on 2d20 totals 21,
-    // halfway up the range, and is neither a maximum nor a minimum. Cheering
-    // it would mean cheering an ordinary roll.
+    // The rule is per die, not per total: a 1 and a 20 on 2d20 totals 21, halfway
+    // up the range, and is neither a maximum nor a minimum.
     let sawSplit = false;
     for (let i = 0; i < 4000; i++) {
       const r = rollDice("2d20", rng);

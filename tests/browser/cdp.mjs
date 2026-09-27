@@ -1,10 +1,9 @@
 /**
- * A minimal Chrome DevTools Protocol client.
+ * A minimal Chrome DevTools Protocol client for the browser tests.
  *
- * Playwright could not be installed in the build sandbox, but Chromium is
- * present and Node has a WebSocket, so the browser tests drive it directly.
- * This is only as much of CDP as the tests use: navigate, evaluate, click,
- * type, and collect console errors.
+ * It drives Chromium over Node's own WebSocket, so the tests need nothing but a
+ * browser, and covers only what they use: navigate, evaluate, click, type, and
+ * collect console errors.
  */
 
 import { spawn } from "node:child_process";
@@ -16,13 +15,9 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 
 /**
- * Which browser to drive.
- *
- * `CHROME_PATH` wins, because a machine may have several and CI pins one.
- * Failing that, look where each platform installs it: this is the only thing
- * in the repository that needs a binary from outside it, and a hard-coded
- * path means the suite runs on exactly one machine. Looked up on first use
- * rather than at import, so merely importing this module cannot throw.
+ * Which browser to drive: `CHROME_PATH` if set (a machine may have several and
+ * CI pins one), otherwise the usual install locations for each platform. Looked
+ * up on first use rather than at import, so importing this module cannot throw.
  */
 function chromeCandidates() {
   const home = homedir();
@@ -107,9 +102,8 @@ export async function serve(dir) {
   return {
     origin: `http://127.0.0.1:${port}`,
     /**
-     * `close` on its own waits for every keep-alive connection to end, which
-     * a browser that is still running may not do promptly. Dropping the
-     * connections first makes closing a server mid-suite predictable.
+     * Drop keep-alive connections first: `close` alone waits for them to end,
+     * which a browser that is still running may not do promptly.
      */
     close: () =>
       new Promise((r) => {
@@ -163,12 +157,10 @@ export async function launch({ profileDir } = {}) {
     /**
      * A page in a browser context of its own, closed with it.
      *
-     * Tests used to share one context and only drop their DevTools connection
-     * at the end, which left every test's tab open and running for the rest of
-     * the suite. On Windows, where background tabs' timers are slowed right
-     * down, a roll finishing in a tab two tests back wrote its history row
-     * into a later test's freshly wiped storage. A context per test gives each
-     * its own storage, and disposing it closes the tab and everything in it.
+     * Each test gets its own storage, and disposing the context closes the tab and
+     * everything running in it. A tab left open keeps writing: on Windows, where
+     * background timers are slowed, a roll finishing in an earlier test's tab wrote
+     * its history row into a later test's freshly wiped storage.
      */
     async newPage() {
       const { browserContextId } = await browserSocket.send("Target.createBrowserContext", { disposeOnDetach: true });
@@ -271,10 +263,9 @@ async function connectPage(wsUrl) {
   });
 
   /**
-   * Every call is capped. A protocol call that never comes back — a page
-   * promise that never settles, a renderer that has wedged — used to hang the
-   * whole suite silently, which on a CI runner means a job that sits there
-   * until the six-hour limit rather than a failure anyone can read.
+   * Every call is capped, so a call that never comes back (a page promise that
+   * never settles, a wedged renderer) fails with a readable error instead of
+   * hanging the suite until the CI job's time limit.
    */
   const CALL_TIMEOUT_MS = 30000;
   const send = (method, params = {}, timeout = CALL_TIMEOUT_MS) =>

@@ -74,8 +74,8 @@ describe("a struck roll", () => {
     });
     const csv = historyCsv([{ ...forest, struck: true }, { ...damage, randomizerName: "Damage, heavy" }, chained]);
     const [header, struckRow, plainRow, chainedRow] = csv.split("\n");
-    // details and from came later, so they are appended: every column a
-    // sheet already reads by position stays where it was.
+    // The columns are append only, so a sheet that reads them by position keeps
+    // working.
     assert.equal(header, "time,randomizer,type,result,seed,struck,details,from");
     assert.equal(struckRow.endsWith(",yes,,"), true, "a struck roll says so in the struck column");
     assert.equal(plainRow.endsWith(",,,"), true, "an ordinary roll leaves it empty");

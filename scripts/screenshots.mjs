@@ -1,15 +1,12 @@
 /**
- * Take the README's screenshots from the built app.
+ * Takes the README's screenshots from the built app.
  *
  *   npm run build:single && node scripts/screenshots.mjs
  *
- * Writes docs/screenshot-*.png. Every shot starts from empty storage, builds
- * its own library through the app's debug handle, and rolls with a fixed
- * seed (or the first of a fixed series that shows what the picture is for),
- * so running it twice gives the same pictures and a change to the app
- * shows up as a change in the images rather than in what happened to come up.
- * It drives Chrome the way the browser tests do (tests/browser/cdp.mjs), so
- * CHROME_PATH works here too.
+ * Writes docs/screenshot-*.png. Every shot starts from empty storage and rolls
+ * with fixed seeds, so the same app always gives the same pictures. It drives
+ * Chrome as the browser tests do (tests/browser/cdp.mjs), so CHROME_PATH works
+ * here too.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -76,12 +73,12 @@ const seed = (page, value) =>
  */
 async function go(page, hash, { debug = true } = {}) {
   await page.evaluate(`await window.orangey?.state.library.flush(); await window.orangey?.storageSettled()`);
-  // Without the debug handle nothing can seed the library behind our back
-  // any more (it is only seeded when empty), so no ?noseed either.
+  // The library is only seeded when empty, and by now it is not, so a load
+  // without ?debug needs no ?noseed either.
   await page.goto(`${server.origin}/index.html${debug ? "?debug&noseed" : ""}${hash}`);
   await page.waitForFunction(debug ? "window.orangey" : `document.querySelector(".topbar")`);
-  // The fonts are embedded, but a face is only decoded once something asks
-  // for it. Headless Chrome draws scrollbars; a README picture does not want them.
+  // Wait for the fonts (a face is decoded only once something asks for it), and
+  // hide the scrollbars headless Chrome draws.
   await page.evaluate(`
     await document.fonts.ready;
     const style = document.createElement("style");
@@ -95,11 +92,9 @@ async function go(page, hash, { debug = true } = {}) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Press `press` (one selector or several, in turn) with seed readme-1,
- * readme-2, … until `check` holds, and leave the page
- * showing that roll. The seeds are tried in order, so the same app always
- * stops at the same one; a change to the app that moves the answer only
- * moves which seed is used.
+ * Press `press` (one selector or several, in turn) with seeds readme-1,
+ * readme-2, … until `check` holds, leaving the page on that roll. Trying seeds
+ * in order keeps the pictures reproducible.
  */
 async function rollUntil(page, hash, { press, settled, check }) {
   for (let n = 1; n <= 100; n++) {

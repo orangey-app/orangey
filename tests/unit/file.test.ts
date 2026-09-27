@@ -104,9 +104,9 @@ describe("the file format", () => {
   });
 
   test("a file from another version of Orangey still opens, and keeps what it knows", () => {
-    // A bare randomizer object is what people paste out of older files and
-    // out of other tools; unknown keys belong to a version we have not been
-    // written for yet, and throwing them away would quietly damage the file.
+    // A bare randomizer object (pasted from older files or other tools) still
+    // loads. Unknown keys may belong to a newer version, so they are kept, not
+    // thrown away.
     assert.equal(parseFile(JSON.stringify(sample())).file.randomizer.name, "Forest Encounters");
 
     const withExtras = parseFile(doctored((d) => (d.futureThing = { a: 1 })));

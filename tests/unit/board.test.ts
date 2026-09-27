@@ -40,8 +40,8 @@ describe("a board", () => {
   });
 
   test("has nothing of its own to roll", () => {
-    // The board screen rolls the randomizers on it, one at a time, so that
-    // each records its own history row under its own name.
+    // The board screen rolls each randomizer on it separately, so each records its
+    // own history row under its own name.
     assert.equal(canRoll(board([])), false);
     assert.equal(whyCannotRoll(board([])), "This board has nothing on it yet.");
     assert.equal(canRoll(board([{ id: "a", name: "A" }])), true);
@@ -75,7 +75,6 @@ describe("sharing a board", () => {
       "encounters.orangey.json",
       "tonight-s-table.orangey.json",
     ]);
-    // Every file in the archive is a real randomizer file, readable on its own.
     for (const entry of packed.entries) assert.equal(parseFile(entry.text).file.randomizer.name.length > 0, true);
 
     // A randomizer that has been deleted is reported rather than packed.
