@@ -12,7 +12,7 @@ import { FILE_SUFFIX, fileNameFor, parseFile, serialize, wrap, type OrangeyFile 
 import { newId, type Randomizer } from "../model/randomizer.ts";
 import { ValidationError } from "../model/validate.ts";
 import { basename, join, naturalCompare, parent, sanitizeName, segments } from "./paths.ts";
-import { relink } from "./libraryfile.ts";
+import { relink, safeFilePath } from "./libraryfile.ts";
 
 export interface Entry {
   name: string;
@@ -441,53 +441,29 @@ export class LibraryService {
    * handled by `onCollision`, which answers "replace", "keep-both" or "skip"
    * per file — the UI asks the user; tests answer programmatically.
    */
+  /**
+   * A ZIP's randomizer files, by the same rules as a library file (see
+   * `importLibrary`), so the links between them survive: an arrival that has
+   * to take a new id takes the archive's links to it along. A file that needs
+   * no change is written with the exact text it arrived with.
+   */
   async importArchive(
     entries: { path: string; text: string }[],
     onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
   ): Promise<{ added: number; replaced: number; skipped: number; failed: number }> {
-    await this.flush();
-    const result = { added: 0, replaced: 0, skipped: 0, failed: 0 };
+    const parsed: { path: string; file: OrangeyFile; text: string }[] = [];
+    let failed = 0;
     for (const entry of entries) {
       if (!isRandomizerFile(entry.path)) continue;
-      let parsed;
       try {
-        parsed = parseFile(entry.text);
+        // Cleaned as a library file's paths are: an archive can come from anyone.
+        const file = parseFile(entry.text).file;
+        parsed.push({ path: safeFilePath(entry.path, file.randomizer.name), file, text: entry.text });
       } catch {
-        result.failed++;
-        continue;
-      }
-      const folder = parent(entry.path);
-      if (folder) await this.backend.mkdir(folder);
-      const exists = this.find(entry.path) !== null;
-      if (!exists) {
-        // Two files sharing an id make every link and board entry pointing at
-        // it ambiguous, so an arrival that clashes with a file already here
-        // is given a new one. The text is otherwise passed through untouched.
-        const clash = this.findById(parsed.file.randomizer.id);
-        await this.backend.write(
-          entry.path,
-          clash && clash.path !== entry.path
-            ? serialize({ ...parsed.file, randomizer: { ...parsed.file.randomizer, id: newId() } })
-            : entry.text,
-        );
-        result.added++;
-        continue;
-      }
-      const answer = await onCollision(entry.path);
-      if (answer === "skip") {
-        result.skipped++;
-      } else if (answer === "replace") {
-        await this.backend.write(entry.path, entry.text);
-        result.replaced++;
-      } else {
-        const taken = (await this.backend.list(folder)).map((e) => e.name);
-        const copy = { ...parsed.file.randomizer, id: newId() };
-        await this.backend.write(join(folder, fileNameFor(copy.name, taken)), serialize(wrap(copy)));
-        result.added++;
+        failed++;
       }
     }
-    await this.refresh();
-    return result;
+    return { ...(await this.#importFiles(parsed, [], "", onCollision)), failed };
   }
 
   /**
@@ -502,8 +478,18 @@ export class LibraryService {
    * to" and board entry through those changes and writes the files, so a
    * wheel in the file still reaches the table the file gave it.
    */
-  async importLibrary(
+  importLibrary(
     entries: readonly { path: string; file: OrangeyFile }[],
+    folders: readonly string[],
+    into: string,
+    onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
+  ): Promise<{ added: number; replaced: number; skipped: number }> {
+    return this.#importFiles(entries, folders, into, onCollision);
+  }
+
+  /** Both imports: `text`, when given, is written as it came if nothing in it had to change. */
+  async #importFiles(
+    entries: readonly { path: string; file: OrangeyFile; text?: string }[],
     folders: readonly string[],
     into: string,
     onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
@@ -520,7 +506,7 @@ export class LibraryService {
     const ids = new Map<string, string>();
     const claimed = new Set<string>();
     const planned = new Set<string>();
-    const writes: { path: string; file: OrangeyFile }[] = [];
+    const writes: { path: string; file: OrangeyFile; text?: string }[] = [];
     const idFor = (fileId: string, id: string) => {
       if (!ids.has(fileId)) ids.set(fileId, id);
       claimed.add(id);
@@ -540,7 +526,7 @@ export class LibraryService {
         if (answer === "replace" && here?.kind === "file") {
           const keep = here.randomizer?.id ?? r.id;
           idFor(r.id, keep);
-          writes.push({ path, file: { ...entry.file, randomizer: { ...r, id: keep } } });
+          writes.push({ path, file: { ...entry.file, randomizer: { ...r, id: keep } }, text: keep === r.id ? entry.text : undefined });
           planned.add(path.toLowerCase());
           result.replaced++;
           continue;
@@ -560,7 +546,7 @@ export class LibraryService {
       }
       const id = this.findById(r.id) || claimed.has(r.id) ? newId() : r.id;
       idFor(r.id, id);
-      writes.push({ path, file: { ...entry.file, randomizer: { ...r, id } } });
+      writes.push({ path, file: { ...entry.file, randomizer: { ...r, id } }, text: id === r.id ? entry.text : undefined });
       planned.add(path.toLowerCase());
       result.added++;
     }
@@ -569,7 +555,12 @@ export class LibraryService {
     for (const w of writes) {
       const folder = parent(w.path);
       if (folder) await this.backend.mkdir(folder);
-      await this.backend.write(w.path, serialize({ ...w.file, randomizer: relink(w.file.randomizer, ids) }));
+      const linked = relink(w.file.randomizer, ids);
+      // Untouched — its own id (`text` is only kept then) and its links as
+      // they were (relink returns the same object) — keeps the bytes it
+      // arrived with, as the ZIP import always has.
+      const unchanged = w.text !== undefined && linked === w.file.randomizer;
+      await this.backend.write(w.path, unchanged ? w.text! : serialize({ ...w.file, randomizer: linked }));
     }
     await this.refresh();
     return result;

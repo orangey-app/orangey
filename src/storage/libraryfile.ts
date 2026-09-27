@@ -179,13 +179,18 @@ export function linkedIds(r: Randomizer): string[] {
   return [];
 }
 
-/** The same randomizer with its links sent where `ids` says; an id not in it is left alone. */
+/**
+ * The same randomizer with its links sent where `ids` says. An id not in it,
+ * or mapped to itself, is left alone, and when nothing moves the very same
+ * object comes back — which is how an import knows a file needs no rewrite.
+ */
 export function relink(r: Randomizer, ids: ReadonlyMap<string, string>): Randomizer {
-  if (r.type === "list" && r.items.some((i) => i.goesTo && ids.has(i.goesTo))) {
-    return { ...r, items: r.items.map((i) => (i.goesTo && ids.has(i.goesTo) ? { ...i, goesTo: ids.get(i.goesTo)! } : i)) };
+  const moved = (id: string | undefined): id is string => id !== undefined && ids.has(id) && ids.get(id) !== id;
+  if (r.type === "list" && r.items.some((i) => moved(i.goesTo))) {
+    return { ...r, items: r.items.map((i) => (moved(i.goesTo) ? { ...i, goesTo: ids.get(i.goesTo)! } : i)) };
   }
-  if (r.type === "board" && r.entries.some((e) => ids.has(e.id))) {
-    return { ...r, entries: r.entries.map((e) => (ids.has(e.id) ? { ...e, id: ids.get(e.id)! } : e)) };
+  if (r.type === "board" && r.entries.some((e) => moved(e.id))) {
+    return { ...r, entries: r.entries.map((e) => (moved(e.id) ? { ...e, id: ids.get(e.id)! } : e)) };
   }
   return r;
 }

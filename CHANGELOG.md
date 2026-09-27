@@ -45,6 +45,13 @@ library as one readable text file.
   it, or its text pasted into the box, shows what is in it and what could
   not be read, and asks before writing over anything. The format is in
   `docs/FORMAT.md`.
+- **A library ZIP keeps its links on import.** When a randomizer arriving
+  in a ZIP had to be given a new id because one in your library already
+  used it, the wheels and boards that came with it kept pointing at your
+  randomizer instead of the one they came with. The ZIP import now follows
+  the same rules as the text file: the links inside it are updated, Replace
+  keeps your file's id so your boards still reach it, and Skip points the
+  ZIP's links at the file you kept. Its paths are also cleaned the same way.
 - **The library scrolls by itself.** On a computer the library panel and the
   main screen each have their own scroll bar. A long library used to make the
   whole page long, and scrolling down to reach a randomizer scrolled the

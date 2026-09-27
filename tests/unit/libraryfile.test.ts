@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { LibraryService } from "../../src/storage/library.ts";
 import { MemoryBackend } from "../../src/storage/memory.ts";
+import { serialize, wrap } from "../../src/model/file.ts";
 import { emptyRandomizer, type BoardRandomizer, type ListRandomizer, type Randomizer } from "../../src/model/randomizer.ts";
 import {
   isLibraryText, parseLibrary, planExport, safeFilePath, safeFolder, serializeLibrary,
@@ -158,5 +159,44 @@ describe("importing a library file", () => {
     const file = exported([{ path: "images/cats.orangey.json", randomizer: list("cats", "Cats", [{ label: "Tabby" }]) }]);
     await library.importLibrary(file.entries, file.folders, "", async () => "skip");
     assert.equal(library.findById("cats")!.path, "images folder/cats.orangey.json");
+  });
+});
+
+describe("importing a ZIP", () => {
+  // As the app writes one, and as a hand-made one might be laid out instead.
+  const pretty = (r: Randomizer) => serialize(wrap(r));
+  const compact = (r: Randomizer) => JSON.stringify(wrap(r));
+
+  test("keeps the links between its files when one has to take a new id", async () => {
+    const library = await setup();
+    await library.create("", list("hoard", "Someone else's hoard", [{ label: "Copper" }]));
+    const result = await library.importArchive([
+      { path: "Forest/encounters.orangey.json", text: pretty(list("enc", "Encounters", [{ label: "Dragon", goesTo: "hoard" }])) },
+      { path: "night.orangey.json", text: pretty(board("night", "Night", ["enc", "hoard"])) },
+      { path: "Treasure/hoard.orangey.json", text: pretty(list("hoard", "Hoard", [{ label: "Gold" }])) },
+    ], async () => "skip");
+    assert.deepEqual(result, { added: 3, replaced: 0, skipped: 0, failed: 0 });
+    const arrived = library.find("Treasure/hoard.orangey.json")!.randomizer!;
+    assert.notEqual(arrived.id, "hoard");
+    const enc = library.find("Forest/encounters.orangey.json")!.randomizer as ListRandomizer;
+    assert.equal(enc.items[0].goesTo, arrived.id, "the wheel reached the randomizer that was already here");
+    const night = library.find("night.orangey.json")!.randomizer as BoardRandomizer;
+    assert.deepEqual(night.entries.map((e) => e.id), ["enc", arrived.id]);
+  });
+
+  test("writes a file nothing had to change exactly as it came, and Replace keeps the id boards point at", async () => {
+    const library = await setup();
+    await library.create("", list("mine", "Hoard", [{ label: "Copper" }]));
+    const untouched = compact(list("weather", "Weather", [{ label: "Rain" }]));
+    await library.importArchive([
+      { path: "weather.orangey.json", text: untouched },
+      { path: "hoard.orangey.json", text: compact(list("theirs", "Hoard", [{ label: "Gold" }])) },
+      { path: "encounters.orangey.json", text: compact(list("enc", "Encounters", [{ label: "Dragon", goesTo: "theirs" }])) },
+    ], async () => "replace");
+    await library.flush();
+    assert.equal(await library.backend.read("weather.orangey.json"), untouched, "an unchanged file was rewritten");
+    const hoard = library.find("hoard.orangey.json")!.randomizer as ListRandomizer;
+    assert.deepEqual([hoard.id, hoard.items[0].label], ["mine", "Gold"], "replaced in place, under the id it had");
+    assert.equal((library.find("encounters.orangey.json")!.randomizer as ListRandomizer).items[0].goesTo, "mine");
   });
 });
