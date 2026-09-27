@@ -2525,7 +2525,7 @@ async function main() {
 
   // ---- AH: the pop-out window ------------------------------------------------
 
-  await test("AH a randomizer and a board pop out into a window of their own, roll there, and follow a chain in place", async (page) => {
+  await test("AH a randomizer and a board pop out into a window of their own, roll where they are clicked, fill it, and follow a chain in place", async (page) => {
     await open(page, "", { fresh: true });
     await createList(page, "Hoard", [{ label: "Gold", weight: 1 }]);
     const encounters = await createList(page, "Encounters", [{ label: "Dragon", weight: 1, goesTo: "Hoard" }]);
@@ -2548,21 +2548,34 @@ async function main() {
     await open(page, `#/r/${encodeURIComponent(encounters)}`);
     await page.waitForFunction(`document.querySelector(".popout-button")`);
     await press(".popout-button");
-    await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-roll")`);
+    await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-single .cell")`);
     // It carries the page's look: its styles and theme were copied in.
     assert.equal(
       await pip(`return getComputedStyle(d.body).backgroundColor`),
       await page.evaluate(`return getComputedStyle(document.body).backgroundColor`),
     );
 
-    // Rolled in the pop-out, recorded in the tab like any roll.
-    await pip(`d.querySelector(".popout-roll").click()`);
+    // No Roll buttons: the randomizer is the button, and says so.
+    assert.equal(await pip(`return d.querySelectorAll(".popout-roll, .cell-roll, .chain-roll").length`), 0);
+    assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Click to roll");
+    // The wheel fills the window it is given — it used to stop at 300 pixels
+    // however large the window was — and never spills out of it.
+    const fit = await pip(`
+      const w = d.querySelector(".wheel-svg").getBoundingClientRect();
+      const win = documentPictureInPicture.window;
+      return { wheel: w.width, width: win.innerWidth, height: win.innerHeight, scrolls: d.documentElement.scrollHeight > win.innerHeight };
+    `);
+    assert.ok(fit.wheel > Math.min(fit.width, fit.height) * 0.6, `the wheel is ${Math.round(fit.wheel)}px in a ${fit.width}x${fit.height} window`);
+    assert.ok(fit.wheel <= fit.width && !fit.scrolls, "the wheel spills out of the window");
+
+    // Rolled in the pop-out by a click on it, recorded in the tab like any roll.
+    await pip(`d.querySelector(".cell-stage").click()`);
     await page.waitForFunction(`window.orangey.state.history.length === 1`);
     assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Dragon");
     // Where the answer leads: a button, and the swap happens in place.
     assert.equal(await pip(`return d.querySelector(".popout-next").textContent`), "→ Hoard");
     await pip(`d.querySelector(".popout-next").click()`);
-    await pip(`d.querySelector(".chain-roll").click()`);
+    await pip(`d.querySelector(".chain-link .cell").click()`);
     await page.waitForFunction(`window.orangey.state.history.length === 2`);
     const chained = await page.evaluate(`const h = window.orangey.state.history[0]; return [h.randomizerName, h.resultText, h.from?.randomizerName, h.from?.label]`);
     assert.deepEqual(chained, ["Hoard", "Gold", "Encounters", "Dragon"]);
@@ -2582,9 +2595,13 @@ async function main() {
     await press(".popout-button");
     await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-roll-all")`);
     assert.equal(await pip(`return d.querySelectorAll(".popout-slot").length`), 2);
+    // One cell, clicked, rolls on its own.
     const before = await rows();
+    await pip(`d.querySelectorAll(".popout-slot .cell")[1].click()`);
+    await page.waitForFunction(`window.orangey.state.history.length === ${before + 1}`);
+    assert.equal(await page.evaluate(`return window.orangey.state.history[0].randomizerName`), "Damage");
     await pip(`d.querySelector(".popout-roll-all").click()`);
-    await page.waitForFunction(`window.orangey.state.history.length === ${before + 2}`);
+    await page.waitForFunction(`window.orangey.state.history.length === ${before + 3}`);
     await page.evaluate(`documentPictureInPicture.window.close()`);
     await page.waitForFunction(`!documentPictureInPicture.window`);
     assert.deepEqual(page.consoleErrors, []);

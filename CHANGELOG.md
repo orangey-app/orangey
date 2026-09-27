@@ -7,7 +7,10 @@
   opens in a small window that stays on top of other programs, to roll over
   a game or a PDF without switching back. It is the same app, so its rolls go
   to History and Recent rolls, bags stay in step and the theme follows.
-  Space or Enter rolls (everything, on a board) and Escape skips. When an
+  There is no Roll button to make room for: click the wheel, the dice or the
+  coin to roll it, and a single one grows and shrinks with the window as you
+  drag its edges (wireframe dice keep their size). Space or Enter rolls
+  (everything, on a board) and Escape skips. When an
   outcome leads to another randomizer, a button under the answer swaps that
   cell over to it, and ← comes back. One pop-out at a time; it closes with
   the tab. Browsers without it — Safari, the iPad, phones — show no button.

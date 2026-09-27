@@ -34,9 +34,19 @@ export interface CellView {
 
 export function createCell(
   randomizer: Randomizer,
-  opts: { onRoll?: () => void; onLanded?: (outcome: Outcome) => void; from?: RollOrigin } = {},
+  opts: {
+    onRoll?: () => void;
+    onLanded?: (outcome: Outcome) => void;
+    from?: RollOrigin;
+    /**
+     * The cell itself is the Roll button: a press anywhere on it rolls (and,
+     * mid-roll, skips), and it takes the keyboard like a button. The pop-out
+     * uses it, where a button's height is room the wheel could have.
+     */
+    clickToRoll?: boolean;
+  } = {},
 ): CellView {
-  const result = createResultPanel("Ready");
+  const result = createResultPanel(opts.clickToRoll ? "Click to roll" : "Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
   const coin = createCoin();
@@ -49,7 +59,10 @@ export function createCell(
         return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
       },
       id: () => randomizer.id,
-      onActivate: () => void rollCell(),
+      // With the whole cell as the button, the click reaches it anyway.
+      onActivate: () => {
+        if (!opts.clickToRoll) void rollCell();
+      },
       size: 260,
       slices: () => (randomizer as Extract<Randomizer, { type: "list" }>).slices,
       colours: () => state.wheelColours((randomizer as Extract<Randomizer, { type: "list" }>).palette),
@@ -137,6 +150,26 @@ export function createCell(
     bagLine,
     result.el,
   );
+
+  if (opts.clickToRoll) {
+    el.classList.add("click-to-roll");
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", `Roll ${randomizer.name}`);
+    // A button inside the cell — an offered card, Refill — is its own
+    // press, not a roll.
+    const own = (e: Event) => Boolean((e.target as Element | null)?.closest?.("button, input, select, textarea, a"));
+    el.addEventListener("click", (e) => {
+      if (!own(e)) void rollCell();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (own(e) || (e.key !== " " && e.key !== "Enter")) return;
+      e.preventDefault();
+      // Handled: the window's own Space would roll everything else too.
+      e.stopPropagation();
+      void rollCell();
+    });
+  }
 
   return {
     el,

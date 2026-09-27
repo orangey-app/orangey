@@ -1363,8 +1363,9 @@ h1, h2, h3, .brand, .board-name, .cell-name,
 
 /* ---- the pop-out window (popout.ts) --------------------------------------
    A second window, always on top, holding cells: the whole of it is for
-   rolling. It is sized by the person dragging its edges, so everything here
-   follows the window rather than a layout. */
+   rolling, and a cell is its own Roll button. It is sized by the person
+   dragging its edges, so everything here follows the window rather than a
+   layout. */
 
 body.popout {
   height: auto;
@@ -1389,28 +1390,60 @@ body.popout {
 .popout-slot .chain-link { border: 0; box-shadow: none; padding: 0; margin: 0; background: none; }
 .popout-back { align-self: flex-start; padding: 2px 8px; margin-bottom: 4px; }
 /* Where the answer leads: easy to see, since pressing it is the next move. */
-.popout-slot button.popout-next { align-self: center; margin: 6px 0 2px; border: 1px solid var(--accent); color: var(--ink); }
-/* On a board the Roll buttons line up across the row, as on the board. */
-.popout-board .popout-body, .popout-board .popout-body > div, .popout-board .popout-body > .chain-link { flex: 1; display: flex; flex-direction: column; }
-.popout-board .popout-body .cell { flex: 1 0 auto; }
-.popout-board .cell-roll, .popout-board .chain-roll { margin-top: auto; }
+.popout-slot button.popout-next { display: block; margin: 6px auto 2px; border: 1px solid var(--accent); color: var(--ink); }
 .popout-note:empty { display: none; }
-/* One randomizer: the wheel as large as the window lets it be, and its
-   answer read at a glance. */
-/* The window's title names it; a randomizer a chain swapped in names itself. */
-.popout-single .popout-body > div:not(.chain-link) .cell-name { display: none; }
-.popout-single button.popout-next { display: block; margin: 6px auto 2px; }
 /* The rules above set display, which would otherwise override hidden. */
 .popout-slot button[hidden] { display: none; }
-/* The rest of the window — title, answer, → and Roll — takes about 300px,
-   and a chain's ←, "rolled" line and name about 90px more; the wheel gets
-   what is left, never less than a wheel you can read. */
-.popout-single .wheel-holder { max-width: max(160px, min(92vw, calc(100vh - 300px))); }
-.popout-single .chain-link .wheel-holder { max-width: max(160px, min(92vw, calc(100vh - 390px))); }
-.popout-single .cell .result-slot { font-size: clamp(22px, 9vw, 44px); }
-.popout-single .popout-roll { width: 100%; min-height: 48px; margin-top: 8px; }
+/* The cell is the button: it says so to the pointer and to the keyboard. */
+.cell.click-to-roll { cursor: pointer; border-radius: var(--radius-sm); }
+.cell.click-to-roll:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .popout-roll-all { width: 100%; min-height: 48px; flex: none; }
 
+/* One randomizer: the window is the stage. Each box down to the stage takes
+   the height left over, and the wheel is sized from the stage. The stage
+   used to centre the wheel in a box shrunk to its content, which fell back to
+   a drawing's default 300 pixels: it could get smaller with the window but
+   never bigger. */
+body.popout-single { height: 100vh; min-height: 0; }
+.popout-single .popout-grid,
+.popout-single .popout-slot,
+.popout-single .popout-body,
+.popout-single .popout-root,
+.popout-single .popout-body > .chain-link,
+.popout-single .cell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The stage is a size container: the wheel is as large as the smaller of
+   its width and its height, so it neither spills sideways nor pushes the
+   answer off the bottom. */
+.popout-single .cell-stage { flex: 1 1 0; min-height: 0; min-width: 0; container-type: size; display: grid; place-items: center; }
+.popout-single .wheel-wrap { padding: 0; }
+.popout-single .wheel-holder { width: min(100cqw, 100cqh); max-width: none; }
+.popout-single .result-panel { flex: none; }
+.popout-single .cell .result-slot { font-size: clamp(22px, min(10vw, 8vh), 80px); }
+/* The window's title names it; a randomizer a chain swapped in names itself. */
+.popout-single .popout-root .cell-name { display: none; }
+/* Flat dice and the coin grow with the stage too — `cq` units are the
+   stage's, as for the wheel. Wireframe dice keep their size: their canvas is
+   drawn at one size when they are made. */
+.popout-single .dice-tray { --die: clamp(46px, min(24cqw, 36cqh), 140px); gap: calc(var(--die) * 0.22); }
+.popout-single .die {
+  width: var(--die);
+  height: var(--die);
+  border-radius: calc(var(--die) * 0.2);
+  font-size: calc(var(--die) * 0.4);
+}
+/* The coin rises by up to 0.6 of its size when tossed; the wrap keeps that
+   room above it, so coin and room together stay inside the stage. */
+.popout-single .coin-wrap { --coin: clamp(96px, min(50cqw, 45cqh), 280px); padding-top: calc(var(--coin) * 0.6); }
+.popout-single .coin {
+  width: var(--coin);
+  height: var(--coin);
+  font-size: calc(var(--coin) * 0.16);
+}
 
 </style>
 </head>
@@ -10965,9 +10998,19 @@ function createRoller(opts               )         {
 
 function createCell(
   randomizer            ,
-  opts                                                                                    = {},
+  opts   
+                        
+                                          
+                      
+       
+                                                                             
+                                                                             
+                                                                     
+       
+                          
+    = {},
 )           {
-  const result = createResultPanel("Ready");
+  const result = createResultPanel(opts.clickToRoll ? "Click to roll" : "Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
   const coin = createCoin();
@@ -10980,7 +11023,10 @@ function createCell(
         return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
       },
       id: () => randomizer.id,
-      onActivate: () => void rollCell(),
+      // With the whole cell as the button, the click reaches it anyway.
+      onActivate: () => {
+        if (!opts.clickToRoll) void rollCell();
+      },
       size: 260,
       slices: () => (randomizer                                         ).slices,
       colours: () => state.wheelColours((randomizer                                         ).palette),
@@ -11068,6 +11114,26 @@ function createCell(
     bagLine,
     result.el,
   );
+
+  if (opts.clickToRoll) {
+    el.classList.add("click-to-roll");
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", `Roll ${randomizer.name}`);
+    // A button inside the cell — an offered card, Refill — is its own
+    // press, not a roll.
+    const own = (e       ) => Boolean((e.target                  )?.closest?.("button, input, select, textarea, a"));
+    el.addEventListener("click", (e) => {
+      if (!own(e)) void rollCell();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (own(e) || (e.key !== " " && e.key !== "Enter")) return;
+      e.preventDefault();
+      // Handled: the window's own Space would roll everything else too.
+      e.stopPropagation();
+      void rollCell();
+    });
+  }
 
   return {
     el,
@@ -11212,7 +11278,7 @@ function chainPlacement(count        , focus        )              {
 function createChainSurface(
   link           ,
   sender        ,
-  opts                                                                 = {},
+  opts                                                                                        = {},
 )                                             {
   const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
   const found = state.library.findById(link.id)?.randomizer ?? null;
@@ -11229,8 +11295,9 @@ function createChainSurface(
     };
   }
   // Its history row says what sent you here, so the two rolls read as one.
-  const cell = createCell(found, { onLanded: opts.onLanded, onRoll: opts.onRoll, from: { randomizerName: sender, label: link.from } });
-  return { cell, el: h("div", { class: "chain-link" }, from, cell.el, cellRollButton(cell, "primary chain-roll")) };
+  const cell = createCell(found, { onLanded: opts.onLanded, onRoll: opts.onRoll, clickToRoll: opts.clickToRoll, from: { randomizerName: sender, label: link.from } });
+  // A cell that is its own button needs no Roll under it.
+  return { cell, el: h("div", { class: "chain-link" }, from, cell.el, opts.clickToRoll ? null : cellRollButton(cell, "primary chain-roll")) };
 }
 
 /** The play screen, as the chain needs to see it: its root link, and its card. */
@@ -11627,8 +11694,9 @@ function saveBoardTemps(boardId        , temps                           )      
  * out something else replaces it, and closing the tab closes it.
  *
  * What it shows is deliberately smaller than the screen it came from: the
- * cells a board is made of, each with its Roll, and Roll all for a board —
- * rolling, not editing. An outcome that goes to another randomizer offers a
+ * cells a board is made of, and Roll all for a board — rolling, not editing.
+ * A cell is its own Roll button (a click on it rolls), so the room a button
+ * would take goes to the wheel, which grows with the window. An outcome that goes to another randomizer offers a
  * button to swap that cell over to it, with ← to come back: the main screen
  * opens it beside the first, and a small window has no beside. A button
  * rather than a swap at the landing, so the answer that sent you there can
@@ -11716,7 +11784,7 @@ async function popOut(randomizer            )                {
       ...temps.filter((t) => t.type !== "list" || t.items.length > 0),
     ]
     : [randomizer];
-  const slots = roots.map((r) => createPopoutSlot(r, !board));
+  const slots = roots.map((r) => createPopoutSlot(r));
 
   const rollAllButton = board ? button("Roll all", () => void rollAll(), { class: "primary roll-button popout-roll-all" }) : null;
   async function rollAll()                {
@@ -11810,7 +11878,7 @@ function copyStyles(doc          )       {
  * on show. Going back keeps what is ahead, so → is still there for the
  * answer that is still on screen; rolling again replaces it.
  */
-function createPopoutSlot(root            , single         )             {
+function createPopoutSlot(root            )             {
   let links              = [{ id: root.id, name: root.name, from: "", found: true }];
   let surfaces                                                             = [];
   let at = 0;
@@ -11848,13 +11916,14 @@ function createPopoutSlot(root            , single         )             {
       const cell = createCell(root, {
         onRoll: () => starting(0),
         onLanded: (outcome) => landed(0, root, outcome),
+        clickToRoll: true,
       });
-      // One randomizer on its own gets the big Roll of its own screen.
-      made = { cell, el: h("div", {}, cell.el, cellRollButton(cell, single ? "primary roll-button popout-roll" : "ghost cell-roll")) };
+      made = { cell, el: h("div", { class: "popout-root" }, cell.el) };
     } else {
       const surface = createChainSurface(links[i], links[i - 1].name, {
         onRoll: () => starting(i),
         onLanded: (outcome) => surface.cell && landed(i, surface.cell.randomizer, outcome),
+        clickToRoll: true,
       });
       made = surface;
     }
@@ -11871,11 +11940,8 @@ function createPopoutSlot(root            , single         )             {
   function render()       {
     const surface = surfaceFor(at);
     setChildren(body, surface.el);
-    // Where the answer leads sits with the answer, above its Roll (the
-    // surface's last child); a randomizer that is gone has no Roll.
-    if (surface.cell) surface.el.insertBefore(note, surface.el.lastElementChild);
-    else surface.el.append(note);
-    note.before(next);
+    // Where the answer leads sits with the answer, under it.
+    surface.el.append(next, note);
     back.hidden = at === 0;
     back.textContent = at > 0 ? `← ${links[at - 1].name}` : "";
     next.hidden = at + 1 >= links.length;

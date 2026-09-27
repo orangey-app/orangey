@@ -12,8 +12,9 @@
  * out something else replaces it, and closing the tab closes it.
  *
  * What it shows is deliberately smaller than the screen it came from: the
- * cells a board is made of, each with its Roll, and Roll all for a board —
- * rolling, not editing. An outcome that goes to another randomizer offers a
+ * cells a board is made of, and Roll all for a board — rolling, not editing.
+ * A cell is its own Roll button (a click on it rolls), so the room a button
+ * would take goes to the wheel, which grows with the window. An outcome that goes to another randomizer offers a
  * button to swap that cell over to it, with ← to come back: the main screen
  * opens it beside the first, and a small window has no beside. A button
  * rather than a swap at the landing, so the answer that sent you there can
@@ -23,7 +24,7 @@
 import { isBoard, type Randomizer } from "../model/randomizer.ts";
 import { appendChildren, button, h, isTyping, setChildren } from "./dom.ts";
 import { state } from "./state.ts";
-import { cellRollButton, createCell, type CellView } from "./components/cell.ts";
+import { createCell, type CellView } from "./components/cell.ts";
 import { advanceChain, chainTarget, createChainSurface, type ChainLink } from "./components/chain.ts";
 import { loadBoardTemps } from "./board-temps.ts";
 import type { Outcome } from "./roll.ts";
@@ -101,7 +102,7 @@ export async function popOut(randomizer: Randomizer): Promise<void> {
       ...temps.filter((t) => t.type !== "list" || t.items.length > 0),
     ]
     : [randomizer];
-  const slots = roots.map((r) => createPopoutSlot(r, !board));
+  const slots = roots.map((r) => createPopoutSlot(r));
 
   const rollAllButton = board ? button("Roll all", () => void rollAll(), { class: "primary roll-button popout-roll-all" }) : null;
   async function rollAll(): Promise<void> {
@@ -195,7 +196,7 @@ interface PopoutSlot {
  * on show. Going back keeps what is ahead, so → is still there for the
  * answer that is still on screen; rolling again replaces it.
  */
-function createPopoutSlot(root: Randomizer, single: boolean): PopoutSlot {
+function createPopoutSlot(root: Randomizer): PopoutSlot {
   let links: ChainLink[] = [{ id: root.id, name: root.name, from: "", found: true }];
   let surfaces: ({ el: HTMLElement; cell: CellView | null } | undefined)[] = [];
   let at = 0;
@@ -233,13 +234,14 @@ function createPopoutSlot(root: Randomizer, single: boolean): PopoutSlot {
       const cell = createCell(root, {
         onRoll: () => starting(0),
         onLanded: (outcome) => landed(0, root, outcome),
+        clickToRoll: true,
       });
-      // One randomizer on its own gets the big Roll of its own screen.
-      made = { cell, el: h("div", {}, cell.el, cellRollButton(cell, single ? "primary roll-button popout-roll" : "ghost cell-roll")) };
+      made = { cell, el: h("div", { class: "popout-root" }, cell.el) };
     } else {
       const surface = createChainSurface(links[i], links[i - 1].name, {
         onRoll: () => starting(i),
         onLanded: (outcome) => surface.cell && landed(i, surface.cell.randomizer, outcome),
+        clickToRoll: true,
       });
       made = surface;
     }
@@ -256,11 +258,8 @@ function createPopoutSlot(root: Randomizer, single: boolean): PopoutSlot {
   function render(): void {
     const surface = surfaceFor(at);
     setChildren(body, surface.el);
-    // Where the answer leads sits with the answer, above its Roll (the
-    // surface's last child); a randomizer that is gone has no Roll.
-    if (surface.cell) surface.el.insertBefore(note, surface.el.lastElementChild);
-    else surface.el.append(note);
-    note.before(next);
+    // Where the answer leads sits with the answer, under it.
+    surface.el.append(next, note);
     back.hidden = at === 0;
     back.textContent = at > 0 ? `← ${links[at - 1].name}` : "";
     next.hidden = at + 1 >= links.length;

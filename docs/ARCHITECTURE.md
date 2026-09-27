@@ -92,7 +92,11 @@ slows or stops the clocks of a window nobody can see, and the main window is
 often exactly that while the pop-out sits over a game. Times are still read
 with this page's `performance.now()`: a pop-out's frame timestamps count from
 when it opened. Styles are copied in when it opens and the theme's root
-attributes are mirrored on every `prefs` change. Where the API is missing
+attributes are mirrored on every `prefs` change. Its cells are made with
+`clickToRoll` — the cell is its own Roll button, keyboard and screen reader
+included — and a single one's stage is a CSS size container, so the wheel,
+flat dice and coin are sized from the stage (`cq` units) and follow the
+window as it is resized. Where the API is missing
 (Safari, and so the iPad; phones) the button is not shown at all.
 
 **A wheel is a cycle.** Slices take red, yellow and blue in turn

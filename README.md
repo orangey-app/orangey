@@ -46,9 +46,10 @@ both sit on the board until you close them, without changing it, and
 
 **Pop out** puts a randomizer or a whole board in a small window that stays
 on top of your other programs — over a game, a PDF or a character sheet — to
-roll there without switching back. Rolls made in it go to History like any
-other, and an outcome that leads to another randomizer offers to swap the
-cell over to it. It needs Chrome, Edge or Firefox on a computer; where the
+roll there without switching back. Click the randomizer to roll it; a single
+one fills the window at whatever size you drag it to. Rolls made in it go to
+History like any other, and an outcome that leads to another randomizer
+offers to swap the cell over to it. It needs Chrome, Edge or Firefox on a computer; where the
 browser cannot do it (Safari, the iPad, phones) the button is not shown.
 
 ## Try it
