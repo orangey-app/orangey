@@ -72,6 +72,15 @@ both fields so no link can carry a picture. Object URLs are made once per id and
 cached, which is why a render calls `imageUrlSync` and warms the cache with
 `imageUrl` rather than creating a URL per frame.
 
+**Play state is per device.** What has been drawn from a bag, a board's
+temporary cells and the roll history live in the app database (IndexedDB),
+never in a randomizer file. "Draw without putting back" is a property of the
+randomizer and is saved with it; what has been drawn so far belongs to one
+device and one session of play, so two people rolling the same shared wheel
+each have their own bag, and a draw is never a write to the library. A
+randomizer opened from a link has no file and fresh outcome ids on every load,
+so its bag lasts only as long as the page.
+
 **A board holds references, not randomizers.** `BoardRandomizer.entries` is a
 list of `{ id, name }`: the id is what the board rolls, the name is what it can
 say when that randomizer is gone. `src/ui/views/board.ts` resolves them through
@@ -84,6 +93,15 @@ version of the same randomizer (a weight edited on the wheel) and redraws
 the stage without losing its answer, the wheel set straight back under the
 pointer. It returns false when the change is one of shape — another type, a
 wheel turned into a list — and the board rebuilds as before.
+
+**A chain opens the next randomizer and waits.** An outcome with `goesTo`
+opens that randomizer beside the one that sent you there; it does not roll by
+itself, because the table decides when the second roll happens. Only the two
+newest stay full size — three wheels across a laptop are three wheels nobody
+can read — and older ones become icons carrying their name and answer. The
+rules (`advanceChain`, `chainPlacement`) have no DOM, so what is full size,
+what happens on a loop back, and what happens when a target was deleted are
+unit-tested directly.
 
 **A wheel rolls from its hub; its slices are for editing.** The hub is the
 wheel's Roll control (`onActivate`), and a click anywhere else on it does
@@ -160,7 +178,7 @@ text, whose contrast with the accent is checked. `--ok`, `--warn` and
 lightness, toward the side the theme's text is on, until they do (or as far
 as the text itself gets, on the rare mid-tone ground where even black or
 white falls short); `--error-ink` is the label on an error-filled button.
-The mascot keeps his own colours (P14).
+The mascot keeps his own colours on every theme.
 
 **Fonts are built in.** `scripts/build.mjs` embeds `assets/fonts/` as data:
 URLs in the CSS, each face with its licence in a comment, so the single file
@@ -209,10 +227,15 @@ never sent to a server.
 picks the portable part of the preferences — scheme, feel, seed, the
 reduced-motion choice, the user's colours — and refuses anything else, so a
 settings file from one device can never carry another device's folder or
-backend. Loading goes through `normalizeFeel`, exactly as start-up does.
+backend. Loading goes through `normalizeFeel`, exactly as start-up does. Unlike
+a randomizer file, a settings file refuses unknown keys and refuses a newer
+version instead of opening it read-only: settings are small and cheap to make
+again, a typo should be reported rather than dropped, and a wrong guess about
+a timing would be felt on every roll. Its key order is append only, like the
+randomizer format's.
 
 **At rest the mascot is the drawing.** Every path in `parts.ts` is lifted from
-the owner's SVGs in `assets/mascot/`. The squash spring's target is derived
+the source SVGs in `assets/mascot/`. The squash spring's target is derived
 from a zero-mean breath and can never be set by a state; poses are carried by a
 crouch offset and a tilt; clamps are symmetric; the hop integrates only while
 airborne, so standing still injects nothing. `tests/unit/mascot.test.ts`
@@ -243,7 +266,10 @@ are added on top, because a die is not a spinning cube:
   slerps into it. The face is then seen undistorted, so its number can sit
   inside it. `facingError` measures how far an orientation is from that, using
   `atan2` rather than `acos`: `acos` loses precision exactly where the question
-  matters, near zero.
+  matters, near zero. The number is sized to half the mean side of that face,
+  measured from the projected vertices (a d10's kite face has two short and two
+  long sides), and a number of two or more digits is shrunk to fit the face's
+  inscribed circle.
 
 The shape describes itself. Edges are the vertex pairs at the shortest
 distance; faces are found by `computeFaces`, which takes every corner of the
@@ -259,16 +285,24 @@ one digit and would otherwise overflow the face's inscribed circle.
 **A landing is a bounce, and its size is one setting.** The Settle control
 (none / slight / bouncy, default bouncy) governs all three: the wheel swings a
 fixed number of degrees past its target and comes back, and the dice and coin
-drop, squash and hop before resting. `easeSpin` adds the overshoot as a damped
-half-sine over the last quarter of the spin, and it is exactly zero at t = 1,
-so the wheel still stops precisely where the result says.
+drop, squash and hop before resting. The wheel's roll-back is part of its
+speed profile, not added on top: the wind-down dips once below zero near the
+end, scaled so the wheel passes the target by exactly the roll-back on every
+curve, and ends at t = 1 precisely where the result says. (Adding a bounce on
+top of a finished curve makes a visible lurch on a snappy curve, where the
+wheel has nearly stopped; a dip of its own shape can be outrun by a gentle
+curve's slow tail, giving a second turn.) `feel.ts` finds the dip's depth by
+bisection and caches it per curve.
 
 **Every result comes from a `RandomSource`.** `state.source()` hands out a
 crypto-backed one, or a seeded one when a seed is set, and everything that
 reaches an `Outcome` draws from it. `Math.random` is for cosmetics only — the
 scatter of a label, the axes a die tumbles about — because a seeded session
 has to replay exactly, and anything a person reads as the answer is part of
-that replay.
+that replay. For the same reason, seeded rolls only reproduce while every path
+draws the same numbers in the same order: never add, remove or reorder draws
+in an existing path, and give a new feature that needs extra numbers its own
+draws after the existing ones.
 
 The one answer that does not is a **pick**: a list shown as a list is a
 column of buttons (`src/ui/components/outcomelist.ts`), and pressing one lands
@@ -294,10 +328,13 @@ toast rather than throwing into whichever handler happened to be running,
 because by then the user has already moved on.
 
 **Storage is an interface with three implementations.** `LibraryBackend` is
-list/read/write/mkdir/move/remove; OPFS and a user-picked folder share one
-implementation over `FileSystemDirectoryHandle`, memory is the third and is
-what the shared backend test suite runs against. A Tauri backend in 1.0 is a
-fourth implementation of the same six methods.
+list/read/write/mkdir/move/remove. OPFS and a user-picked folder share one
+implementation over `FileSystemDirectoryHandle`; IndexedDB is the second; memory
+is the third, and is what the shared backend test suite runs against.
+Browser storage is OPFS where it is writable and IndexedDB otherwise. A browser
+that gains a writable OPFS in an update (Safari did, between 18 and 26) would
+open an empty filesystem and hide a library already in IndexedDB, so a
+non-empty IndexedDB library is kept in preference to an empty OPFS.
 
 **A save is debounced, and a failed save puts the text back.** `LibraryService`
 keeps edits in a `#pending` map keyed by path and writes them a moment later,
@@ -327,18 +364,21 @@ in dependency order into one script; `scripts/build.mjs` writes `dist/` and,
 with `--single`, a self-contained `dist/orangey.html`.
 
 The bundler is deliberately strict — only relative imports, no default exports,
-no re-exports, no renamed imports, and every top-level name unique across the
-program. Each of those rules is checked at build time, and each of them caught
-a real bug while the app was being written.
+no re-exports, no renamed imports, no import cycles, and erasable type syntax
+only (no enums or parameter properties). Every module ends up in one shared
+scope, so every top-level name must be unique across the program; that is why
+a few names carry a trailing underscore (`RangeError_`, `Record_`). Each rule
+is checked at build time, so breaking one is a build error, not a mystery at
+run time.
 
 ### Why no framework
 
-The plan called for Svelte 5 + Vite. The build environment had no access to any
-package registry, so the choice was between a framework and shipping. The
-framework-free core was already the plan's design, so only the UI layer
-changed. Moving to Svelte later is a rewrite of `src/ui` against an untouched
-`src/core`, `src/model`, `src/import` and `src/storage` — and the tests for
-those keep working unchanged.
+The logic never needed one — `src/core`, `src/model`, `src/import` and
+`src/storage` have no DOM at all — and the UI is small enough for plain DOM
+calls. No framework also means no dependencies, which keeps the build to Node
+alone and the app to one file. Moving the UI to a framework later would be a
+rewrite of `src/ui` against those four untouched folders, whose tests keep
+working unchanged.
 
 ## Tests
 

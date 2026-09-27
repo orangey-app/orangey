@@ -33,7 +33,10 @@ them.
 
 UTF-8, LF line endings, two-space indentation, and keys written in a fixed
 order, so that editing a file by hand and letting Orangey re-save it produces a
-one-line diff rather than a reshuffle.
+one-line diff rather than a reshuffle. The key order is **append only**: a new
+key goes at the end of the order, never among the existing ones, so a file
+written before that key existed keeps its exact bytes when it is saved again.
+The same holds for `.orangey-settings.json`.
 
 **Unknown keys are preserved.** A file written by a newer version and re-saved
 by an older one keeps whatever the older one did not understand. A file whose
@@ -150,6 +153,12 @@ A bare randomizer object without the `format` wrapper is accepted, because it
 is a natural thing to paste. The import wizard additionally accepts a JSON
 array of strings or of `{label, weight}` objects.
 
+Opening is lenient and saving is strict. A file only has to be well formed to
+open, so one already on disk with, say, a dice expression that no longer
+parses still opens and can be fixed. The editors check more before they save
+(`draftProblem` in `src/model/draft.ts`): Orangey never writes a file it could
+not load again.
+
 ## A library file
 
 `<name>.orangey-library.json` is a library, or part of one, as a single
@@ -205,7 +214,13 @@ stored — then base64url of the randomizer as JSON, with three things left out:
 `created` and `modified`, which mean nothing to a stranger, and the outcomes'
 `id`s, which are library bookkeeping and would otherwise be the largest thing
 in the payload. All three are made afresh when the link is opened, so the
-wheel that arrives is a randomizer of its own, ready to be saved.
+wheel that arrives is a randomizer of its own, ready to be saved. Pictures
+never travel (`image` and `imageData` are left out too): their bytes would make
+an address nobody can paste, and a picture id means nothing on another device.
+
+A link is a frozen copy: it rolls the same wheel in a year, whatever has
+happened to the library since. A library link (`#/id/…`) is the opposite — it
+follows edits, but only works on a device that holds that library.
 
 Everything else travels, including per-outcome `reaction` tags and the
 randomizer's own `feel`. `feel` can only override the wheel, dice and coin
