@@ -192,6 +192,18 @@ export function downloadBytes(name: string, bytes: Uint8Array, type = "applicati
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * The window a node is shown in: this page's, or a pop-out's (popout.ts).
+ *
+ * A pop-out is a second window run by this page's code. Its animations and
+ * timers must run on its own clock: the main window may be minimised or
+ * covered by a game, and a browser slows or stops the clocks of a window
+ * nobody can see — a wheel spinning in the pop-out would stop with it.
+ */
+export function windowOf(node: Node): Window {
+  return node.ownerDocument?.defaultView ?? window;
+}
+
 export function isTyping(e: Event): boolean {
   const target = e.target as HTMLElement | null;
   return !!target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);

@@ -2523,6 +2523,81 @@ async function main() {
     assert.deepEqual(page.consoleErrors, []);
   });
 
+  // ---- AH: the pop-out window ------------------------------------------------
+
+  await test("AH a randomizer and a board pop out into a window of their own, roll there, and follow a chain in place", async (page) => {
+    await open(page, "", { fresh: true });
+    await createList(page, "Hoard", [{ label: "Gold", weight: 1 }]);
+    const encounters = await createList(page, "Encounters", [{ label: "Dragon", weight: 1, goesTo: "Hoard" }]);
+    const boardPath = await page.evaluate(`
+      const { state } = window.orangey;
+      state.setFeel({ motion: "instant" });
+      const now = new Date().toISOString();
+      await state.library.create("", { id: "Damage", type: "dice", name: "Damage", expression: "2d6", created: now, modified: now });
+      return await state.library.create("", { id: "Tonight", type: "board", name: "Tonight", created: now, modified: now,
+        entries: [{ id: "Encounters", name: "Encounters" }, { id: "Damage", name: "Damage" }] });
+    `);
+    // The window opens only in answer to a press, so the click is sent as one.
+    const press = (selector) => page.send("Runtime.evaluate", {
+      expression: `document.querySelector(${JSON.stringify(selector)}).click()`,
+      userGesture: true,
+    });
+    const pip = (js) => page.evaluate(`const d = documentPictureInPicture.window.document; ${js}`);
+    const rows = () => page.evaluate(`return window.orangey.state.history.length`);
+
+    await open(page, `#/r/${encodeURIComponent(encounters)}`);
+    await page.waitForFunction(`document.querySelector(".popout-button")`);
+    await press(".popout-button");
+    await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-roll")`);
+    // It carries the page's look: its styles and theme were copied in.
+    assert.equal(
+      await pip(`return getComputedStyle(d.body).backgroundColor`),
+      await page.evaluate(`return getComputedStyle(document.body).backgroundColor`),
+    );
+
+    // Rolled in the pop-out, recorded in the tab like any roll.
+    await pip(`d.querySelector(".popout-roll").click()`);
+    await page.waitForFunction(`window.orangey.state.history.length === 1`);
+    assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Dragon");
+    // Where the answer leads: a button, and the swap happens in place.
+    assert.equal(await pip(`return d.querySelector(".popout-next").textContent`), "→ Hoard");
+    await pip(`d.querySelector(".popout-next").click()`);
+    await pip(`d.querySelector(".chain-roll").click()`);
+    await page.waitForFunction(`window.orangey.state.history.length === 2`);
+    const chained = await page.evaluate(`const h = window.orangey.state.history[0]; return [h.randomizerName, h.resultText, h.from?.randomizerName, h.from?.label]`);
+    assert.deepEqual(chained, ["Hoard", "Gold", "Encounters", "Dragon"]);
+    assert.equal(await pip(`return d.querySelector(".popout-back").textContent`), "← Encounters");
+    await pip(`d.querySelector(".popout-back").click()`);
+    assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Dragon", "going back shows the answer it left");
+    assert.equal(await pip(`return d.querySelector(".popout-next").hidden`), false, "and still offers the way forward");
+    // Its keys work in its own window.
+    await pip(`d.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }))`);
+    await page.waitForFunction(`window.orangey.state.history.length === 3`);
+    await page.evaluate(`documentPictureInPicture.window.close()`);
+    await page.waitForFunction(`!documentPictureInPicture.window`);
+
+    // A board pops out as its cells and Roll all.
+    await open(page, `#/r/${encodeURIComponent(boardPath)}`);
+    await page.waitForFunction(`document.querySelector(".popout-button")`);
+    await press(".popout-button");
+    await page.waitForFunction(`documentPictureInPicture.window?.document.querySelector(".popout-roll-all")`);
+    assert.equal(await pip(`return d.querySelectorAll(".popout-slot").length`), 2);
+    const before = await rows();
+    await pip(`d.querySelector(".popout-roll-all").click()`);
+    await page.waitForFunction(`window.orangey.state.history.length === ${before + 2}`);
+    await page.evaluate(`documentPictureInPicture.window.close()`);
+    await page.waitForFunction(`!documentPictureInPicture.window`);
+    assert.deepEqual(page.consoleErrors, []);
+
+    // A browser without the window gets no button, rather than one that fails.
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `Object.defineProperty(window, "documentPictureInPicture", { value: undefined })`,
+    });
+    await open(page, `#/r/${encodeURIComponent(boardPath)}`);
+    await page.waitForFunction(`document.querySelector(".present-button")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".popout-button")`), null);
+  });
+
   // ---- report --------------------------------------------------------------
 
   await browser.close();

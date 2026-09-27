@@ -16,7 +16,7 @@
  * the result was decided before the animation began.
  */
 
-import { h } from "../dom.ts";
+import { h, windowOf } from "../dom.ts";
 import type { RollResult } from "../../core/dice/evaluate.ts";
 import {
   bounceMs,
@@ -172,6 +172,7 @@ export function createDiceTray(): DiceTray {
   /* ---- flat ------------------------------------------------------------- */
 
   function showFlat(dice: TrayDie[], feel: FeelSettings, duration: number, bounce: number): Promise<void> {
+    const clock = windowOf(el);
     if (duration <= 0) {
       el.replaceChildren(
         ...dice.map((die) => h("div", { class: dieClasses(die, "die"), title: titleFor(die) }, faceText(die))),
@@ -210,13 +211,13 @@ export function createDiceTray(): DiceTray {
         continue;
       }
       for (const w of flight) w.classList.add("waiting");
-      timers.push(setTimeout(() => {
+      timers.push(clock.setTimeout(() => {
         for (const w of flight) w.classList.remove("waiting");
         launch(el, flight, feel, t.landAt - t.throwAt);
       }, t.throwAt));
     }
 
-    const spin = setInterval(() => {
+    const spin = clock.setInterval(() => {
       elements.forEach((node, i) => {
         if (!landed.has(i)) node.textContent = tumbleFace(dice[i]);
       });
@@ -245,14 +246,14 @@ export function createDiceTray(): DiceTray {
       };
       /** The last throw is down: the roll is over once its bounce is. */
       const done = (lastCount: number) => {
-        clearInterval(spin);
-        for (const timer of timers) clearTimeout(timer);
+        clock.clearInterval(spin);
+        for (const timer of timers) clock.clearTimeout(timer);
         finish = null;
-        if (bounce > 0) setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
+        if (bounce > 0) clock.setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
         else resolve();
       };
       throws.forEach((t, k) => {
-        timers.push(setTimeout(() => {
+        timers.push(clock.setTimeout(() => {
           put(t.indices);
           if (k === throws.length - 1) done(t.indices.length);
         }, t.landAt));
@@ -269,6 +270,7 @@ export function createDiceTray(): DiceTray {
   /* ---- wireframe -------------------------------------------------------- */
 
   function showWireframe(dice: TrayDie[], feel: FeelSettings, duration: number, bounce: number): Promise<void> {
+    const clock = windowOf(el);
     const colours = readColours();
     const size = 92;
     const dpr = Math.min(3, globalThis.devicePixelRatio || 1);
@@ -303,7 +305,7 @@ export function createDiceTray(): DiceTray {
           continue;
         }
         for (const f of flight) f.classList.add("waiting");
-        timers.push(setTimeout(() => {
+        timers.push(clock.setTimeout(() => {
           for (const f of flight) f.classList.remove("waiting");
           launch(el, flight, feel, t.landAt - t.throwAt);
         }, t.throwAt));
@@ -400,13 +402,13 @@ export function createDiceTray(): DiceTray {
 
     return new Promise<void>((resolve) => {
       const done = (lastCount: number) => {
-        for (const timer of timers) clearTimeout(timer);
+        for (const timer of timers) clock.clearTimeout(timer);
         finish = null;
-        if (bounce > 0) setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
+        if (bounce > 0) clock.setTimeout(resolve, bounce + lastCount * 25 * feel.dice.spread);
         else resolve();
       };
       throws.forEach((t, k) => {
-        timers.push(setTimeout(() => {
+        timers.push(clock.setTimeout(() => {
           reveal(t.indices);
           vibrate(feel, 12);
           if (k === throws.length - 1) done(t.indices.length);
@@ -518,16 +520,33 @@ const active = new Set<WireDie>();
 let frameHandle: number | null = null;
 let lastFrame = 0;
 
-function pump(now: number): void {
+function pump(): void {
+  // This page's clock, not the frame's timestamp: frames may come from a
+  // pop-out, whose timestamps count from when that window opened.
+  const now = performance.now();
   const dt = lastFrame === 0 ? 16 : Math.min(64, now - lastFrame);
   lastFrame = now;
   for (const die of active) step(die, now, dt / 1000);
-  frameHandle = active.size > 0 ? requestAnimationFrame(pump) : null;
+  frameHandle = active.size > 0 ? frameSource().requestAnimationFrame(pump) : null;
   if (active.size === 0) lastFrame = 0;
 }
 
+/**
+ * The window to take frames from. One loop draws every tumbling die; when
+ * some are in a pop-out and the main window is hidden (minimised, or under a
+ * game), frames must come from the window that is still being looked at, or
+ * the dice in it stop in mid-air.
+ */
+function frameSource(): Window {
+  for (const die of active) {
+    const view = windowOf(die.canvas);
+    if (view.document.visibilityState === "visible") return view;
+  }
+  return window;
+}
+
 function ensureLoop(): void {
-  if (frameHandle === null) frameHandle = requestAnimationFrame(pump);
+  if (frameHandle === null) frameHandle = frameSource().requestAnimationFrame(pump);
 }
 
 function step(die: WireDie, now: number, dt: number): void {

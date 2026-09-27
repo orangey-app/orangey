@@ -113,7 +113,11 @@ export function createCell(
     onBagChange: () => updateBagLine(),
     // Several cells can offer at once after Roll all; the keyboard goes to a
     // cell's cards only when it was already in that cell.
-    focusOffer: () => el.contains(document.activeElement) || (el.parentElement?.contains(document.activeElement) ?? false),
+    // Asked of the cell's own document: in a pop-out the keyboard is there.
+    focusOffer: () => {
+      const focused = el.ownerDocument.activeElement;
+      return el.contains(focused) || (el.parentElement?.contains(focused) ?? false);
+    },
   });
 
   /**

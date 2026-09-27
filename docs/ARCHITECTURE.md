@@ -79,6 +79,22 @@ say when that randomizer is gone. `src/ui/views/board.ts` resolves them through
 resolution changes — rebuilding on every change of state would throw away the
 answers the cells are showing, including the one the roll had just produced.
 
+**A pop-out is a second window run by this page.** `src/ui/popout.ts` opens
+a Document Picture-in-Picture window — always on top of other programs, in
+desktop Chrome, Edge and Firefox — and fills it with cells (`createCell`),
+the same surface a board is made of. It is not a second copy of the app: the
+code, `state`, history, bags and the library are the tab's own, so nothing
+is kept in step between windows. What that asks of the rest of the code is
+that nothing assume there is one document. Focus is asked of an element's
+`ownerDocument`, not `document`; and animations and their timers run on
+`windowOf(element)` — the window the element is shown in — because a browser
+slows or stops the clocks of a window nobody can see, and the main window is
+often exactly that while the pop-out sits over a game. Times are still read
+with this page's `performance.now()`: a pop-out's frame timestamps count from
+when it opened. Styles are copied in when it opens and the theme's root
+attributes are mirrored on every `prefs` change. Where the API is missing
+(Safari, and so the iPad; phones) the button is not shown at all.
+
 **A wheel is a cycle.** Slices take red, yellow and blue in turn
 (`assignWheelColours` in `src/core/palette-assign.ts`), and the last one is
 checked against both its predecessor *and* segment 0: a left-to-right pass

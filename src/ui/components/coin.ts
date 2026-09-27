@@ -9,7 +9,7 @@
  * do it without dropping the rest of the page.
  */
 
-import { h } from "../dom.ts";
+import { h, windowOf } from "../dom.ts";
 import { bounceMs, coinDuration, motionScale, vibrate, type FeelSettings } from "../feel.ts";
 
 export interface CoinView {
@@ -53,9 +53,11 @@ export function createCoin(): CoinView {
       disc.classList.add("flipping");
       flight.classList.add("tossing");
 
+      // A pop-out's coin lands on the pop-out's clock (see windowOf).
+      const clock = windowOf(el);
       return new Promise<void>((resolve) => {
         const land = () => {
-          clearTimeout(timer);
+          clock.clearTimeout(timer);
           disc.classList.remove("flipping");
           flight.classList.remove("tossing");
           disc.textContent = face;
@@ -65,13 +67,13 @@ export function createCoin(): CoinView {
             flight.style.setProperty("--bounce", `${bounce}ms`);
             void flight.offsetWidth;
             flight.classList.add("landing");
-            setTimeout(resolve, bounce);
+            clock.setTimeout(resolve, bounce);
           } else {
             resolve();
           }
         };
         finish = land;
-        const timer = setTimeout(land, duration);
+        const timer = clock.setTimeout(land, duration);
       });
     },
     skip() {

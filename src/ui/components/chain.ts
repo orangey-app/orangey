@@ -107,7 +107,7 @@ export function chainPlacement(count: number, focus: number): ChainSlot[] {
 export function createChainSurface(
   link: ChainLink,
   sender: string,
-  opts: { onLanded?: (outcome: Outcome) => void } = {},
+  opts: { onLanded?: (outcome: Outcome) => void; onRoll?: () => void } = {},
 ): { el: HTMLElement; cell: CellView | null } {
   const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
   const found = state.library.findById(link.id)?.randomizer ?? null;
@@ -124,7 +124,7 @@ export function createChainSurface(
     };
   }
   // Its history row says what sent you here, so the two rolls read as one.
-  const cell = createCell(found, { onLanded: opts.onLanded, from: { randomizerName: sender, label: link.from } });
+  const cell = createCell(found, { onLanded: opts.onLanded, onRoll: opts.onRoll, from: { randomizerName: sender, label: link.from } });
   return { cell, el: h("div", { class: "chain-link" }, from, cell.el, cellRollButton(cell, "primary chain-roll")) };
 }
 

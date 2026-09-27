@@ -34,7 +34,7 @@ import {
 import { CryptoSource } from "../../core/rng.ts";
 import type { ListItem } from "../../model/randomizer.ts";
 import { easeSpin, motionScale, overshootFraction, settleForSpin, wheelDuration, type FeelSettings } from "../feel.ts";
-import { h, s, setChildren } from "../dom.ts";
+import { h, s, setChildren, windowOf } from "../dom.ts";
 import { imageUrl, imageUrlSync } from "../../storage/images.ts";
 
 export const LABEL_LIMIT = 48;
@@ -314,14 +314,18 @@ export function createWheel(opts: WheelOptions): WheelView {
         resolve();
       };
       cancelSpin = finish;
-      const step = (now: number) => {
+      // Frames come from the window the wheel is in (see windowOf); the time
+      // is read here rather than taken from the frame, because a pop-out's
+      // frame times count from when that window opened, not this page.
+      const view = windowOf(el);
+      const step = () => {
         if (done) return;
-        const t = Math.min(1, (now - started) / durationMs);
+        const t = Math.min(1, (performance.now() - started) / durationMs);
         onFrame(t);
         if (t >= 1) finish();
-        else requestAnimationFrame(step);
+        else view.requestAnimationFrame(step);
       };
-      requestAnimationFrame(step);
+      view.requestAnimationFrame(step);
     });
   }
 

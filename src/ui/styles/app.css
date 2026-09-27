@@ -624,6 +624,7 @@ body.presenting .quick-wheel,
    with it. */
 body.presenting .play > .play-card ~ .card,
 body.presenting .present-button,
+body.presenting .popout-button,
 body.presenting .link-button,
 body.presenting .edit-link {
   display: none !important;
@@ -1002,3 +1003,54 @@ h1, h2, h3, .brand, .board-name, .cell-name,
   font-synthesis: none;
 }
 .wheel-label { font-family: var(--font-ui); }
+
+/* ---- the pop-out window (popout.ts) --------------------------------------
+   A second window, always on top, holding cells: the whole of it is for
+   rolling. It is sized by the person dragging its edges, so everything here
+   follows the window rather than a layout. */
+
+body.popout {
+  height: auto;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.popout-title { font-size: 14px; font-weight: 400; margin: 0; color: var(--ink-soft); }
+.popout-grid {
+  flex: 1;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-content: start;
+}
+.popout-slot { display: flex; flex-direction: column; min-width: 0; }
+.popout-board .popout-slot { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px 10px; background: var(--bg-raised); }
+/* Inside a slot a chain's own frame would be a box in a box. */
+.popout-slot .chain-link { border: 0; box-shadow: none; padding: 0; margin: 0; background: none; }
+.popout-back { align-self: flex-start; padding: 2px 8px; margin-bottom: 4px; }
+/* Where the answer leads: easy to see, since pressing it is the next move. */
+.popout-slot button.popout-next { align-self: center; margin: 6px 0 2px; border: 1px solid var(--accent); color: var(--ink); }
+/* On a board the Roll buttons line up across the row, as on the board. */
+.popout-board .popout-body, .popout-board .popout-body > div, .popout-board .popout-body > .chain-link { flex: 1; display: flex; flex-direction: column; }
+.popout-board .popout-body .cell { flex: 1 0 auto; }
+.popout-board .cell-roll, .popout-board .chain-roll { margin-top: auto; }
+.popout-note:empty { display: none; }
+/* One randomizer: the wheel as large as the window lets it be, and its
+   answer read at a glance. */
+/* The window's title names it; a randomizer a chain swapped in names itself. */
+.popout-single .popout-body > div:not(.chain-link) .cell-name { display: none; }
+.popout-single button.popout-next { display: block; margin: 6px auto 2px; }
+/* The rules above set display, which would otherwise override hidden. */
+.popout-slot button[hidden] { display: none; }
+/* The rest of the window — title, answer, → and Roll — takes about 300px,
+   and a chain's ←, "rolled" line and name about 90px more; the wheel gets
+   what is left, never less than a wheel you can read. */
+.popout-single .wheel-holder { max-width: max(160px, min(92vw, calc(100vh - 300px))); }
+.popout-single .chain-link .wheel-holder { max-width: max(160px, min(92vw, calc(100vh - 390px))); }
+.popout-single .cell .result-slot { font-size: clamp(22px, 9vw, 44px); }
+.popout-single .popout-roll { width: 100%; min-height: 48px; margin-top: 8px; }
+.popout-roll-all { width: 100%; min-height: 48px; flex: none; }
+

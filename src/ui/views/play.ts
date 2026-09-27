@@ -12,7 +12,7 @@ import { parseQuickOptions, quickText } from "../../import/quick.ts";
 import { encodeRandomizer, LINK_HARD_LIMIT } from "../../model/link.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
-import { button, h, isTyping, setChildren } from "../dom.ts";
+import { appendChildren, button, h, isTyping, setChildren } from "../dom.ts";
 import { rollOwnerId, state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { createDiceTray } from "../components/dice.ts";
@@ -25,6 +25,7 @@ import { createRoller } from "../rolling.ts";
 import { bagDrawn, bagLoad, bagRefill } from "../bag.ts";
 import { openLinkDialog } from "../components/linkdialog.ts";
 import { isPresenting, setPresenting } from "../presenting.ts";
+import { popOutButton } from "../popout.ts";
 import { effectiveFeel, QUICK_DEBOUNCE_MS } from "../feel.ts";
 import { appBase, currentRoute, navigate, wheelLink, type LinkParams } from "../router.ts";
 import type { View } from "../view.ts";
@@ -679,7 +680,11 @@ export function createPlayView(
   animateBox.addEventListener("change", () => void state.savePrefs({ animationsOff: !animateBox.checked }));
   const animateToggle = h("label", { class: "row tight animate-toggle faint" }, animateBox, "Animate");
 
-  header.append(hiddenToggle, countField, animateToggle, presentButton, linkButton, exitButton);
+  // Only for a randomizer in the library: a quick wheel changes as it is
+  // typed, and the pop-out would hold the version from the moment of the press.
+  const popButton = node ? popOutButton(() => state.library.findById(randomizer.id)?.randomizer ?? randomizer) : null;
+
+  appendChildren(header, hiddenToggle, countField, animateToggle, presentButton, popButton, linkButton, exitButton);
 
   if (params.present) present(true);
   if (params.roll) {

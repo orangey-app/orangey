@@ -18,6 +18,7 @@ import type { LibraryNode } from "../../storage/library.ts";
 import { button, h, isTyping, openDialog, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { isPresenting, setPresenting } from "../presenting.ts";
+import { popOutButton } from "../popout.ts";
 import { cellRollButton, createCell, createMissingCell, type CellView } from "../components/cell.ts";
 import { advanceChain, chainTarget, createChainSurface, type ChainLink } from "../components/chain.ts";
 import type { Outcome } from "../roll.ts";
@@ -533,6 +534,7 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
       button("← Home", () => navigate("#/"), { class: "ghost home-button" }),
       h("span", { class: "spacer" }),
       addButton, editButton, shareButton, presentButton,
+      popOutButton(() => state.library.findById(board.id)?.randomizer ?? board),
     ),
     // Outside the bar, which full screen hides: inside it, the one visible way
     // out was hidden with it, and only Escape — no use on a tablet — was left.

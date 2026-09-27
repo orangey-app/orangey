@@ -93,7 +93,7 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
   // wherever this panel is, a board cell included, once focus is on a card.
   cards.addEventListener("keydown", (e) => {
     const all = [...cards.querySelectorAll<HTMLButtonElement>("button.offer-card")];
-    const at = all.indexOf(document.activeElement as HTMLButtonElement);
+    const at = all.indexOf(el.ownerDocument.activeElement as HTMLButtonElement);
     if (at < 0) return;
     const key = (e as KeyboardEvent).key;
     const step = key === "ArrowRight" || key === "ArrowDown" ? 1 : key === "ArrowLeft" || key === "ArrowUp" ? -1 : 0;
@@ -218,7 +218,7 @@ export function createResultPanel(placeholder = "Ready"): ResultPanel {
       const all = [...cards.querySelectorAll<HTMLButtonElement>("button.offer-card")];
       // A digit can pick a card other than the focused one; the keyboard
       // follows the pick, or the focus ring would sit on a card not taken.
-      if (all.includes(document.activeElement as HTMLButtonElement)) all[at]?.focus({ preventScroll: true });
+      if (all.includes(el.ownerDocument.activeElement as HTMLButtonElement)) all[at]?.focus({ preventScroll: true });
       all.forEach((card, i) => {
         card.classList.add(i === at ? "chosen" : "not-chosen");
         // aria-disabled rather than disabled: the card keeps the keyboard's
