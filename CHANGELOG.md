@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+Randomizers and boards that pop out into a window on top of everything else,
+and fixes for bags on boards, boards in full screen and boards in links.
 
 - **Pop out.** On a computer, in Chrome, Edge or Firefox, a wheel's screen
   and a board have a Pop out button: the randomizer, or the whole board,
