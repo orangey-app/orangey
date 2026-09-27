@@ -233,8 +233,9 @@ function createPopoutSlot(root: Randomizer): PopoutSlot {
     if (i === 0) {
       const cell = createCell(root, {
         onRoll: () => starting(0),
-        onLanded: (outcome) => landed(0, root, outcome),
+        onLanded: (outcome) => landed(0, cell.randomizer, outcome),
         clickToRoll: true,
+        quickEdit: true,
       });
       made = { cell, el: h("div", { class: "popout-root" }, cell.el) };
     } else {

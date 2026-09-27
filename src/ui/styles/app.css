@@ -12,7 +12,11 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-#app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+/* The app is exactly the window's height, and the library and the main pane
+   each scroll inside it. It used to grow with its content, so the whole page
+   scrolled as one: reaching the Roll button under a long list scrolled the
+   library away with it. */
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 /* ---- shell ---------------------------------------------------------------- */
 
@@ -316,6 +320,35 @@ input.quick-offer, input.offer-input { width: 56px; }
    its own origin — a CSS transform-origin here would be applied on top of it
    and slide the wheel out of its own circle. */
 .wheel-svg { display: block; width: 100%; height: auto; }
+/* The hub is the wheel's Roll button; the slices are not (a double-tap on
+   one edits its weight), so only the hub looks pressable. `manipulation`
+   stops a double-tap from zooming the page on a touch screen. */
+.wheel-svg { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.wheel-hub.rolls { cursor: pointer; }
+.wheel-hub.rolls:hover circle { fill: var(--accent-soft); }
+.wheel-hub.rolls:hover .wheel-roll-mark { stroke: var(--ink); }
+
+/* Quick edit: one outcome's weight, in a small box on the wheel. */
+.weight-editor {
+  position: absolute;
+  z-index: 5;
+  width: 220px;
+  padding: 10px 12px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.weight-head { display: flex; align-items: center; gap: 6px; }
+.weight-label { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weight-close { padding: 2px 8px; line-height: 1.2; }
+.weight-input { width: 100px; }
+.weight-note:empty { display: none; }
+.weight-note { color: var(--error); margin: 0; font-size: 13px; }
+.weight-hint { margin: 0; font-size: 12px; }
 .wheel-pointer { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
 /* No font-size here: each label carries its own, sized to its slice, and a
    CSS font-size would override the attribute. The weight matches
@@ -333,6 +366,40 @@ input.quick-offer, input.offer-input { width: 56px; }
 }
 
 /* ---- dice and coin -------------------------------------------------------- */
+
+/* A list shown as a list: every outcome is a button that picks it. It scrolls
+   inside itself, so a long table keeps its Roll on the screen. */
+.outcome-list {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-height: min(45vh, 480px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+.outcome-list li + li { border-top: 1px solid var(--border); }
+.outcome-pick {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.outcome-pick:hover:not(:disabled) { background: var(--bg-sunken); }
+.outcome-pick[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.outcome-pick:disabled { cursor: default; color: var(--ink-faint); text-decoration: line-through; }
+.outcome-label { min-width: 0; overflow-wrap: anywhere; }
+.outcome-odds { flex: none; color: var(--ink-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 .dice-tray { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; min-height: 56px; align-items: flex-end; }
 .die {
@@ -463,6 +530,15 @@ input.quick-offer, input.offer-input { width: 56px; }
 .tree-row[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
 .tree-row.drop-target, .tree-holder.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--accent-soft); }
 .tree-row.dragging { opacity: 0.4; }
+.tree-row.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.tree-row.selected:hover { background: var(--accent-soft); }
+.library-selection {
+  font-size: 13px; padding: 4px 6px 4px 10px; margin: 6px 0; border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.library-selection[hidden] { display: none; }
+.library-selection .grow { flex: 1; min-width: 0; }
+.library-selection .clear-selection { min-height: 28px; padding: 2px 10px; }
 .library-head { margin-bottom: 8px; }
 .library-title { margin: 0; font-size: 16px; }
 .library-foot { margin-top: 12px; }
@@ -852,6 +928,7 @@ body.presenting .result-picture { max-height: 40vh; }
 .cell-holder.dragging { opacity: 0.5; }
 .cell-name { font-size: 16px; margin: 0 0 6px; }
 .cell-stage { display: grid; place-items: center; min-height: 120px; }
+.cell-stage > .outcome-list { width: 100%; align-self: stretch; max-height: 240px; }
 .cell-remove { position: absolute; top: 6px; right: 6px; padding: 2px 8px; line-height: 1; }
 /* Taking a randomizer off the board is an edit; in play mode there is no ✕ to
    hit by accident. A chain's ✕ only closes what a roll opened, so it stays. */
@@ -882,6 +959,9 @@ body.presenting .cell .result-slot { font-size: clamp(24px, 4vw, 54px); }
 .picker-tree { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 8px 0; padding: 4px; display: grid; gap: 2px; }
 .picker-row { width: 100%; text-align: left; justify-content: flex-start; }
 .picker-taken { opacity: 0.45; }
+.picker-chosen, .picker-chosen:hover { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.picker-chosen-note { font-size: 13px; margin: 0 0 8px; }
+.picker-add[hidden] { display: none; }
 .picker-note:empty { display: none; }
 .goes-to { flex-wrap: nowrap; }
 .goes-to-button { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1065,6 +1145,7 @@ body.popout-single { height: 100vh; min-height: 0; }
 .popout-single .cell-stage { flex: 1 1 0; min-height: 0; min-width: 0; container-type: size; display: grid; place-items: center; }
 .popout-single .wheel-wrap { padding: 0; }
 .popout-single .wheel-holder { width: min(100cqw, 100cqh); max-width: none; }
+.popout-single .cell-stage > .outcome-list { max-height: 100cqh; }
 .popout-single .result-panel { flex: none; }
 .popout-single .cell .result-slot { font-size: clamp(22px, min(10vw, 8vh), 80px); }
 /* The window's title names it; a randomizer a chain swapped in names itself. */

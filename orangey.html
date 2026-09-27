@@ -369,7 +369,11 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-#app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+/* The app is exactly the window's height, and the library and the main pane
+   each scroll inside it. It used to grow with its content, so the whole page
+   scrolled as one: reaching the Roll button under a long list scrolled the
+   library away with it. */
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 /* ---- shell ---------------------------------------------------------------- */
 
@@ -673,6 +677,35 @@ input.quick-offer, input.offer-input { width: 56px; }
    its own origin — a CSS transform-origin here would be applied on top of it
    and slide the wheel out of its own circle. */
 .wheel-svg { display: block; width: 100%; height: auto; }
+/* The hub is the wheel's Roll button; the slices are not (a double-tap on
+   one edits its weight), so only the hub looks pressable. `manipulation`
+   stops a double-tap from zooming the page on a touch screen. */
+.wheel-svg { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.wheel-hub.rolls { cursor: pointer; }
+.wheel-hub.rolls:hover circle { fill: var(--accent-soft); }
+.wheel-hub.rolls:hover .wheel-roll-mark { stroke: var(--ink); }
+
+/* Quick edit: one outcome's weight, in a small box on the wheel. */
+.weight-editor {
+  position: absolute;
+  z-index: 5;
+  width: 220px;
+  padding: 10px 12px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.weight-head { display: flex; align-items: center; gap: 6px; }
+.weight-label { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weight-close { padding: 2px 8px; line-height: 1.2; }
+.weight-input { width: 100px; }
+.weight-note:empty { display: none; }
+.weight-note { color: var(--error); margin: 0; font-size: 13px; }
+.weight-hint { margin: 0; font-size: 12px; }
 .wheel-pointer { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
 /* No font-size here: each label carries its own, sized to its slice, and a
    CSS font-size would override the attribute. The weight matches
@@ -690,6 +723,40 @@ input.quick-offer, input.offer-input { width: 56px; }
 }
 
 /* ---- dice and coin -------------------------------------------------------- */
+
+/* A list shown as a list: every outcome is a button that picks it. It scrolls
+   inside itself, so a long table keeps its Roll on the screen. */
+.outcome-list {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-height: min(45vh, 480px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+.outcome-list li + li { border-top: 1px solid var(--border); }
+.outcome-pick {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.outcome-pick:hover:not(:disabled) { background: var(--bg-sunken); }
+.outcome-pick[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.outcome-pick:disabled { cursor: default; color: var(--ink-faint); text-decoration: line-through; }
+.outcome-label { min-width: 0; overflow-wrap: anywhere; }
+.outcome-odds { flex: none; color: var(--ink-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 .dice-tray { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; min-height: 56px; align-items: flex-end; }
 .die {
@@ -820,6 +887,15 @@ input.quick-offer, input.offer-input { width: 56px; }
 .tree-row[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
 .tree-row.drop-target, .tree-holder.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--accent-soft); }
 .tree-row.dragging { opacity: 0.4; }
+.tree-row.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.tree-row.selected:hover { background: var(--accent-soft); }
+.library-selection {
+  font-size: 13px; padding: 4px 6px 4px 10px; margin: 6px 0; border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.library-selection[hidden] { display: none; }
+.library-selection .grow { flex: 1; min-width: 0; }
+.library-selection .clear-selection { min-height: 28px; padding: 2px 10px; }
 .library-head { margin-bottom: 8px; }
 .library-title { margin: 0; font-size: 16px; }
 .library-foot { margin-top: 12px; }
@@ -1209,6 +1285,7 @@ body.presenting .result-picture { max-height: 40vh; }
 .cell-holder.dragging { opacity: 0.5; }
 .cell-name { font-size: 16px; margin: 0 0 6px; }
 .cell-stage { display: grid; place-items: center; min-height: 120px; }
+.cell-stage > .outcome-list { width: 100%; align-self: stretch; max-height: 240px; }
 .cell-remove { position: absolute; top: 6px; right: 6px; padding: 2px 8px; line-height: 1; }
 /* Taking a randomizer off the board is an edit; in play mode there is no ✕ to
    hit by accident. A chain's ✕ only closes what a roll opened, so it stays. */
@@ -1239,6 +1316,9 @@ body.presenting .cell .result-slot { font-size: clamp(24px, 4vw, 54px); }
 .picker-tree { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 8px 0; padding: 4px; display: grid; gap: 2px; }
 .picker-row { width: 100%; text-align: left; justify-content: flex-start; }
 .picker-taken { opacity: 0.45; }
+.picker-chosen, .picker-chosen:hover { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.picker-chosen-note { font-size: 13px; margin: 0 0 8px; }
+.picker-add[hidden] { display: none; }
 .picker-note:empty { display: none; }
 .goes-to { flex-wrap: nowrap; }
 .goes-to-button { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1422,6 +1502,7 @@ body.popout-single { height: 100vh; min-height: 0; }
 .popout-single .cell-stage { flex: 1 1 0; min-height: 0; min-width: 0; container-type: size; display: grid; place-items: center; }
 .popout-single .wheel-wrap { padding: 0; }
 .popout-single .wheel-holder { width: min(100cqw, 100cqh); max-width: none; }
+.popout-single .cell-stage > .outcome-list { max-height: 100cqh; }
 .popout-single .result-panel { flex: none; }
 .popout-single .cell .result-slot { font-size: clamp(22px, min(10vw, 8vh), 80px); }
 /* The window's title names it; a randomizer a chain swapped in names itself. */
@@ -5252,6 +5333,13 @@ const OFFER_FLIP_MS = 260;
  */
 const QUICK_DEBOUNCE_MS = 300;
 
+/**
+ * How close together two taps on the same slice must be to count as a
+ * double-tap, which opens its weight for editing. Detected by hand rather than
+ * from the browser's dblclick, which a touch screen spends on zooming.
+ */
+const DOUBLE_TAP_MS = 350;
+
 const LIMITS = {
   wheelDuration: [400, 8000],
   turns: [1, 12],
@@ -6842,7 +6930,11 @@ class AppState {
     // What a row says beyond its headline: the dice inside the outcome and,
     // for a pick, what it was picked from. Both ride in `parts`, the row's
     // existing details line, rather than in a field of their own.
-    const parts = [...(outcome.rolled ?? []), ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : [])];
+    const parts = [
+      ...(outcome.rolled ?? []),
+      ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : []),
+      ...(outcome.picked ? ["picked, not rolled"] : []),
+    ];
     const entry             = {
       id: newId(),
       at: Date.now(),
@@ -7688,7 +7780,12 @@ function tryParse(input        )                                                
 const LABEL_LIMIT = 48;
 const TICKER_LIMIT = 200;
 /** The disc at the centre; labels stop short of it. */
-const HUB_RADIUS = 16;
+/**
+ * The hub is the wheel's Roll button — a click on a slice does not roll, so a
+ * double-tap there can open the slice's weight instead — so it is sized to be
+ * hit, not only to cover where the slices meet.
+ */
+const HUB_RADIUS = 22;
 
 /** Weight of the wheel's labels; the same value is in .wheel-label in app.css. */
 const WHEEL_LABEL_WEIGHT = 600;
@@ -7727,8 +7824,13 @@ function measureWheelLabel(text        , fontSize        )         {
                                
                           
                    
-                                                      
+                                                                          
                           
+     
+                                                                            
+                                                              
+     
+                                                                          
                 
                                                                   
                                           
@@ -7762,6 +7864,8 @@ function createWheel(opts              )            {
   };
 
   let rotor                    = null;
+  /** The last tap on a slice, to tell a double-tap from two single ones. */
+  let lastTap                                                             = null;
   let tickerStrip                     = null;
 
   function computeColors()       {
@@ -7836,7 +7940,7 @@ function createWheel(opts              )            {
       return [
         s("clipPath", { id: `slice-${key}` }, s("path", { d: arcPath(seg, cx, cy, radius) })),
         s("clipPath", { id: `disc-${key}` }, s("circle", { cx: String(cxImg), cy: String(cyImg), r: String(side / 2) })),
-        s("g", { "clip-path": `url(#slice-${key})` },
+        s("g", { "clip-path": `url(#slice-${key})`, "data-index": String(seg.index) },
           s("image", {
             href: url,
             x: String(cxImg - side / 2),
@@ -7895,20 +7999,27 @@ function createWheel(opts              )            {
       "stroke-width": "1.5",
     });
 
+    // The hub: a circle, and when it rolls, a turning arrow to say so.
+    const hub = s("g", { class: opts.onActivate ? "wheel-hub rolls" : "wheel-hub", onclick: () => opts.onActivate?.() },
+      s("circle", { cx: String(cx), cy: String(cy), r: String(HUB_RADIUS), fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
+      opts.onActivate ? rollMark() : null,
+      opts.onActivate ? s("title", { text: "Roll" }) : null,
+    );
+
     const svg = s(
       "svg",
       {
-        class: "wheel-svg",
+        class: opts.onSliceEdit ? "wheel-svg editable" : "wheel-svg",
         viewBox: `0 0 ${size} ${size}`,
         role: "img",
         "aria-label": `Wheel with ${segments.length} possible outcomes`,
-        onclick: () => opts.onActivate?.(),
       },
       s("circle", { cx: String(cx), cy: String(cy), r: String(radius + 2), fill: "var(--border)" }),
       rotor,
-      s("circle", { cx: String(cx), cy: String(cy), r: String(HUB_RADIUS), fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
+      hub,
       pointer,
     );
+    svg.addEventListener("pointerup", (e) => sliceTap(e                ));
     if (wanted.size) {
       const drawnAt = renderCount;
       const ids = [...wanted];
@@ -7920,6 +8031,47 @@ function createWheel(opts              )            {
       });
     }
     return h("div", { class: "wheel-holder" }, svg);
+  }
+
+  /** A circular arrow inside the hub: this is where the wheel is spun. */
+  function rollMark()             {
+    const r = HUB_RADIUS * 0.5;
+    const rad = (deg        ) => (deg * Math.PI) / 180;
+    const start = rad(-60);
+    const end = rad(210);
+    const [x1, y1] = [cx + r * Math.cos(start), cy + r * Math.sin(start)];
+    const [x2, y2] = [cx + r * Math.cos(end), cy + r * Math.sin(end)];
+    // Clockwise on screen: the way ahead at the end is along (−sin, cos); the
+    // head's barbs sit back from its tip, either side of the arc.
+    const [tx, ty] = [-Math.sin(end), Math.cos(end)];
+    const [nx, ny] = [Math.cos(end), Math.sin(end)];
+    const tip = [x2 + tx * 3, y2 + ty * 3];
+    const barb = (side        ) => [x2 - tx * 2 + nx * 3.5 * side, y2 - ty * 2 + ny * 3.5 * side];
+    const [b1, b2] = [barb(1), barb(-1)];
+    return s("g", { class: "wheel-roll-mark", fill: "none", stroke: "var(--ink-soft)", "stroke-width": "2.2", "stroke-linecap": "round", "stroke-linejoin": "round" },
+      s("path", { d: `M ${x1} ${y1} A ${r} ${r} 0 1 1 ${x2} ${y2}` }),
+      s("path", { d: `M ${b1[0]} ${b1[1]} L ${tip[0]} ${tip[1]} L ${b2[0]} ${b2[1]}` }),
+    );
+  }
+
+  /**
+   * A tap on a slice: the second one close in time and place on the same
+   * slice is a double-tap, which opens its weight. Never while spinning — the
+   * slice under the finger is moving — and never on the hub, which rolls.
+   */
+  function sliceTap(e              )       {
+    if (!opts.onSliceEdit || cancelSpin) return;
+    const hit = (e.target                  )?.closest?.("[data-index]");
+    if (!hit) {
+      lastTap = null;
+      return;
+    }
+    const index = Number(hit.getAttribute("data-index"));
+    const now = performance.now();
+    const again = lastTap && lastTap.index === index && now - lastTap.at < DOUBLE_TAP_MS
+      && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 24;
+    lastTap = again ? null : { index, at: now, x: e.clientX, y: e.clientY };
+    if (again) opts.onSliceEdit(index, e.clientX, e.clientY);
   }
 
   function renderTicker()              {
@@ -8066,6 +8218,333 @@ function createWheel(opts              )            {
     colors: () => colorByIndex,
     mode,
   };
+}
+
+// ---- src/ui/components/outcomelist.ts ----------------------------
+/**
+ * A list randomizer shown as a list: every outcome with its odds, and each
+ * one a button — pressing it picks that outcome as the answer, as Roll picks
+ * one at random. The play screen, a board's cell and the pop-out all use it.
+ *
+ * A pick lands through the roll controller (`roller.choose`), so it is an
+ * answer like any other: announced, recorded (as *picked*), taken out of the
+ * bag, and followed when the outcome leads to another randomizer. The list
+ * scrolls within itself, so a hundred-row table does not push its Roll off
+ * the screen.
+ */
+
+                                                          
+
+
+
+                                  
+                  
+                                                                     
+                  
+                                                          
+                                       
+ 
+
+function createOutcomeList(opts   
+                                                                               
+                                   
+                                      
+                                                                      
+               
+ )                  {
+  const el = h("ul", { class: "outcome-list", "aria-label": `${opts.name}: pick an outcome` });
+  let marked                = null;
+  let buttons                      = [];
+
+  function refresh()       {
+    const items = opts.items();
+    const percents = displayPercents(items);
+    buttons = items.map((item, i) => {
+      const live = isRollable(item);
+      const pick = h("button", {
+        type: "button",
+        class: "outcome-pick",
+        title: live ? `Pick ${item.label}` : "Cannot come up now",
+        onclick: () => opts.onPick(i),
+      },
+        h("span", { class: "outcome-label", text: item.label }),
+        h("span", { class: "outcome-odds", text: live ? `${percents[i].toFixed(1)}%` : "—" }),
+      )                     ;
+      pick.disabled = !live;
+      return pick;
+    });
+    setChildren(el, ...buttons.map((b) => h("li", {}, b)));
+    mark(marked);
+  }
+
+  function mark(itemIndex               )       {
+    marked = itemIndex;
+    buttons.forEach((b, i) => b.setAttribute("aria-current", String(i === itemIndex)));
+    // The answer in view, without moving the page: only the list scrolls.
+    const current = itemIndex === null ? undefined : buttons[itemIndex];
+    if (current) {
+      // Relative to the list itself, which is positioned for this.
+      const top = current.offsetTop;
+      if (top < el.scrollTop || top + current.offsetHeight > el.scrollTop + el.clientHeight) {
+        el.scrollTop = Math.max(0, top - el.clientHeight / 2);
+      }
+    }
+  }
+
+  refresh();
+  return { el, refresh, mark };
+}
+
+// ---- src/core/number.ts ------------------------------------------
+class NumberSpecError extends Error {}
+
+function validateSpec(spec            )                {
+  if (!Number.isFinite(spec.min) || !Number.isFinite(spec.max)) return "minimum and maximum must be numbers";
+  if (spec.max < spec.min) return "the maximum must not be below the minimum";
+  if (!Number.isInteger(spec.count) || spec.count < 1) return "how many must be a whole number of at least 1";
+  if (spec.count > 1000) return "at most 1000 numbers at a time";
+  if (spec.integer) {
+    if (!Number.isInteger(spec.min) || !Number.isInteger(spec.max)) return "whole-number draws need whole-number bounds";
+    const range = spec.max - spec.min + 1;
+    if (spec.unique && spec.count > range) return `only ${range} whole numbers lie in that range`;
+  } else if (spec.unique) {
+    return "unique results need whole numbers";
+  }
+  return null;
+}
+
+/** Partial Fisher-Yates over the range: O(count), no rejection loop. */
+function uniqueIntegers(min        , max        , count        , rng              )           {
+  const range = max - min + 1;
+  if (range <= 100000) {
+    const pool = new Int32Array(range);
+    for (let i = 0; i < range; i++) pool[i] = min + i;
+    const out           = [];
+    for (let k = 0; k < count; k++) {
+      const j = rng.int(k, range - 1);
+      const tmp = pool[k];
+      pool[k] = pool[j];
+      pool[j] = tmp;
+      out.push(pool[k]);
+    }
+    return out;
+  }
+  const seen = new Set        ();
+  const out           = [];
+  while (out.length < count) {
+    const v = rng.int(min, max);
+    if (!seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+function drawNumbers(spec            , rng              )               {
+  const problem = validateSpec(spec);
+  if (problem) throw new NumberSpecError(problem);
+
+  let values          ;
+  if (spec.integer) {
+    values = spec.unique
+      ? uniqueIntegers(spec.min, spec.max, spec.count, rng)
+      : Array.from({ length: spec.count }, () => rng.int(spec.min, spec.max));
+  } else {
+    const span = spec.max - spec.min;
+    values = Array.from({ length: spec.count }, () => {
+      const f = rng.float();
+      // float() is [0,1); to include the maximum we accept the exact endpoint
+      // only when the draw lands in the top ulp-sized slice, which keeps the
+      // distribution uniform rather than doubling the endpoint's chance.
+      const t = spec.inclusiveMax ? f * (1 + Number.EPSILON) : f;
+      return spec.min + Math.min(t, 1) * span;
+    });
+  }
+  return { values, spec, seed: rng.seed, ...extremesOf(values, spec) };
+}
+
+/** Whether a draw is as high, or as low, as its range allows. */
+function extremesOf(values          , spec            )                                             {
+  if (!spec.integer || values.length === 0) return { isMaximum: false, isMinimum: false };
+  return {
+    isMaximum: values.every((v) => v === spec.max),
+    isMinimum: values.every((v) => v === spec.min),
+  };
+}
+
+function formatNumbers(r              )         {
+  const fmt = (v        ) => (r.spec.integer ? String(v) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, ""));
+  return r.values.map(fmt).join(", ");
+}
+
+// ---- src/model/draft.ts ------------------------------------------
+/**
+ * Is this draft one the app could read back?
+ *
+ * `validateRandomizer` says whether a file is well formed, and it stays that
+ * way: a file already on disk with an odd dice expression must still open, so
+ * it can be fixed (P10). But an editor must not *write* something it could
+ * not then load, which is a stricter question and a different one. This asks
+ * it, without a DOM, so both editors and the tests can use the same answer.
+ *
+ * It returns a sentence for a person to read, or null when the draft is fine.
+ */
+
+
+
+
+
+
+/**
+ * "randomizer.items[3].label" is precise and unreadable. The field at the end
+ * is the part a person needs, with the index kept because it says which row.
+ */
+function readableField(path        )         {
+  const tail = path.replace(/^randomizer\.?/, "");
+  if (!tail) return "This randomizer";
+  const at = tail.match(/\[(\d+)\]/);
+  const field = tail.split(".").pop()?.replace(/\[\d+\]/, "") ?? tail;
+  const name = field === "label" ? "outcome" : field;
+  return at ? `Outcome ${Number(at[1]) + 1}'s ${name}` : `The ${name}`;
+}
+
+function draftProblem(model            )                {
+  const check = new Check();
+  if (!validateRandomizer(model, check) || !check.ok) {
+    const issue = check.issues[0];
+    return issue ? `${readableField(issue.path)} ${issue.message}` : "This randomizer is not valid";
+  }
+  if (model.type === "dice") {
+    const parsed = tryParse(model.expression);
+    if (!parsed.ok) return parsed.error.message;
+  }
+  if (model.type === "number") {
+    const problem = validateSpec(model);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+// ---- src/ui/components/quickweight.ts ----------------------------
+/**
+ * Quick edit: a slice's weight, changed where the wheel is played.
+ *
+ * A double-tap on a slice opens a small box on the wheel with that outcome's
+ * weight. Saving writes the randomizer's file, exactly as the editor would,
+ * so the change holds everywhere the wheel is used — on its own screen, on
+ * every board and in a pop-out. Only randomizers in the library can be
+ * edited this way: a wheel from a link or typed as a quick wheel has no file.
+ *
+ * The box is made in the wheel's own document, so it works in a pop-out too.
+ */
+
+
+
+
+
+
+/** Whether this randomizer's slices can be quick-edited: a list in the library. */
+function canQuickEdit(randomizerId        )          {
+  return state.library.findById(randomizerId)?.randomizer?.type === "list";
+}
+
+/**
+ * Save a new weight for one outcome, by its id. Returns the randomizer as
+ * saved, or null when nothing was saved (gone from the library, or the weight
+ * is not one the file can hold — the box refuses those before it gets here).
+ */
+async function saveOutcomeWeight(randomizerId        , itemId        , weight        )                                 {
+  const node = state.library.findById(randomizerId);
+  const current = node?.randomizer;
+  if (!node || current?.type !== "list" || !Number.isFinite(weight) || weight < 0) return null;
+  const next = touch({ ...current, items: current.items.map((item) => (item.id === itemId ? { ...item, weight } : item)) });
+  const problem = draftProblem(next);
+  if (problem) {
+    state.toast(`Not saved: ${problem}`);
+    return null;
+  }
+  state.library.save(node.path, next);
+  await state.library.flush().catch(() => {});
+  return next;
+}
+
+/** The open box, so a second double-tap replaces it rather than stacking. */
+let openWeightBox                               = null;
+
+/**
+ * Open the box over `host` (a positioned element — the wheel's wrap) at the
+ * point of the tap. `onSave` gets the new weight; Escape, ✕ or a press
+ * elsewhere closes it unchanged.
+ */
+function openWeightEditor(opts   
+                    
+                  
+                  
+                
+                 
+                                   
+ )       {
+  openWeightBox?.close();
+  const doc = opts.host.ownerDocument;
+  const input = h("input", {
+    type: "number", min: "0", step: "any", value: String(opts.weight),
+    class: "weight-input", "aria-label": `Weight of ${opts.label}`,
+  })                    ;
+  const note = h("p", { class: "faint weight-note" });
+  const save = () => {
+    const weight = Number(input.value);
+    if (input.value.trim() === "" || !Number.isFinite(weight) || weight < 0) {
+      note.textContent = "A weight is a number, 0 or more.";
+      input.setAttribute("aria-invalid", "true");
+      return;
+    }
+    close();
+    opts.onSave(weight);
+  };
+  const box = h("div", { class: "weight-editor", role: "dialog", "aria-label": `Weight of ${opts.label}` },
+    h("div", { class: "weight-head" },
+      h("span", { class: "weight-label", text: opts.label }),
+      button("✕", () => close(), { class: "ghost weight-close", "aria-label": "Close without saving" }),
+    ),
+    h("label", { class: "row tight" }, h("span", { class: "faint", text: "Weight" }), input),
+    note,
+    h("p", { class: "faint weight-hint", text: "0 takes it off the wheel; the editor brings it back." }),
+    button("Save", () => save(), { class: "primary weight-save" }),
+  );
+  input.addEventListener("keydown", (e) => {
+    const key = (e                 ).key;
+    if (key === "Enter") {
+      e.preventDefault();
+      save();
+    } else if (key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  });
+
+  // Placed at the tap, kept inside the host.
+  const rect = opts.host.getBoundingClientRect();
+  opts.host.append(box);
+  const left = Math.min(Math.max(0, opts.clientX - rect.left - box.offsetWidth / 2), Math.max(0, rect.width - box.offsetWidth));
+  const top = Math.min(Math.max(0, opts.clientY - rect.top + 12), Math.max(0, rect.height - box.offsetHeight));
+  box.style.left = `${left}px`;
+  box.style.top = `${top}px`;
+
+  // A press outside closes it; the one that opened it has already happened.
+  const outside = (e       ) => {
+    if (!box.contains(e.target        )) close();
+  };
+  doc.addEventListener("pointerdown", outside, true);
+  function close()       {
+    doc.removeEventListener("pointerdown", outside, true);
+    box.remove();
+    if (openWeightBox === entry) openWeightBox = null;
+  }
+  const entry = { close };
+  openWeightBox = entry;
+  input.focus();
+  input.select();
 }
 
 // ---- src/core/polyhedra.ts ---------------------------------------
@@ -10194,89 +10673,6 @@ function totalText(r            )         {
   return String(r.total);
 }
 
-// ---- src/core/number.ts ------------------------------------------
-class NumberSpecError extends Error {}
-
-function validateSpec(spec            )                {
-  if (!Number.isFinite(spec.min) || !Number.isFinite(spec.max)) return "minimum and maximum must be numbers";
-  if (spec.max < spec.min) return "the maximum must not be below the minimum";
-  if (!Number.isInteger(spec.count) || spec.count < 1) return "how many must be a whole number of at least 1";
-  if (spec.count > 1000) return "at most 1000 numbers at a time";
-  if (spec.integer) {
-    if (!Number.isInteger(spec.min) || !Number.isInteger(spec.max)) return "whole-number draws need whole-number bounds";
-    const range = spec.max - spec.min + 1;
-    if (spec.unique && spec.count > range) return `only ${range} whole numbers lie in that range`;
-  } else if (spec.unique) {
-    return "unique results need whole numbers";
-  }
-  return null;
-}
-
-/** Partial Fisher-Yates over the range: O(count), no rejection loop. */
-function uniqueIntegers(min        , max        , count        , rng              )           {
-  const range = max - min + 1;
-  if (range <= 100000) {
-    const pool = new Int32Array(range);
-    for (let i = 0; i < range; i++) pool[i] = min + i;
-    const out           = [];
-    for (let k = 0; k < count; k++) {
-      const j = rng.int(k, range - 1);
-      const tmp = pool[k];
-      pool[k] = pool[j];
-      pool[j] = tmp;
-      out.push(pool[k]);
-    }
-    return out;
-  }
-  const seen = new Set        ();
-  const out           = [];
-  while (out.length < count) {
-    const v = rng.int(min, max);
-    if (!seen.has(v)) {
-      seen.add(v);
-      out.push(v);
-    }
-  }
-  return out;
-}
-
-function drawNumbers(spec            , rng              )               {
-  const problem = validateSpec(spec);
-  if (problem) throw new NumberSpecError(problem);
-
-  let values          ;
-  if (spec.integer) {
-    values = spec.unique
-      ? uniqueIntegers(spec.min, spec.max, spec.count, rng)
-      : Array.from({ length: spec.count }, () => rng.int(spec.min, spec.max));
-  } else {
-    const span = spec.max - spec.min;
-    values = Array.from({ length: spec.count }, () => {
-      const f = rng.float();
-      // float() is [0,1); to include the maximum we accept the exact endpoint
-      // only when the draw lands in the top ulp-sized slice, which keeps the
-      // distribution uniform rather than doubling the endpoint's chance.
-      const t = spec.inclusiveMax ? f * (1 + Number.EPSILON) : f;
-      return spec.min + Math.min(t, 1) * span;
-    });
-  }
-  return { values, spec, seed: rng.seed, ...extremesOf(values, spec) };
-}
-
-/** Whether a draw is as high, or as low, as its range allows. */
-function extremesOf(values          , spec            )                                             {
-  if (!spec.integer || values.length === 0) return { isMaximum: false, isMinimum: false };
-  return {
-    isMaximum: values.every((v) => v === spec.max),
-    isMinimum: values.every((v) => v === spec.min),
-  };
-}
-
-function formatNumbers(r              )         {
-  const fmt = (v        ) => (r.spec.integer ? String(v) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, ""));
-  return r.values.map(fmt).join(", ");
-}
-
 // ---- src/ui/roll.ts ----------------------------------------------
 /**
  * Rolling any randomizer, in one place.
@@ -10331,6 +10727,11 @@ function formatNumbers(r              )         {
                       
      
                      
+     
+                                                                           
+                                                                      
+     
+                
  
 
 function rollRandomizer(r            , rng              )          {
@@ -10418,7 +10819,7 @@ function rollList(r                , rng              )          {
  * what the same outcome would have said had it been rolled on its own. The
  * pick is the caller's; the only draws here are the dice in the text.
  */
-function listOutcome(r                , index        , rng              )          {
+function listOutcome(r                , index        , rng              , picked = false)          {
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
@@ -10427,12 +10828,13 @@ function listOutcome(r                , index        , rng              )       
   const rolled           = [];
   const label = expandInlineDice(item.label, rng, rolled);
   const description = item.description ? expandInlineDice(item.description, rng, rolled) : undefined;
-  const parts = [...rolled, description, pct].filter(Boolean);
+  // A pick had no odds: saying "20%" under it would suggest it was rolled.
+  const parts = [...rolled, description, picked ? "picked" : pct].filter(Boolean);
   return {
     kind: "list",
     text: label,
     detail: parts.join(" · "),
-    speak: `${r.name}: ${label}. Probability ${pct}.`,
+    speak: picked ? `${r.name}: ${label}, picked.` : `${r.name}: ${label}. Probability ${pct}.`,
     seed: rng.seed,
     itemIndex: index,
     image: item.image,
@@ -10488,6 +10890,16 @@ function rollListMany(r                , n        , rng              , drawn    
  * All the picks happen first and the dice written into the offered texts
  * after them, in the order drawn, which is the order a single roll uses too.
  */
+/**
+ * The outcome the player picked from a list shown as a list. The same shape
+ * as a roll that landed there — picture, reaction, the randomizer it leads to
+ * — with no draw behind the choice; dice written into the outcome's text
+ * still roll, from `rng`, because they are part of what the outcome says.
+ */
+function pickedOutcome(r                , index        , rng              )          {
+  return { ...listOutcome(r, index, rng, true), picked: true };
+}
+
 function offerFromList(r                , m        , rng              )            {
   const wanted = Math.max(1, Math.trunc(m));
   const indices = drawWithoutReplacement(r.items, Math.min(wanted, rollableIndices(r.items).length), rng);
@@ -10733,6 +11145,12 @@ function bagRefill(randomizerId        )       {
                              
                                                                                
                                   
+     
+                                                                             
+                                                                            
+                                                                             
+     
+                                           
  
 
 function createRoller(opts               )         {
@@ -10773,6 +11191,16 @@ function createRoller(opts               )         {
     // mascot and the history row, as for any roll. The wheel stayed still
     // while the cards were out and now simply shows the pick.
     await land(randomizer, chosenFromOffer(randomizer.name, outcomes, at), bag, false);
+  }
+
+  async function choose(itemIndex        )                {
+    if (rolling || offered || held) return;
+    const randomizer = opts.randomizer();
+    if (randomizer.type !== "list") return;
+    const item = randomizer.items[itemIndex];
+    const bag = randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
+    if (!item || !isRollable(item) || bag?.has(item.id)) return;
+    await land(randomizer, pickedOutcome(randomizer, itemIndex, state.source()), bag, false);
   }
 
   function skip()       {
@@ -10954,6 +11382,7 @@ function createRoller(opts               )         {
       return offered !== null;
     },
     pick,
+    choose,
     discard() {
       held = null;
       offered = null;
@@ -10980,6 +11409,8 @@ function createRoller(opts               )         {
 
 
 
+
+
                                           
                                                          
 
@@ -10994,10 +11425,16 @@ function createRoller(opts               )         {
                
                             
                                   
+     
+                                                                         
+                                                                             
+                                                                             
+     
+                                    
  
 
 function createCell(
-  randomizer            ,
+  initial            ,
   opts   
                         
                                           
@@ -11008,25 +11445,42 @@ function createCell(
                                                                      
        
                           
+       
+                                                                       
+                                                             
+       
+                        
     = {},
 )           {
+  /** The randomizer as it stands now: `update` swaps in a newer version. */
+  let randomizer = initial;
   const result = createResultPanel(opts.clickToRoll ? "Click to roll" : "Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
   const coin = createCoin();
   let wheel                                        = null;
+  /**
+   * A list shown as a list: its outcomes, each one a pick. A board cell used
+   * to show nothing at all for one of these — only the answer under an empty
+   * stage — so a list on a board could be rolled but never seen.
+   */
+  let outcomeList                         = null;
+  /** The outcome the answer on screen came from, for putting the pointer back on it. */
+  let answerIndex                = null;
+  const inPlay = () => {
+    const r = randomizer                                         ;
+    return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
+  };
 
-  if (randomizer.type === "list" && randomizer.view === "wheel") {
+  if (randomizer.type === "list" && randomizer.view === "list") {
+    outcomeList = createOutcomeList({ items: inPlay, onPick: (i) => void roller.choose(i), name: randomizer.name });
+    stage.append(outcomeList.el);
+  } else if (randomizer.type === "list" && randomizer.view === "wheel") {
     wheel = createWheel({
-      items: () => {
-        const r = randomizer                                         ;
-        return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
-      },
+      items: inPlay,
       id: () => randomizer.id,
-      // With the whole cell as the button, the click reaches it anyway.
-      onActivate: () => {
-        if (!opts.clickToRoll) void rollCell();
-      },
+      onSliceEdit: opts.quickEdit && canQuickEdit(randomizer.id) ? (index, x, y) => quickEdit(index, x, y) : undefined,
+      onActivate: () => void rollCell(),
       size: 260,
       slices: () => (randomizer                                         ).slices,
       colours: () => state.wheelColours((randomizer                                         ).palette),
@@ -11037,8 +11491,38 @@ function createCell(
   } else if (randomizer.type === "coin") {
     stage.append(coin.el);
   }
-  const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
-  result.reserve(longestOutcome(randomizer), { offer });
+  const reserve = () => {
+    const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
+    result.reserve(longestOutcome(randomizer), { offer });
+  };
+  reserve();
+
+  /** A double-tap on a slice: its weight, edited on the wheel and saved. */
+  function quickEdit(index        , clientX        , clientY        )       {
+    if (randomizer.type !== "list" || !wheel || roller.rolling) return;
+    const item = randomizer.items[index];
+    if (!item) return;
+    openWeightEditor({
+      host: wheel.el, clientX, clientY, label: item.label, weight: item.weight,
+      onSave: (weight) => void saveOutcomeWeight(randomizer.id, item.id, weight).then((saved) => {
+        if (saved) update(saved);
+      }),
+    });
+  }
+
+  function update(next            )          {
+    const shape = (r            ) => (r.type === "list" ? `list:${r.view}` : r.type);
+    if (next.id !== randomizer.id || shape(next) !== shape(randomizer)) return false;
+    randomizer = next;
+    wheel?.refresh();
+    // The slices changed size under a still pointer: turn the wheel back to
+    // the answer on screen, at once, so the two never disagree.
+    if (wheel && answerIndex !== null) void wheel.spinTo(answerIndex, { ...feelNow(), motion: "instant" });
+    outcomeList?.refresh();
+    reserve();
+    updateBagLine();
+    return true;
+  }
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
@@ -11051,7 +11535,10 @@ function createCell(
   const refillButton = button("Refill", () => {
     bagRefill(randomizer.id);
     result.clear();
+    answerIndex = null;
     wheel?.refresh();
+    outcomeList?.mark(null);
+    outcomeList?.refresh();
     updateBagLine();
   }, { class: "ghost refill-bag" });
   const bagLine = h("div", { class: "row tight bag-line" }, bagCount, refillButton);
@@ -11069,6 +11556,7 @@ function createCell(
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
     void bagLoad(randomizer.id).then(() => {
       wheel?.refresh();
+      outcomeList?.refresh();
       updateBagLine();
     });
   }
@@ -11082,7 +11570,14 @@ function createCell(
     feel: feelNow,
     live: true,
     onStart: () => opts.onRoll?.(),
-    onLanded: (outcome) => opts.onLanded?.(outcome),
+    onLanded: (outcome) => {
+      // A list shows what was drawn at once — there is no slice under a
+      // pointer to vanish — and marks the answer, rolled or picked.
+      answerIndex = outcome.itemIndex ?? null;
+      outcomeList?.refresh();
+      outcomeList?.mark(answerIndex);
+      opts.onLanded?.(outcome);
+    },
     from: opts.from,
     // The count changes at the landing; the wheel waits for the next roll, so
     // the winning slice does not vanish from under the pointer (as on the
@@ -11120,9 +11615,10 @@ function createCell(
     el.tabIndex = 0;
     el.setAttribute("role", "button");
     el.setAttribute("aria-label", `Roll ${randomizer.name}`);
-    // A button inside the cell — an offered card, Refill — is its own
-    // press, not a roll.
-    const own = (e       ) => Boolean((e.target                  )?.closest?.("button, input, select, textarea, a"));
+    // A button inside the cell — an offered card, Refill, a list's outcome —
+    // is its own press, not a roll; and a wheel rolls from its hub only, so
+    // its slices can take a double-tap (the hub calls `rollCell` itself).
+    const own = (e       ) => Boolean((e.target                  )?.closest?.("button, input, select, textarea, a, .wheel-wrap, .weight-editor"));
     el.addEventListener("click", (e) => {
       if (!own(e)) void rollCell();
     });
@@ -11141,6 +11637,7 @@ function createCell(
     skip: () => roller.skip(),
     get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },
+    update,
   };
 }
 
@@ -11203,6 +11700,8 @@ const CHAIN_FULL_SIZE = 2;
                               
              
                 
+                                                                              
+                
  
 
                             
@@ -11213,6 +11712,8 @@ const CHAIN_FULL_SIZE = 2;
                
                                                                         
                  
+                                                                              
+                
  
 
                                
@@ -11227,7 +11728,7 @@ const CHAIN_FULL_SIZE = 2;
 function chainTarget(r            , outcome         )                     {
   if (r.type !== "list" || outcome.itemIndex === undefined) return null;
   const item = r.items[outcome.itemIndex];
-  return item?.goesTo ? { id: item.goesTo, label: item.label } : null;
+  return item?.goesTo ? { id: item.goesTo, label: item.label, ...(outcome.picked ? { picked: true          } : {}) } : null;
 }
 
 /**
@@ -11256,7 +11757,13 @@ function advanceChain(
 
   const found = look(target.id);
   return {
-    links: [...kept, { id: target.id, name: found?.name ?? target.label, from: target.label, found: found !== null }],
+    links: [...kept, {
+      id: target.id,
+      name: found?.name ?? target.label,
+      from: target.label,
+      found: found !== null,
+      ...(target.picked ? { picked: true          } : {}),
+    }],
     note: null,
   };
 }
@@ -11280,7 +11787,7 @@ function createChainSurface(
   sender        ,
   opts                                                                                        = {},
 )                                             {
-  const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
+  const from = h("p", { class: "faint chain-from", text: `${sender} ${link.picked ? "picked" : "rolled"} ${link.from}` });
   const found = state.library.findById(link.id)?.randomizer ?? null;
   if (!found) {
     // The same tone as a board's gap: the outcome still comes up and still
@@ -11915,8 +12422,9 @@ function createPopoutSlot(root            )             {
     if (i === 0) {
       const cell = createCell(root, {
         onRoll: () => starting(0),
-        onLanded: (outcome) => landed(0, root, outcome),
+        onLanded: (outcome) => landed(0, cell.randomizer, outcome),
         clickToRoll: true,
+        quickEdit: true,
       });
       made = { cell, el: h("div", { class: "popout-root" }, cell.el) };
     } else {
@@ -11982,6 +12490,8 @@ function createPopoutSlot(root            )             {
 
 
                                                             
+
+
 
 
 
@@ -12067,6 +12577,9 @@ function createPlayView(
   }
 
   let wheel                                        = null;
+  /** A list shown as a list, and which of its outcomes is the answer on screen. */
+  let outcomeList                         = null;
+  let answerIndex                = null;
   const tray = createDiceTray();
   const coin = createCoin();
 
@@ -12078,6 +12591,7 @@ function createPlayView(
 
   function buildStage()       {
     wheel = null;
+    outcomeList = null;
     setChildren(stage);
     if (randomizer.type === "list") {
       if (randomizer.view === "wheel") {
@@ -12087,16 +12601,42 @@ function createPlayView(
           slices: () => (randomizer.type === "list" ? randomizer.slices : undefined),
           colours: () => state.wheelColours(randomizer.type === "list" ? randomizer.palette : undefined),
           onActivate: () => void doRoll(),
+          // Only a wheel with a file behind it: a linked or quick wheel has
+          // nowhere to save a weight to.
+          onSliceEdit: node && canQuickEdit(randomizer.id) ? (index, x, y) => quickEdit(index, x, y) : undefined,
         });
         stage.append(wheel.el);
       } else {
-        stage.append(renderOutcomeList());
+        outcomeList = createOutcomeList({
+          items: () => inPlay(),
+          onPick: (i) => void roller.choose(i),
+          name: randomizer.name,
+        });
+        outcomeList.mark(answerIndex);
+        stage.append(outcomeList.el);
       }
     } else if (randomizer.type === "dice") {
       stage.append(tray.el);
     } else if (randomizer.type === "coin") {
       stage.append(coin.el);
     }
+  }
+
+  /** A double-tap on a slice: its weight, edited in place and saved to the file. */
+  function quickEdit(index        , clientX        , clientY        )       {
+    if (randomizer.type !== "list" || !wheel || roller.rolling) return;
+    const item = randomizer.items[index];
+    if (!item) return;
+    const editing = randomizer.id;
+    openWeightEditor({
+      host: wheel.el, clientX, clientY, label: item.label, weight: item.weight,
+      onSave: (weight) => void saveOutcomeWeight(editing, item.id, weight).then((saved) => {
+        if (!saved || randomizer.id !== editing) return;
+        randomizer = saved;
+        subtitle.textContent = saved.description ?? describeType(saved);
+        showAgain();
+      }),
+    });
   }
 
   /**
@@ -12110,18 +12650,6 @@ function createPlayView(
     return withoutDrawn(randomizer.items, bagDrawn(randomizer.id));
   }
 
-  function renderOutcomeList()              {
-    const items = inPlay();
-    const percents = displayPercents(items);
-    return h("ul", { class: "outcome-list" },
-      ...items.map((item, i) =>
-        h("li", { class: item.disabled ? "disabled muted" : "" },
-          h("span", { text: item.label }),
-          h("span", { class: "faint", text: ` ${percents[i].toFixed(1)}%` }),
-        ),
-      ),
-    );
-  }
 
   /** The settings this roll uses: global, this randomizer's own, and the play-time switch. */
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
@@ -12169,6 +12697,11 @@ function createPlayView(
       rollButton.disabled = true;
     },
     focusOffer: () => true,
+    // The answer stays marked in a list shown as a list, rolled or picked.
+    onLanded: (outcome) => {
+      answerIndex = outcome.itemIndex ?? null;
+      outcomeList?.mark(answerIndex);
+    },
   });
 
   const doRoll = ()                => {
@@ -12437,6 +12970,7 @@ function createPlayView(
     rollButton.disabled = false;
     reserveResult();
     result.clear("Ready");
+    answerIndex = null;
     buildStage();
     updateBagLine();
     updateHeaderControls();
@@ -12510,6 +13044,7 @@ function createPlayView(
   const refillButton = button("Refill", () => {
     bagRefill(randomizer.id);
     result.clear();
+    answerIndex = null;
     wheel?.refresh();
     if (randomizer.type === "list" && randomizer.view === "list") buildStage();
     updateBagLine();
@@ -12628,10 +13163,34 @@ function createPlayView(
   // Settings can change the seed while this view is alive, and the seed line
   // is part of what the panel reserves room for.
   const unsubscribe = state.subscribe(() => {
+    followEdit();
     recent.refresh();
     reserveResult();
     renderShortcuts();
   }, ["history", "prefs", "library"]);
+
+  /**
+   * The same randomizer saved from somewhere else — a weight quick-edited in
+   * the pop-out, or on a board in another tab: show the new version here
+   * too, keeping the answer. Not mid-roll, and not when it became something
+   * the stage would have to be rebuilt for.
+   */
+  function followEdit()       {
+    if (!node || roller.rolling) return;
+    const fresh = state.library.findById(randomizer.id)?.randomizer;
+    if (!fresh || fresh === randomizer || fresh.type !== randomizer.type) return;
+    if (fresh.type === "list" && randomizer.type === "list" && fresh.view !== randomizer.view) return;
+    randomizer = fresh;
+    subtitle.textContent = fresh.description ?? describeType(fresh);
+    showAgain();
+  }
+
+  /** Redraw after an edit, with the pointer put back on the answer on screen. */
+  function showAgain()       {
+    wheel?.refresh();
+    if (wheel && answerIndex !== null) void wheel.spinTo(answerIndex, { ...feelNow(), motion: "instant" });
+    outcomeList?.refresh();
+  }
 
   /* ---- presenting, and links for slides -------------------------------- */
 
@@ -12750,6 +13309,12 @@ function describeType(r            )         {
  * The dialog shows the library as a tree, flattens to matches while you type,
  * takes a link someone sent you, and can make a new randomizer on the spot —
  * because the thing you want to put on a board often does not exist yet.
+ *
+ * A board takes several at once (`pickRandomizers`): Ctrl-click (⌘ on a Mac)
+ * chooses one more, Shift-click a run of them, and a right-click on a folder
+ * chooses everything in it. Once something is chosen, a plain click chooses
+ * too — on an iPad there is no Ctrl — and "Add N" adds the lot. With nothing
+ * chosen, a click adds that one at once, as it always did.
  */
 
 
@@ -12776,6 +13341,8 @@ function describeType(r            )         {
                       
                                                                          
                           
+                                                                             
+                      
  
 
 /**
@@ -12795,16 +13362,36 @@ const NEW_TYPES                           = [
   ["number", "New number"],
 ];
 
+/** One randomizer: where an outcome goes. */
 function pickRandomizer(opts               )                                   {
+  return openPicker(opts, false).then((picked) => picked?.[0] ?? null);
+}
+
+/** One or several, in library order: what goes on a board. */
+function pickRandomizers(opts               )                                     {
+  return openPicker(opts, true);
+}
+
+function openPicker(opts               , multiple         )                                     {
   return new Promise((resolve) => {
     const taken = opts.taken?.() ?? new Set        ();
     let answered = false;
-    const finish = (picked                         ) => {
+    const finish = (picked                           ) => {
       if (answered) return;
       answered = true;
       dialog.close();
       resolve(picked);
     };
+    const finishOne = (picked                  ) => finish([picked]);
+
+    /**
+     * What is chosen so far, by path. A Shift-click reaches back to `anchor`,
+     * the last row clicked on its own terms; `drawn` is the order the choice
+     * rows are drawn in, which is what a run runs along.
+     */
+    const chosen = new Set        ();
+    let anchor                = null;
+    let drawn                = [];
 
     const list = h("div", { class: "picker-tree" });
     const search = h("input", { type: "search", placeholder: "Search your library", "aria-label": "Search your library" });
@@ -12813,7 +13400,57 @@ function pickRandomizer(opts               )                                   {
 
     function choose(node             )       {
       if (!node.randomizer) return;
-      finish({ randomizer: node.randomizer, path: node.path, fresh: false });
+      finishOne({ randomizer: node.randomizer, path: node.path, fresh: false });
+    }
+
+    /** Whether this row can be chosen: a randomizer that is not already there. */
+    function choosable(node             )          {
+      const r = node.randomizer;
+      return node.kind === "file" && !!r && r.type !== "board" && !taken.has(r.id);
+    }
+
+    function clicked(node             , e            )       {
+      const toggle = e.ctrlKey || e.metaKey;
+      if (!multiple || (!toggle && !e.shiftKey && chosen.size === 0)) {
+        choose(node);
+        return;
+      }
+      if (e.shiftKey && anchor !== null) {
+        const from = drawn.findIndex((n) => n.path === anchor);
+        const to = drawn.findIndex((n) => n.path === node.path);
+        if (from >= 0 && to >= 0) {
+          for (const n of drawn.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+            if (choosable(n)) chosen.add(n.path);
+          }
+          render();
+          return;
+        }
+      }
+      if (chosen.has(node.path)) chosen.delete(node.path);
+      else chosen.add(node.path);
+      anchor = node.path;
+      render();
+    }
+
+    /** Everything choosable directly in a folder: chosen, or unchosen if it all was. */
+    function chooseFolder(folder             )       {
+      const inside = (folder.children ?? []).filter(choosable);
+      if (inside.length === 0) return;
+      const all = inside.every((n) => chosen.has(n.path));
+      for (const n of inside) {
+        if (all) chosen.delete(n.path);
+        else chosen.add(n.path);
+      }
+      open.add(folder.path);
+      render();
+    }
+
+    /** The chosen ones, in the order the library lists them. */
+    function add()       {
+      const picked = state.library.files()
+        .filter((n) => chosen.has(n.path) && n.randomizer)
+        .map((n) => ({ randomizer: n.randomizer , path: n.path, fresh: false }));
+      if (picked.length) finish(picked);
     }
 
     /** One row: a folder you can open, or a randomizer you can choose. */
@@ -12824,7 +13461,18 @@ function pickRandomizer(opts               )                                   {
           if (isOpen) open.delete(node.path);
           else open.add(node.path);
           render();
-        }, { class: "ghost picker-row picker-folder", style: { paddingLeft: `${8 + depth * 14}px` } });
+        }, {
+          class: "ghost picker-row picker-folder", style: { paddingLeft: `${8 + depth * 14}px` },
+          ...(multiple ? { title: "Right-click to choose everything in it" } : {}),
+        });
+        // In a modal dialog a menu would open behind it, so the right-click
+        // does the one thing the menu would offer.
+        if (multiple) {
+          control.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            chooseFolder(node);
+          });
+        }
         return control;
       }
       const already = node.randomizer ? taken.has(node.randomizer.id) : false;
@@ -12832,11 +13480,18 @@ function pickRandomizer(opts               )                                   {
       // "attack-roll.orangey.json".
       const shown = node.randomizer?.name ?? node.name;
       const label = where ? `${shown} — ${where}` : shown;
-      const choice = button(label, () => choose(node), {
-        class: `ghost picker-row picker-choice${already ? " picker-taken" : ""}`,
+      const isChosen = chosen.has(node.path);
+      const choice = h("button", {
+        type: "button",
+        class: `ghost picker-row picker-choice${already ? " picker-taken" : ""}${isChosen ? " picker-chosen" : ""}`,
         style: { paddingLeft: `${8 + depth * 14}px` },
+        onclick: (e       ) => clicked(node, e              ),
         ...(already ? { disabled: "", title: "Already there" } : {}),
-      });
+        ...(multiple && chosen.size > 0 ? { "aria-pressed": String(isChosen) } : {}),
+      }, label);
+      // Shift-click would select the page's text; the row is what is meant.
+      if (multiple) choice.addEventListener("mousedown", (e) => { if ((e              ).shiftKey) e.preventDefault(); });
+      drawn.push(node);
       return choice;
     }
 
@@ -12859,6 +13514,7 @@ function pickRandomizer(opts               )                                   {
     function render()       {
       const query = (search                    ).value.trim();
       const rows                = [];
+      drawn = [];
       const notation = typedNotation();
       if (notation) {
         rows.push(button(`🎲 Add ${notation}`, () => void useNotation(notation), { class: "ghost picker-row picker-notation" }));
@@ -12880,13 +13536,36 @@ function pickRandomizer(opts               )                                   {
         note.textContent = rows.length ? "" : "Your library is empty.";
       }
       setChildren(list, ...rows);
+      renderChosen();
+    }
+
+    const addChosen = button("Add", () => add(), { class: "primary picker-add" });
+    const chosenNote = h("p", { class: "faint picker-chosen-note", "aria-live": "polite" });
+    function renderChosen()       {
+      if (!multiple) return;
+      const count = chosen.size;
+      addChosen.hidden = count === 0;
+      addChosen.textContent = `Add ${count}`;
+      const room = opts.room?.() ?? Infinity;
+      chosenNote.textContent = count === 0
+        ? "Ctrl-click or Shift-click to choose several; right-click a folder for all of it."
+        : count > room
+          ? `${count} chosen. There is room for ${room} more, so only the first ${room} will go on.`
+          : `${count} chosen. Click more to add them, or press Add ${count}.`;
     }
 
     search.addEventListener("input", render);
     search.addEventListener("keydown", (e) => {
       if ((e                 ).key !== "Enter") return;
       const notation = typedNotation();
-      if (!notation) return;
+      if (!notation) {
+        // Enter in the search box adds what is chosen, when something is.
+        if (multiple && chosen.size > 0) {
+          e.preventDefault();
+          add();
+        }
+        return;
+      }
       e.preventDefault();
       void useNotation(notation);
     });
@@ -12906,13 +13585,13 @@ function pickRandomizer(opts               )                                   {
         for (const child of state.library.find(folder)?.children ?? []) {
           const r = child.randomizer;
           if (r?.type === "dice" && !taken.has(r.id) && diceNotation(r.expression) === expression) {
-            finish({ randomizer: r, path: child.path, fresh: false });
+            finishOne({ randomizer: r, path: child.path, fresh: false });
             return;
           }
         }
         const randomizer = { ...emptyRandomizer("dice", expression), expression }                  ;
         const path = await state.library.create(folder, randomizer);
-        finish({ randomizer, path, fresh: false });
+        finishOne({ randomizer, path, fresh: false });
       } finally {
         making = false;
       }
@@ -12931,7 +13610,7 @@ function pickRandomizer(opts               )                                   {
       if (!name) return;
       const randomizer = emptyRandomizer(type, name);
       const path = await state.library.create("", randomizer);
-      finish({ randomizer, path, fresh: true });
+      finishOne({ randomizer, path, fresh: true });
     }
 
     async function useLink(raw        )                {
@@ -12959,7 +13638,7 @@ function pickRandomizer(opts               )                                   {
         const randomizer = await decodeRandomizer(embedded[1]);
         const path = await state.library.create("", randomizer);
         note.textContent = "";
-        finish({ randomizer, path, fresh: false });
+        finishOne({ randomizer, path, fresh: false });
         state.toast(`"${randomizer.name}" was saved to your library first, so this can point at it.`);
       } catch {
         note.textContent = "That link is damaged, so there is nothing to point at.";
@@ -12981,10 +13660,12 @@ function pickRandomizer(opts               )                                   {
       search,
       list,
       note,
+      multiple ? chosenNote : null,
       h("div", { class: "row" },
         opts.allowLink ? linkField : null,
         opts.allowLink ? button("Use link", () => void useLink((linkField                    ).value), { class: "ghost use-link" }) : null,
         h("span", { class: "spacer" }),
+        multiple ? addChosen : null,
         button("Close", () => finish(null), { class: "picker-close" }),
       ),
     )                     ;
@@ -12996,6 +13677,31 @@ function pickRandomizer(opts               )                                   {
     openDialog(dialog, opener);
     search.focus();
   });
+}
+
+// ---- src/ui/dragpaths.ts -----------------------------------------
+/**
+ * What a drag from the library carries, shared by the library (which starts
+ * it) and a board (which takes it).
+ *
+ * Every drag carries one path as text/plain, which is what a folder and a
+ * board have always read. A drag of a selection also carries all of its
+ * paths, as JSON under a type of Orangey's own, so a board can take the lot;
+ * anything that does not know that type still gets the row that was dragged.
+ */
+
+const LIBRARY_PATHS_TYPE = "text/orangey-paths";
+
+/** The paths a drop carries: the selection's when it has one, else just `first`. */
+function draggedPaths(raw        , first        )           {
+  if (!raw) return [first];
+  try {
+    const parsed          = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((p) => typeof p === "string")) return parsed            ;
+  } catch {
+    // A drag from somewhere else that happens to use the name: one path.
+  }
+  return [first];
 }
 
 // ---- src/ui/storage-actions.ts -----------------------------------
@@ -13288,6 +13994,7 @@ async function exportLibraryZip()                {
 
 
 
+
                                        
 
 function createBoardView(node             , params                                        = {})       {
@@ -13408,7 +14115,10 @@ function createBoardView(node             , params                              
     setChildren(grid, ...resolved.map(({ entry, randomizer }) => {
       if (!randomizer) return wrap(entry, createMissingCell(entry.name));
       let holder                     = null;
-      const cell = createCell(randomizer, { onLanded: (outcome) => holder && landed(entry.id, holder, randomizer, outcome) });
+      const cell = createCell(randomizer, {
+        onLanded: (outcome) => holder && landed(entry.id, holder, cell.randomizer, outcome),
+        quickEdit: true,
+      });
       cells.push(cell);
       // A cell of its own to roll: one roll on a board is often the point, and
       // only a cell's own roll follows an outcome's link.
@@ -13454,13 +14164,35 @@ function createBoardView(node             , params                              
     render();
   }
 
-  async function addEntry(r            )                {
-    if (board.entries.some((e) => e.id === r.id)) return;
-    if (board.entries.length >= BOARD_LIMIT) {
-      state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
+  /**
+   * Put several on at once — from the Add… window or a selection dragged
+   * from the library — in one save. What is already there, what is a board,
+   * and what would go past the limit are left off, and the toast says which.
+   */
+  async function addEntries(rs                       )                {
+    const entries = [...board.entries];
+    let already = 0;
+    let boards = 0;
+    let over = 0;
+    for (const r of rs) {
+      if (r.type === "board") boards++;
+      else if (entries.some((e) => e.id === r.id)) already++;
+      else if (entries.length >= BOARD_LIMIT) over++;
+      else entries.push({ id: r.id, name: r.name });
+    }
+    const added = entries.length - board.entries.length;
+    if (added > 0) await save({ ...board, entries });
+    if (rs.length === 1) {
+      // One at a time keeps the messages it always had.
+      if (over) state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
+      else if (boards) state.toast("A board cannot go on a board.");
       return;
     }
-    await save({ ...board, entries: [...board.entries, { id: r.id, name: r.name }] });
+    const left           = [];
+    if (over) left.push(`${over} did not fit: a board holds at most ${BOARD_LIMIT}`);
+    if (already) left.push(`${already} ${already === 1 ? "was" : "were"} already on it`);
+    if (boards) left.push(`${boards} ${boards === 1 ? "is a board" : "are boards"}, which cannot go on a board`);
+    state.toast(`Added ${added} to the board.${left.length ? ` ${left.join("; ")}.` : ""}`);
   }
 
   /**
@@ -13498,20 +14230,22 @@ function createBoardView(node             , params                              
    * what you want does not exist yet.
    */
   async function openPicker()                {
-    const picked = await pickRandomizer({
+    const picked = await pickRandomizers({
       title: "Add to the board",
       taken: () => new Set(board.entries.map((e) => e.id)),
       allowNew: true,
       allowLink: true,
       allowNotation: true,
+      room: () => BOARD_LIMIT - board.entries.length,
     });
-    if (!picked) return;
-    await addEntry(picked.randomizer);
-    if (picked.fresh) {
+    if (!picked?.length) return;
+    await addEntries(picked.map((p) => p.randomizer));
+    const [first] = picked;
+    if (picked.length === 1 && first.fresh) {
       await state.library.flush();
       // Back from its editor returns to this board, not to the new
       // randomizer's own play screen, where there is no Back at all.
-      navigate(editHash(picked.path, `#/r/${encodeURIComponent(node.path)}`));
+      navigate(editHash(first.path, `#/r/${encodeURIComponent(node.path)}`));
     }
   }
 
@@ -13594,24 +14328,23 @@ function createBoardView(node             , params                              
 
   // The library tree drags a path as text/plain, so dropping a randomizer from
   // the sidebar onto the board is the same gesture as dropping it in a folder.
+  // A selection dragged from the library also carries every path it holds.
   grid.addEventListener("dragover", (e) => {
     if ((e             ).dataTransfer?.types.includes("text/plain")) e.preventDefault();
   });
   grid.addEventListener("drop", (e) => {
-    const path = (e             ).dataTransfer?.getData("text/plain");
+    const data = (e             ).dataTransfer;
+    const path = data?.getData("text/plain");
     if (!path) return;
     e.preventDefault();
-    const dropped = state.library.find(path)?.randomizer;
-    if (!dropped) return;
+    const paths = draggedPaths(data .getData(LIBRARY_PATHS_TYPE), path);
+    const dropped = paths.map((p) => state.library.find(p)?.randomizer).filter((r)                  => !!r);
+    if (dropped.length === 0) return;
     if (!editing) {
       state.toast("Press Edit board to add to it.");
       return;
     }
-    if (dropped.type === "board") {
-      state.toast("A board cannot go on a board.");
-      return;
-    }
-    void addEntry(dropped);
+    void addEntries(dropped);
   });
 
   // ---- temporary cells ----------------------------------------------------
@@ -13826,11 +14559,31 @@ function createBoardView(node             , params                              
   let built = "";
   let destroyed = false;
   function renderIfChanged()       {
-    if (signature() === built) {
+    const now = signature();
+    if (now === built || updateInPlace(now)) {
+      built = now;
       recent.refresh();
       return;
     }
     render();
+  }
+
+  /**
+   * The same randomizers in the same places, only some of them edited — a
+   * quick edit of a weight, or a change saved in another tab: those cells
+   * take the new version and every other cell keeps its answer. Anything more
+   * (an entry added, removed or gone, a wheel turned into a list) is a
+   * rebuild.
+   */
+  function updateInPlace(now        )          {
+    const shape = (sig        ) => sig.replace(/:[^|]*/g, "");
+    if (shape(now) !== shape(built)) return false;
+    for (const { entry, randomizer } of resolve()) {
+      const cell = cells.find((c) => c.randomizer.id === entry.id);
+      if (!randomizer || !cell) return false;
+      if (cell.randomizer !== randomizer && !cell.update(randomizer)) return false;
+    }
+    return true;
   }
 
   // A randomizer edited elsewhere, or deleted, changes what a board shows.
@@ -13894,12 +14647,18 @@ function listCsv(items                     )         {
  * Emphasis, top to bottom: the search box, the tree, and one primary action
  * (+ New). Storage, export and folder connection are secondary and live in
  * the header menu; import has a single entry point, the wizard.
+ *
+ * Ctrl-click (⌘ on a Mac) and Shift-click choose several randomizers, and a
+ * folder's menu chooses everything in it, so a board can be given the lot in
+ * one drag. A selection only adds to boards: moving and deleting stay one at
+ * a time, where a slip costs one file, not twelve.
  */
 
 
 
 
                                                             
+
 
 
 
@@ -13916,6 +14675,93 @@ function createLibraryView()       {
   const banner = h("div");
   let selectedFolder = "";
   let dragging                = null;
+  /** Whether the drag under way is a selection of several. */
+  let draggingMany = false;
+
+  /* ---- selection -------------------------------------------------------- */
+
+  /**
+   * Rows chosen with Ctrl or Shift, by path. A Shift-click reaches back to
+   * `selectAnchor`, the last row chosen on its own. The set outlives a redraw, so
+   * a save elsewhere does not drop it; paths that are gone are let go.
+   */
+  const selected = new Set        ();
+  let selectAnchor                = null;
+  // Polite, not a status role: the page's one status region is the answer's.
+  const selectionBar = h("div", { class: "row tight library-selection", "aria-live": "polite" });
+
+  /** The file rows a person can see, top to bottom: what a Shift-click runs along. */
+  function visibleFiles(node              = state.library.tree, depth = 0, out           = [])           {
+    if (depth > 0 && !state.prefs.expandedFolders.includes(node.path)) return out;
+    for (const child of node.children ?? []) {
+      if (child.kind === "folder") visibleFiles(child, depth + 1, out);
+      else out.push(child.path);
+    }
+    return out;
+  }
+
+  /** The selection in library order, which is the order a board is given it. */
+  function selection()           {
+    return state.library.files().map((n) => n.path).filter((p) => selected.has(p));
+  }
+
+  function selectRow(node             , e            )       {
+    if (e.shiftKey && selectAnchor !== null) {
+      const order = visibleFiles();
+      const from = order.indexOf(selectAnchor);
+      const to = order.indexOf(node.path);
+      if (from >= 0 && to >= 0) {
+        for (const p of order.slice(Math.min(from, to), Math.max(from, to) + 1)) selected.add(p);
+        showSelection();
+        return;
+      }
+    }
+    if (selected.has(node.path)) selected.delete(node.path);
+    else selected.add(node.path);
+    selectAnchor = node.path;
+    showSelection();
+  }
+
+  /** Everything directly in a folder that can go on a board, opened so it shows. */
+  function selectFolder(node             )       {
+    const inside = (node.children ?? []).filter((c) => c.kind === "file" && c.randomizer && !isBoard(c.randomizer));
+    if (inside.length === 0) {
+      state.toast(`Nothing in “${node.name}” can go on a board.`);
+      return;
+    }
+    for (const c of inside) selected.add(c.path);
+    selectAnchor = inside[inside.length - 1].path;
+    if (!state.prefs.expandedFolders.includes(node.path)) {
+      void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, node.path] });
+    }
+    render();
+  }
+
+  function clearSelection()       {
+    selected.clear();
+    selectAnchor = null;
+    showSelection();
+  }
+
+  /** Mark the rows and say what a selection is for, without redrawing the tree. */
+  function showSelection()       {
+    for (const row of tree.querySelectorAll             (".tree-row[data-path]")) {
+      const on = selected.has(row.dataset.path );
+      row.classList.toggle("selected", on);
+      if (on) row.setAttribute("aria-description", "selected");
+      else row.removeAttribute("aria-description");
+    }
+    const count = selected.size;
+    selectionBar.hidden = count === 0;
+    if (count === 0) {
+      setChildren(selectionBar);
+      return;
+    }
+    setChildren(selectionBar,
+      h("span", { class: "grow", text: `${count} selected — drag ${count === 1 ? "it" : "them"} onto a board in edit mode.` }),
+      button("Clear", () => clearSelection(), { class: "ghost clear-selection" }),
+    );
+  }
 
   /* ---- storage ---------------------------------------------------------- */
 
@@ -14001,7 +14847,11 @@ function createLibraryView()       {
     }
     tree.style.display = "";
     setChildren(results);
+    for (const path of [...selected]) {
+      if (state.library.find(path)?.kind !== "file") selected.delete(path);
+    }
     setChildren(tree, renderFolder(state.library.tree, 0));
+    showSelection();
   }
 
   function dropTargets(el             , folderPath        )       {
@@ -14017,6 +14867,10 @@ function createLibraryView()       {
       el.classList.remove("drop-target");
       const source = dragging;
       dragging = null;
+      if (source && draggingMany) {
+        state.toast("A selection goes onto a board. Move files into a folder one at a time.");
+        return;
+      }
       if (!source || parent(source) === folderPath) return;
       const name = state.library.find(source)?.randomizer?.name ?? basename(source);
       await state.library.move(source, folderPath);
@@ -14029,11 +14883,17 @@ function createLibraryView()       {
     el.draggable = true;
     el.addEventListener("dragstart", (e) => {
       dragging = path;
-      (e             ).dataTransfer?.setData("text/plain", path);
+      const data = (e             ).dataTransfer;
+      data?.setData("text/plain", path);
+      // A selected row carries the whole selection with it; any other row is
+      // dragged on its own and leaves the selection as it was.
+      draggingMany = selected.has(path) && selected.size > 1;
+      if (draggingMany) data?.setData(LIBRARY_PATHS_TYPE, JSON.stringify(selection()));
       el.classList.add("dragging");
     });
     el.addEventListener("dragend", () => {
       dragging = null;
+      draggingMany = false;
       el.classList.remove("dragging");
     });
   }
@@ -14085,9 +14945,21 @@ function createLibraryView()       {
     const name = node.randomizer?.name ?? basename(node.path);
     const favourite = node.randomizer ? state.prefs.favourites.includes(node.randomizer.id) : false;
     const row = h("button", {
-      class: "tree-row",
+      class: `tree-row${selected.has(node.path) ? " selected" : ""}`,
       type: "button",
-      onclick: () => navigate(`#/r/${encodeURIComponent(node.path)}`),
+      "data-path": node.path,
+      onclick: (e       ) => {
+        const m = e              ;
+        if (m.ctrlKey || m.metaKey || m.shiftKey) {
+          selectRow(node, m);
+          return;
+        }
+        // A plain click opens, as it always has, and a selection is done with.
+        if (selected.size) clearSelection();
+        navigate(`#/r/${encodeURIComponent(node.path)}`);
+      },
+      // Shift-click would otherwise select the panel's text.
+      onmousedown: (e       ) => { if ((e              ).shiftKey) e.preventDefault(); },
       oncontextmenu: (e       ) => { e.preventDefault(); openFileMenu(node, e.currentTarget               ); },
       onkeydown: (e       ) => {
         const key = (e                 ).key;
@@ -14157,7 +15029,8 @@ function createLibraryView()       {
 
   function openFolderMenu(node             , anchor             )       {
     openMenu(anchor, [
-      { label: "New wheel here", onSelect: () => void newRandomizer("list", node.path) },
+      { label: "Select all in this folder", onSelect: () => selectFolder(node) },
+      { label: "New wheel here", onSelect: () => void newRandomizer("list", node.path), separator: true },
       { label: "New folder here", onSelect: () => void newFolder(node.path) },
       { label: "Rename…", onSelect: () => void renameNode(node, anchor), separator: true },
       { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
@@ -14270,6 +15143,7 @@ function createLibraryView()       {
     ),
     banner,
     searchInput,
+    selectionBar,
     tree,
     results,
     h("div", { class: "row tight library-foot" },
@@ -14279,6 +15153,12 @@ function createLibraryView()       {
   );
 
   searchInput.addEventListener("input", render);
+  // Escape lets a selection go, when the keyboard is in the library.
+  el.addEventListener("keydown", (e) => {
+    if ((e                 ).key !== "Escape" || selected.size === 0) return;
+    e.stopPropagation();
+    clearSelection();
+  });
   const unsubscribe = state.subscribe(render, ["library", "prefs"]);
   render();
 
@@ -14523,54 +15403,6 @@ function createThemeCard(onApplied            )              {
   );
   update();
   return card;
-}
-
-// ---- src/model/draft.ts ------------------------------------------
-/**
- * Is this draft one the app could read back?
- *
- * `validateRandomizer` says whether a file is well formed, and it stays that
- * way: a file already on disk with an odd dice expression must still open, so
- * it can be fixed (P10). But an editor must not *write* something it could
- * not then load, which is a stricter question and a different one. This asks
- * it, without a DOM, so both editors and the tests can use the same answer.
- *
- * It returns a sentence for a person to read, or null when the draft is fine.
- */
-
-
-
-
-
-
-/**
- * "randomizer.items[3].label" is precise and unreadable. The field at the end
- * is the part a person needs, with the index kept because it says which row.
- */
-function readableField(path        )         {
-  const tail = path.replace(/^randomizer\.?/, "");
-  if (!tail) return "This randomizer";
-  const at = tail.match(/\[(\d+)\]/);
-  const field = tail.split(".").pop()?.replace(/\[\d+\]/, "") ?? tail;
-  const name = field === "label" ? "outcome" : field;
-  return at ? `Outcome ${Number(at[1]) + 1}'s ${name}` : `The ${name}`;
-}
-
-function draftProblem(model            )                {
-  const check = new Check();
-  if (!validateRandomizer(model, check) || !check.ok) {
-    const issue = check.issues[0];
-    return issue ? `${readableField(issue.path)} ${issue.message}` : "This randomizer is not valid";
-  }
-  if (model.type === "dice") {
-    const parsed = tryParse(model.expression);
-    if (!parsed.ok) return parsed.error.message;
-  }
-  if (model.type === "number") {
-    const problem = validateSpec(model);
-    if (problem) return problem;
-  }
-  return null;
 }
 
 // ---- src/ui/styles/palette.ts ------------------------------------

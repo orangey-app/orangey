@@ -8,6 +8,11 @@
  * Emphasis, top to bottom: the search box, the tree, and one primary action
  * (+ New). Storage, export and folder connection are secondary and live in
  * the header menu; import has a single entry point, the wizard.
+ *
+ * Ctrl-click (⌘ on a Mac) and Shift-click choose several randomizers, and a
+ * folder's menu chooses everything in it, so a board can be given the lot in
+ * one drag. A selection only adds to boards: moving and deleting stay one at
+ * a time, where a slip costs one file, not twelve.
  */
 
 import { serialize, slugify, wrap } from "../../model/file.ts";
@@ -20,6 +25,7 @@ import { LibraryService } from "../../storage/library.ts";
 import { canUseFolder, describeStorage, exportBoardZip, exportLibraryZip, portableRandomizer, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import { askConfirm, askFolder, askText, button, download, h, iconButton, openMenu, setChildren, type MenuItem } from "../dom.ts";
 import { state } from "../state.ts";
+import { LIBRARY_PATHS_TYPE } from "../dragpaths.ts";
 import { appBase, navigate, slideLink } from "../router.ts";
 import type { View } from "../view.ts";
 
@@ -30,6 +36,93 @@ export function createLibraryView(): View {
   const banner = h("div");
   let selectedFolder = "";
   let dragging: string | null = null;
+  /** Whether the drag under way is a selection of several. */
+  let draggingMany = false;
+
+  /* ---- selection -------------------------------------------------------- */
+
+  /**
+   * Rows chosen with Ctrl or Shift, by path. A Shift-click reaches back to
+   * `selectAnchor`, the last row chosen on its own. The set outlives a redraw, so
+   * a save elsewhere does not drop it; paths that are gone are let go.
+   */
+  const selected = new Set<string>();
+  let selectAnchor: string | null = null;
+  // Polite, not a status role: the page's one status region is the answer's.
+  const selectionBar = h("div", { class: "row tight library-selection", "aria-live": "polite" });
+
+  /** The file rows a person can see, top to bottom: what a Shift-click runs along. */
+  function visibleFiles(node: LibraryNode = state.library.tree, depth = 0, out: string[] = []): string[] {
+    if (depth > 0 && !state.prefs.expandedFolders.includes(node.path)) return out;
+    for (const child of node.children ?? []) {
+      if (child.kind === "folder") visibleFiles(child, depth + 1, out);
+      else out.push(child.path);
+    }
+    return out;
+  }
+
+  /** The selection in library order, which is the order a board is given it. */
+  function selection(): string[] {
+    return state.library.files().map((n) => n.path).filter((p) => selected.has(p));
+  }
+
+  function selectRow(node: LibraryNode, e: MouseEvent): void {
+    if (e.shiftKey && selectAnchor !== null) {
+      const order = visibleFiles();
+      const from = order.indexOf(selectAnchor);
+      const to = order.indexOf(node.path);
+      if (from >= 0 && to >= 0) {
+        for (const p of order.slice(Math.min(from, to), Math.max(from, to) + 1)) selected.add(p);
+        showSelection();
+        return;
+      }
+    }
+    if (selected.has(node.path)) selected.delete(node.path);
+    else selected.add(node.path);
+    selectAnchor = node.path;
+    showSelection();
+  }
+
+  /** Everything directly in a folder that can go on a board, opened so it shows. */
+  function selectFolder(node: LibraryNode): void {
+    const inside = (node.children ?? []).filter((c) => c.kind === "file" && c.randomizer && !isBoard(c.randomizer));
+    if (inside.length === 0) {
+      state.toast(`Nothing in “${node.name}” can go on a board.`);
+      return;
+    }
+    for (const c of inside) selected.add(c.path);
+    selectAnchor = inside[inside.length - 1].path;
+    if (!state.prefs.expandedFolders.includes(node.path)) {
+      void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, node.path] });
+    }
+    render();
+  }
+
+  function clearSelection(): void {
+    selected.clear();
+    selectAnchor = null;
+    showSelection();
+  }
+
+  /** Mark the rows and say what a selection is for, without redrawing the tree. */
+  function showSelection(): void {
+    for (const row of tree.querySelectorAll<HTMLElement>(".tree-row[data-path]")) {
+      const on = selected.has(row.dataset.path!);
+      row.classList.toggle("selected", on);
+      if (on) row.setAttribute("aria-description", "selected");
+      else row.removeAttribute("aria-description");
+    }
+    const count = selected.size;
+    selectionBar.hidden = count === 0;
+    if (count === 0) {
+      setChildren(selectionBar);
+      return;
+    }
+    setChildren(selectionBar,
+      h("span", { class: "grow", text: `${count} selected — drag ${count === 1 ? "it" : "them"} onto a board in edit mode.` }),
+      button("Clear", () => clearSelection(), { class: "ghost clear-selection" }),
+    );
+  }
 
   /* ---- storage ---------------------------------------------------------- */
 
@@ -115,7 +208,11 @@ export function createLibraryView(): View {
     }
     tree.style.display = "";
     setChildren(results);
+    for (const path of [...selected]) {
+      if (state.library.find(path)?.kind !== "file") selected.delete(path);
+    }
     setChildren(tree, renderFolder(state.library.tree, 0));
+    showSelection();
   }
 
   function dropTargets(el: HTMLElement, folderPath: string): void {
@@ -131,6 +228,10 @@ export function createLibraryView(): View {
       el.classList.remove("drop-target");
       const source = dragging;
       dragging = null;
+      if (source && draggingMany) {
+        state.toast("A selection goes onto a board. Move files into a folder one at a time.");
+        return;
+      }
       if (!source || parent(source) === folderPath) return;
       const name = state.library.find(source)?.randomizer?.name ?? basename(source);
       await state.library.move(source, folderPath);
@@ -143,11 +244,17 @@ export function createLibraryView(): View {
     el.draggable = true;
     el.addEventListener("dragstart", (e) => {
       dragging = path;
-      (e as DragEvent).dataTransfer?.setData("text/plain", path);
+      const data = (e as DragEvent).dataTransfer;
+      data?.setData("text/plain", path);
+      // A selected row carries the whole selection with it; any other row is
+      // dragged on its own and leaves the selection as it was.
+      draggingMany = selected.has(path) && selected.size > 1;
+      if (draggingMany) data?.setData(LIBRARY_PATHS_TYPE, JSON.stringify(selection()));
       el.classList.add("dragging");
     });
     el.addEventListener("dragend", () => {
       dragging = null;
+      draggingMany = false;
       el.classList.remove("dragging");
     });
   }
@@ -199,9 +306,21 @@ export function createLibraryView(): View {
     const name = node.randomizer?.name ?? basename(node.path);
     const favourite = node.randomizer ? state.prefs.favourites.includes(node.randomizer.id) : false;
     const row = h("button", {
-      class: "tree-row",
+      class: `tree-row${selected.has(node.path) ? " selected" : ""}`,
       type: "button",
-      onclick: () => navigate(`#/r/${encodeURIComponent(node.path)}`),
+      "data-path": node.path,
+      onclick: (e: Event) => {
+        const m = e as MouseEvent;
+        if (m.ctrlKey || m.metaKey || m.shiftKey) {
+          selectRow(node, m);
+          return;
+        }
+        // A plain click opens, as it always has, and a selection is done with.
+        if (selected.size) clearSelection();
+        navigate(`#/r/${encodeURIComponent(node.path)}`);
+      },
+      // Shift-click would otherwise select the panel's text.
+      onmousedown: (e: Event) => { if ((e as MouseEvent).shiftKey) e.preventDefault(); },
       oncontextmenu: (e: Event) => { e.preventDefault(); openFileMenu(node, e.currentTarget as HTMLElement); },
       onkeydown: (e: Event) => {
         const key = (e as KeyboardEvent).key;
@@ -271,7 +390,8 @@ export function createLibraryView(): View {
 
   function openFolderMenu(node: LibraryNode, anchor: HTMLElement): void {
     openMenu(anchor, [
-      { label: "New wheel here", onSelect: () => void newRandomizer("list", node.path) },
+      { label: "Select all in this folder", onSelect: () => selectFolder(node) },
+      { label: "New wheel here", onSelect: () => void newRandomizer("list", node.path), separator: true },
       { label: "New folder here", onSelect: () => void newFolder(node.path) },
       { label: "Rename…", onSelect: () => void renameNode(node, anchor), separator: true },
       { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
@@ -384,6 +504,7 @@ export function createLibraryView(): View {
     ),
     banner,
     searchInput,
+    selectionBar,
     tree,
     results,
     h("div", { class: "row tight library-foot" },
@@ -393,6 +514,12 @@ export function createLibraryView(): View {
   );
 
   searchInput.addEventListener("input", render);
+  // Escape lets a selection go, when the keyboard is in the library.
+  el.addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key !== "Escape" || selected.size === 0) return;
+    e.stopPropagation();
+    clearSelection();
+  });
   const unsubscribe = state.subscribe(render, ["library", "prefs"]);
   render();
 

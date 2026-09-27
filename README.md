@@ -33,7 +33,9 @@ that sent you there.
 weather and an attack roll side by side, each with its own answer. Roll all
 spins everything at once, or a cell's own Roll rolls just that one. **Edit
 board** is where cells are added, removed and reordered — a stray click at the
-table cannot change the board — and Add… also takes dice notation, so typing
+table cannot change the board. Add… takes several at once (Ctrl- or
+Shift-click, or right-click a folder for all of it), so does dragging a
+selection from the library, and it also takes dice notation, so typing
 `2d6 + 3` puts that roll straight on the board. A board is a file
 in your library like anything else, and it points at your randomizers rather
 than copying them, so editing a table updates every board it is on. Share… on
@@ -46,7 +48,8 @@ both sit on the board until you close them, without changing it, and
 
 **Pop out** puts a randomizer or a whole board in a small window that stays
 on top of your other programs — over a game, a PDF or a character sheet — to
-roll there without switching back. Click the randomizer to roll it; a single
+roll there without switching back. Click the randomizer to roll it (a wheel,
+at its centre); a single
 one fills the window at whatever size you drag it to. Rolls made in it go to
 History like any other, and an outcome that leads to another randomizer
 offers to swap the cell over to it. It needs Chrome, Edge or Firefox on a computer; where the
@@ -83,6 +86,10 @@ sit inside it.
 **Wheels.** A list of outcomes with weights. Weights are just numbers and
 Orangey normalizes them, so `50/30/20` and `5/3/2` are the same wheel and
 nothing has to add up to 100. Segments take up the space their weight deserves.
+A wheel rolls from its centre, and a double-click on a slice (a double-tap on
+a tablet) changes that outcome's weight on the spot — on a board too, without
+editing the board. A wheel shown as a list is a column of buttons: press an
+outcome to **pick** it rather than roll, and History says it was picked.
 **Draw without putting back** turns a wheel into a bag: what came up stays out
 until the bag is empty. The **×** beside Roll draws several at once, and
 **Hidden** rolls behind the screen — the answer waits until you choose to
@@ -252,6 +259,7 @@ examples in [`examples/`](examples).
 | `/` | search the library |
 | `?` | all shortcuts |
 | `Delete` / `F2` | delete or rename the focused entry in the library |
+| `Ctrl/Cmd` / `Shift` + click | select several in the library, to drag onto a board (`Esc` clears) |
 | `Alt + ↑ / ↓` | reorder an outcome |
 | `Ctrl/Cmd + D` | duplicate an outcome |
 | `Ctrl/Cmd + Z` | undo the last deletion |

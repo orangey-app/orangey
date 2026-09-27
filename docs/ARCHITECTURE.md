@@ -79,6 +79,28 @@ say when that randomizer is gone. `src/ui/views/board.ts` resolves them through
 resolution changes — rebuilding on every change of state would throw away the
 answers the cells are showing, including the one the roll had just produced.
 
+A cell also changes in place: `CellView.update(randomizer)` takes a newer
+version of the same randomizer (a weight edited on the wheel) and redraws
+the stage without losing its answer, the wheel set straight back under the
+pointer. It returns false when the change is one of shape — another type, a
+wheel turned into a list — and the board rebuilds as before.
+
+**A wheel rolls from its hub; its slices are for editing.** The hub is the
+wheel's Roll control (`onActivate`), and a click anywhere else on it does
+nothing, because a double-click (`DOUBLE_TAP_MS`, detected on `pointerup` so
+a tablet's double-tap counts and does not zoom) opens the slice's weight
+(`src/ui/components/quickweight.ts`). That saves the randomizer's file like
+the editor, and every screen showing it follows through the `library` topic.
+Only a list in the library can be edited this way; a link's or a quick
+wheel's has no file to write.
+
+**A drag from the library can carry a selection.** It always sets one path as
+`text/plain` — what a folder and a board have always read — and, when the
+dragged row is one of several selected, all of them as JSON under
+`text/orangey-paths` (`src/ui/dragpaths.ts`). A board takes the lot through
+`addEntries`, the same path as its Add… window: one save, duplicates and
+boards skipped, the limit kept, and a toast for what was left off.
+
 **A pop-out is a second window run by this page.** `src/ui/popout.ts` opens
 a Document Picture-in-Picture window — always on top of other programs, in
 desktop Chrome, Edge and Firefox — and fills it with cells (`createCell`),
@@ -237,6 +259,15 @@ reaches an `Outcome` draws from it. `Math.random` is for cosmetics only — the
 scatter of a label, the axes a die tumbles about — because a seeded session
 has to replay exactly, and anything a person reads as the answer is part of
 that replay.
+
+The one answer that does not is a **pick**: a list shown as a list is a
+column of buttons (`src/ui/components/outcomelist.ts`), and pressing one lands
+that outcome through `roller.choose(index)` — the same `land()` as a roll, so
+it is announced, bagged, recorded and followed. It is labelled wherever it is
+kept (`Outcome.picked`, "picked, not rolled" in a history row's `parts`,
+"picked" in a chain's note), because a pick passed off as a roll would be a
+lie about luck. Dice inside the picked outcome's text still come from the
+source, as they would on a roll.
 
 **All animation timing lives in `src/ui/feel.ts`.** `npm run check` fails the
 build if a duration appears anywhere else, which is what makes the settings

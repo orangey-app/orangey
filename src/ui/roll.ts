@@ -51,6 +51,11 @@ export interface Outcome {
    * it with the dice.
    */
   offered?: string[];
+  /**
+   * Chosen by the player from a list, not rolled. History says so, because
+   * an answer nobody rolled should never pass for a random one (P11).
+   */
+  picked?: true;
 }
 
 export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
@@ -138,7 +143,7 @@ function rollList(r: ListRandomizer, rng: RandomSource): Outcome {
  * what the same outcome would have said had it been rolled on its own. The
  * pick is the caller's; the only draws here are the dice in the text.
  */
-function listOutcome(r: ListRandomizer, index: number, rng: RandomSource): Outcome {
+function listOutcome(r: ListRandomizer, index: number, rng: RandomSource, picked = false): Outcome {
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
@@ -147,12 +152,13 @@ function listOutcome(r: ListRandomizer, index: number, rng: RandomSource): Outco
   const rolled: string[] = [];
   const label = expandInlineDice(item.label, rng, rolled);
   const description = item.description ? expandInlineDice(item.description, rng, rolled) : undefined;
-  const parts = [...rolled, description, pct].filter(Boolean);
+  // A pick had no odds: saying "20%" under it would suggest it was rolled.
+  const parts = [...rolled, description, picked ? "picked" : pct].filter(Boolean);
   return {
     kind: "list",
     text: label,
     detail: parts.join(" · "),
-    speak: `${r.name}: ${label}. Probability ${pct}.`,
+    speak: picked ? `${r.name}: ${label}, picked.` : `${r.name}: ${label}. Probability ${pct}.`,
     seed: rng.seed,
     itemIndex: index,
     image: item.image,
@@ -208,6 +214,16 @@ export function rollListMany(r: ListRandomizer, n: number, rng: RandomSource, dr
  * All the picks happen first and the dice written into the offered texts
  * after them, in the order drawn, which is the order a single roll uses too.
  */
+/**
+ * The outcome the player picked from a list shown as a list. The same shape
+ * as a roll that landed there — picture, reaction, the randomizer it leads to
+ * — with no draw behind the choice; dice written into the outcome's text
+ * still roll, from `rng`, because they are part of what the outcome says.
+ */
+export function pickedOutcome(r: ListRandomizer, index: number, rng: RandomSource): Outcome {
+  return { ...listOutcome(r, index, rng, true), picked: true };
+}
+
 export function offerFromList(r: ListRandomizer, m: number, rng: RandomSource): Outcome[] {
   const wanted = Math.max(1, Math.trunc(m));
   const indices = drawWithoutReplacement(r.items, Math.min(wanted, rollableIndices(r.items).length), rng);

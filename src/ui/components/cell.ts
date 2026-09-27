@@ -11,6 +11,8 @@ import type { Randomizer, Rollable } from "../../model/randomizer.ts";
 import { button, h } from "../dom.ts";
 import { state } from "../state.ts";
 import { createWheel } from "./wheel.ts";
+import { createOutcomeList, type OutcomeListView } from "./outcomelist.ts";
+import { canQuickEdit, openWeightEditor, saveOutcomeWeight } from "./quickweight.ts";
 import { createDiceTray } from "./dice.ts";
 import { createCoin } from "./coin.ts";
 import { createResultPanel } from "./result.ts";
@@ -30,10 +32,16 @@ export interface CellView {
   skip(): void;
   readonly rolling: boolean;
   readonly randomizer: Randomizer;
+  /**
+   * Show this randomizer's newer version — a quick edit, or an edit made
+   * elsewhere — keeping the answer on screen. False when it changed too much
+   * to update in place (another type, wheel to list): build a new cell then.
+   */
+  update(next: Randomizer): boolean;
 }
 
 export function createCell(
-  randomizer: Randomizer,
+  initial: Randomizer,
   opts: {
     onRoll?: () => void;
     onLanded?: (outcome: Outcome) => void;
@@ -44,25 +52,42 @@ export function createCell(
      * uses it, where a button's height is room the wheel could have.
      */
     clickToRoll?: boolean;
+    /**
+     * A double-tap on a slice edits its weight and saves the file (see
+     * quickweight.ts). Only for a randomizer in the library.
+     */
+    quickEdit?: boolean;
   } = {},
 ): CellView {
+  /** The randomizer as it stands now: `update` swaps in a newer version. */
+  let randomizer = initial;
   const result = createResultPanel(opts.clickToRoll ? "Click to roll" : "Ready");
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
   const coin = createCoin();
   let wheel: ReturnType<typeof createWheel> | null = null;
+  /**
+   * A list shown as a list: its outcomes, each one a pick. A board cell used
+   * to show nothing at all for one of these — only the answer under an empty
+   * stage — so a list on a board could be rolled but never seen.
+   */
+  let outcomeList: OutcomeListView | null = null;
+  /** The outcome the answer on screen came from, for putting the pointer back on it. */
+  let answerIndex: number | null = null;
+  const inPlay = () => {
+    const r = randomizer as Extract<Randomizer, { type: "list" }>;
+    return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
+  };
 
-  if (randomizer.type === "list" && randomizer.view === "wheel") {
+  if (randomizer.type === "list" && randomizer.view === "list") {
+    outcomeList = createOutcomeList({ items: inPlay, onPick: (i) => void roller.choose(i), name: randomizer.name });
+    stage.append(outcomeList.el);
+  } else if (randomizer.type === "list" && randomizer.view === "wheel") {
     wheel = createWheel({
-      items: () => {
-        const r = randomizer as Extract<Randomizer, { type: "list" }>;
-        return r.withoutReplacement ? withoutDrawn(r.items, bagDrawn(r.id)) : r.items;
-      },
+      items: inPlay,
       id: () => randomizer.id,
-      // With the whole cell as the button, the click reaches it anyway.
-      onActivate: () => {
-        if (!opts.clickToRoll) void rollCell();
-      },
+      onSliceEdit: opts.quickEdit && canQuickEdit(randomizer.id) ? (index, x, y) => quickEdit(index, x, y) : undefined,
+      onActivate: () => void rollCell(),
       size: 260,
       slices: () => (randomizer as Extract<Randomizer, { type: "list" }>).slices,
       colours: () => state.wheelColours((randomizer as Extract<Randomizer, { type: "list" }>).palette),
@@ -73,8 +98,38 @@ export function createCell(
   } else if (randomizer.type === "coin") {
     stage.append(coin.el);
   }
-  const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
-  result.reserve(longestOutcome(randomizer), { offer });
+  const reserve = () => {
+    const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
+    result.reserve(longestOutcome(randomizer), { offer });
+  };
+  reserve();
+
+  /** A double-tap on a slice: its weight, edited on the wheel and saved. */
+  function quickEdit(index: number, clientX: number, clientY: number): void {
+    if (randomizer.type !== "list" || !wheel || roller.rolling) return;
+    const item = randomizer.items[index];
+    if (!item) return;
+    openWeightEditor({
+      host: wheel.el, clientX, clientY, label: item.label, weight: item.weight,
+      onSave: (weight) => void saveOutcomeWeight(randomizer.id, item.id, weight).then((saved) => {
+        if (saved) update(saved);
+      }),
+    });
+  }
+
+  function update(next: Randomizer): boolean {
+    const shape = (r: Randomizer) => (r.type === "list" ? `list:${r.view}` : r.type);
+    if (next.id !== randomizer.id || shape(next) !== shape(randomizer)) return false;
+    randomizer = next;
+    wheel?.refresh();
+    // The slices changed size under a still pointer: turn the wheel back to
+    // the answer on screen, at once, so the two never disagree.
+    if (wheel && answerIndex !== null) void wheel.spinTo(answerIndex, { ...feelNow(), motion: "instant" });
+    outcomeList?.refresh();
+    reserve();
+    updateBagLine();
+    return true;
+  }
 
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
 
@@ -87,7 +142,10 @@ export function createCell(
   const refillButton = button("Refill", () => {
     bagRefill(randomizer.id);
     result.clear();
+    answerIndex = null;
     wheel?.refresh();
+    outcomeList?.mark(null);
+    outcomeList?.refresh();
     updateBagLine();
   }, { class: "ghost refill-bag" });
   const bagLine = h("div", { class: "row tight bag-line" }, bagCount, refillButton);
@@ -105,6 +163,7 @@ export function createCell(
   if (randomizer.type === "list" && randomizer.withoutReplacement) {
     void bagLoad(randomizer.id).then(() => {
       wheel?.refresh();
+      outcomeList?.refresh();
       updateBagLine();
     });
   }
@@ -118,7 +177,14 @@ export function createCell(
     feel: feelNow,
     live: true,
     onStart: () => opts.onRoll?.(),
-    onLanded: (outcome) => opts.onLanded?.(outcome),
+    onLanded: (outcome) => {
+      // A list shows what was drawn at once — there is no slice under a
+      // pointer to vanish — and marks the answer, rolled or picked.
+      answerIndex = outcome.itemIndex ?? null;
+      outcomeList?.refresh();
+      outcomeList?.mark(answerIndex);
+      opts.onLanded?.(outcome);
+    },
     from: opts.from,
     // The count changes at the landing; the wheel waits for the next roll, so
     // the winning slice does not vanish from under the pointer (as on the
@@ -156,9 +222,10 @@ export function createCell(
     el.tabIndex = 0;
     el.setAttribute("role", "button");
     el.setAttribute("aria-label", `Roll ${randomizer.name}`);
-    // A button inside the cell — an offered card, Refill — is its own
-    // press, not a roll.
-    const own = (e: Event) => Boolean((e.target as Element | null)?.closest?.("button, input, select, textarea, a"));
+    // A button inside the cell — an offered card, Refill, a list's outcome —
+    // is its own press, not a roll; and a wheel rolls from its hub only, so
+    // its slices can take a double-tap (the hub calls `rollCell` itself).
+    const own = (e: Event) => Boolean((e.target as Element | null)?.closest?.("button, input, select, textarea, a, .wheel-wrap, .weight-editor"));
     el.addEventListener("click", (e) => {
       if (!own(e)) void rollCell();
     });
@@ -177,6 +244,7 @@ export function createCell(
     skip: () => roller.skip(),
     get rolling() { return roller.rolling; },
     get randomizer() { return randomizer; },
+    update,
   };
 }
 

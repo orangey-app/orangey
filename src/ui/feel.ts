@@ -71,6 +71,13 @@ export const OFFER_FLIP_MS = 260;
  */
 export const QUICK_DEBOUNCE_MS = 300;
 
+/**
+ * How close together two taps on the same slice must be to count as a
+ * double-tap, which opens its weight for editing. Detected by hand rather than
+ * from the browser's dblclick, which a touch screen spends on zooming.
+ */
+export const DOUBLE_TAP_MS = 350;
+
 export const LIMITS = {
   wheelDuration: [400, 8000],
   turns: [1, 12],

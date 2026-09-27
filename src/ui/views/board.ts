@@ -23,7 +23,8 @@ import { cellRollButton, createCell, createMissingCell, type CellView } from "..
 import { advanceChain, chainTarget, createChainSurface, type ChainLink } from "../components/chain.ts";
 import type { Outcome } from "../roll.ts";
 import { createRecentRolls } from "../components/recent.ts";
-import { pickRandomizer } from "../components/picker.ts";
+import { pickRandomizers } from "../components/picker.ts";
+import { draggedPaths, LIBRARY_PATHS_TYPE } from "../dragpaths.ts";
 import { exportBoardZip } from "../storage-actions.ts";
 import { appBase, editHash, navigate, slideLink } from "../router.ts";
 import type { View } from "../view.ts";
@@ -146,7 +147,10 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     setChildren(grid, ...resolved.map(({ entry, randomizer }) => {
       if (!randomizer) return wrap(entry, createMissingCell(entry.name));
       let holder: HTMLElement | null = null;
-      const cell = createCell(randomizer, { onLanded: (outcome) => holder && landed(entry.id, holder, randomizer, outcome) });
+      const cell = createCell(randomizer, {
+        onLanded: (outcome) => holder && landed(entry.id, holder, cell.randomizer, outcome),
+        quickEdit: true,
+      });
       cells.push(cell);
       // A cell of its own to roll: one roll on a board is often the point, and
       // only a cell's own roll follows an outcome's link.
@@ -192,13 +196,35 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
     render();
   }
 
-  async function addEntry(r: Randomizer): Promise<void> {
-    if (board.entries.some((e) => e.id === r.id)) return;
-    if (board.entries.length >= BOARD_LIMIT) {
-      state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
+  /**
+   * Put several on at once — from the Add… window or a selection dragged
+   * from the library — in one save. What is already there, what is a board,
+   * and what would go past the limit are left off, and the toast says which.
+   */
+  async function addEntries(rs: readonly Randomizer[]): Promise<void> {
+    const entries = [...board.entries];
+    let already = 0;
+    let boards = 0;
+    let over = 0;
+    for (const r of rs) {
+      if (r.type === "board") boards++;
+      else if (entries.some((e) => e.id === r.id)) already++;
+      else if (entries.length >= BOARD_LIMIT) over++;
+      else entries.push({ id: r.id, name: r.name });
+    }
+    const added = entries.length - board.entries.length;
+    if (added > 0) await save({ ...board, entries });
+    if (rs.length === 1) {
+      // One at a time keeps the messages it always had.
+      if (over) state.toast(`A board holds at most ${BOARD_LIMIT} randomizers.`);
+      else if (boards) state.toast("A board cannot go on a board.");
       return;
     }
-    await save({ ...board, entries: [...board.entries, { id: r.id, name: r.name }] });
+    const left: string[] = [];
+    if (over) left.push(`${over} did not fit: a board holds at most ${BOARD_LIMIT}`);
+    if (already) left.push(`${already} ${already === 1 ? "was" : "were"} already on it`);
+    if (boards) left.push(`${boards} ${boards === 1 ? "is a board" : "are boards"}, which cannot go on a board`);
+    state.toast(`Added ${added} to the board.${left.length ? ` ${left.join("; ")}.` : ""}`);
   }
 
   /**
@@ -236,20 +262,22 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
    * what you want does not exist yet.
    */
   async function openPicker(): Promise<void> {
-    const picked = await pickRandomizer({
+    const picked = await pickRandomizers({
       title: "Add to the board",
       taken: () => new Set(board.entries.map((e) => e.id)),
       allowNew: true,
       allowLink: true,
       allowNotation: true,
+      room: () => BOARD_LIMIT - board.entries.length,
     });
-    if (!picked) return;
-    await addEntry(picked.randomizer);
-    if (picked.fresh) {
+    if (!picked?.length) return;
+    await addEntries(picked.map((p) => p.randomizer));
+    const [first] = picked;
+    if (picked.length === 1 && first.fresh) {
       await state.library.flush();
       // Back from its editor returns to this board, not to the new
       // randomizer's own play screen, where there is no Back at all.
-      navigate(editHash(picked.path, `#/r/${encodeURIComponent(node.path)}`));
+      navigate(editHash(first.path, `#/r/${encodeURIComponent(node.path)}`));
     }
   }
 
@@ -332,24 +360,23 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
 
   // The library tree drags a path as text/plain, so dropping a randomizer from
   // the sidebar onto the board is the same gesture as dropping it in a folder.
+  // A selection dragged from the library also carries every path it holds.
   grid.addEventListener("dragover", (e) => {
     if ((e as DragEvent).dataTransfer?.types.includes("text/plain")) e.preventDefault();
   });
   grid.addEventListener("drop", (e) => {
-    const path = (e as DragEvent).dataTransfer?.getData("text/plain");
+    const data = (e as DragEvent).dataTransfer;
+    const path = data?.getData("text/plain");
     if (!path) return;
     e.preventDefault();
-    const dropped = state.library.find(path)?.randomizer;
-    if (!dropped) return;
+    const paths = draggedPaths(data!.getData(LIBRARY_PATHS_TYPE), path);
+    const dropped = paths.map((p) => state.library.find(p)?.randomizer).filter((r): r is Randomizer => !!r);
+    if (dropped.length === 0) return;
     if (!editing) {
       state.toast("Press Edit board to add to it.");
       return;
     }
-    if (dropped.type === "board") {
-      state.toast("A board cannot go on a board.");
-      return;
-    }
-    void addEntry(dropped);
+    void addEntries(dropped);
   });
 
   // ---- temporary cells ----------------------------------------------------
@@ -564,11 +591,31 @@ export function createBoardView(node: LibraryNode, params: { roll?: boolean; pre
   let built = "";
   let destroyed = false;
   function renderIfChanged(): void {
-    if (signature() === built) {
+    const now = signature();
+    if (now === built || updateInPlace(now)) {
+      built = now;
       recent.refresh();
       return;
     }
     render();
+  }
+
+  /**
+   * The same randomizers in the same places, only some of them edited — a
+   * quick edit of a weight, or a change saved in another tab: those cells
+   * take the new version and every other cell keeps its answer. Anything more
+   * (an entry added, removed or gone, a wheel turned into a list) is a
+   * rebuild.
+   */
+  function updateInPlace(now: string): boolean {
+    const shape = (sig: string) => sig.replace(/:[^|]*/g, "");
+    if (shape(now) !== shape(built)) return false;
+    for (const { entry, randomizer } of resolve()) {
+      const cell = cells.find((c) => c.randomizer.id === entry.id);
+      if (!randomizer || !cell) return false;
+      if (cell.randomizer !== randomizer && !cell.update(randomizer)) return false;
+    }
+    return true;
   }
 
   // A randomizer edited elsewhere, or deleted, changes what a board shows.

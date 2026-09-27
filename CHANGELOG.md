@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+Picking from a list, a wheel's weights changed where it is played, several
+randomizers onto a board at once, and a library that scrolls on its own.
+
+- **Pick from a list.** A list shown as a list is now a column of buttons,
+  one per outcome with its odds: press one and it is the answer, as if it had
+  been rolled — announced, taken out of a bag, and followed when it goes to
+  another randomizer, which opens beside it (on a board, in the next cell).
+  History and the chain say *picked, not rolled*, so a pick is never passed
+  off as luck. It works on the play screen, on a board without pressing Edit
+  board, and in a pop-out. A long list scrolls within itself.
+- **Change a slice's weight where the wheel is.** Double-click a slice (or
+  double-tap it on a tablet) and a small box opens with that outcome's
+  weight; Save writes the randomizer's file, as the editor would, so the
+  change holds on every board it is on. On a board the other cells keep
+  their answers. It works on the play screen, on a board without edit mode,
+  and in a pop-out, for any wheel in your library.
+- **A wheel rolls from its centre.** The hub now carries a roll arrow and is
+  the thing to click; a click elsewhere on the wheel does nothing, which is
+  what leaves the double-click free. The Roll buttons, Space and Enter are
+  unchanged, and dice, the coin and a pop-out's answer still roll where they
+  are clicked.
+- **Several onto a board at once.** In a board's Add… window, Ctrl-click
+  (⌘-click on a Mac) chooses more than one, Shift-click chooses a run, and a
+  right-click on a folder chooses everything in it; **Add N** puts them on.
+  In the library, Ctrl- and Shift-click select rather than open, a folder's
+  menu has **Select all in this folder**, and dragging a selected row onto a
+  board in edit mode adds the whole selection. Either way, what is already
+  on the board is skipped, a board holds 12 as before, and a toast says what
+  was left off. A selection is only for adding to boards: moving and
+  deleting are still one at a time. Escape or Clear lets it go.
+- **The library scrolls by itself.** On a computer the library panel and the
+  main screen each have their own scroll bar. A long library used to make the
+  whole page long, and scrolling down to reach a randomizer scrolled the
+  wheel out of view.
+
 ## 0.7.0
 
 Randomizers and boards that pop out into a window on top of everything else,

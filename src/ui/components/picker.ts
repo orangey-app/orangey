@@ -8,6 +8,12 @@
  * The dialog shows the library as a tree, flattens to matches while you type,
  * takes a link someone sent you, and can make a new randomizer on the spot —
  * because the thing you want to put on a board often does not exist yet.
+ *
+ * A board takes several at once (`pickRandomizers`): Ctrl-click (⌘ on a Mac)
+ * chooses one more, Shift-click a run of them, and a right-click on a folder
+ * chooses everything in it. Once something is chosen, a plain click chooses
+ * too — on an iPad there is no Ctrl — and "Add N" adds the lot. With nothing
+ * chosen, a click adds that one at once, as it always did.
  */
 
 import { emptyRandomizer, type DiceRandomizer, type Randomizer, type RollableType } from "../../model/randomizer.ts";
@@ -34,6 +40,8 @@ export interface PickerOptions {
   allowLink?: boolean;
   /** Take dice notation typed into the search box, such as "2d6 + 3". */
   allowNotation?: boolean;
+  /** How many more fit (a board's limit), so choosing past it can say so. */
+  room?: () => number;
 }
 
 /**
@@ -53,16 +61,36 @@ const NEW_TYPES: [RollableType, string][] = [
   ["number", "New number"],
 ];
 
+/** One randomizer: where an outcome goes. */
 export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | null> {
+  return openPicker(opts, false).then((picked) => picked?.[0] ?? null);
+}
+
+/** One or several, in library order: what goes on a board. */
+export function pickRandomizers(opts: PickerOptions): Promise<PickedRandomizer[] | null> {
+  return openPicker(opts, true);
+}
+
+function openPicker(opts: PickerOptions, multiple: boolean): Promise<PickedRandomizer[] | null> {
   return new Promise((resolve) => {
     const taken = opts.taken?.() ?? new Set<string>();
     let answered = false;
-    const finish = (picked: PickedRandomizer | null) => {
+    const finish = (picked: PickedRandomizer[] | null) => {
       if (answered) return;
       answered = true;
       dialog.close();
       resolve(picked);
     };
+    const finishOne = (picked: PickedRandomizer) => finish([picked]);
+
+    /**
+     * What is chosen so far, by path. A Shift-click reaches back to `anchor`,
+     * the last row clicked on its own terms; `drawn` is the order the choice
+     * rows are drawn in, which is what a run runs along.
+     */
+    const chosen = new Set<string>();
+    let anchor: string | null = null;
+    let drawn: LibraryNode[] = [];
 
     const list = h("div", { class: "picker-tree" });
     const search = h("input", { type: "search", placeholder: "Search your library", "aria-label": "Search your library" });
@@ -71,7 +99,57 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
 
     function choose(node: LibraryNode): void {
       if (!node.randomizer) return;
-      finish({ randomizer: node.randomizer, path: node.path, fresh: false });
+      finishOne({ randomizer: node.randomizer, path: node.path, fresh: false });
+    }
+
+    /** Whether this row can be chosen: a randomizer that is not already there. */
+    function choosable(node: LibraryNode): boolean {
+      const r = node.randomizer;
+      return node.kind === "file" && !!r && r.type !== "board" && !taken.has(r.id);
+    }
+
+    function clicked(node: LibraryNode, e: MouseEvent): void {
+      const toggle = e.ctrlKey || e.metaKey;
+      if (!multiple || (!toggle && !e.shiftKey && chosen.size === 0)) {
+        choose(node);
+        return;
+      }
+      if (e.shiftKey && anchor !== null) {
+        const from = drawn.findIndex((n) => n.path === anchor);
+        const to = drawn.findIndex((n) => n.path === node.path);
+        if (from >= 0 && to >= 0) {
+          for (const n of drawn.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+            if (choosable(n)) chosen.add(n.path);
+          }
+          render();
+          return;
+        }
+      }
+      if (chosen.has(node.path)) chosen.delete(node.path);
+      else chosen.add(node.path);
+      anchor = node.path;
+      render();
+    }
+
+    /** Everything choosable directly in a folder: chosen, or unchosen if it all was. */
+    function chooseFolder(folder: LibraryNode): void {
+      const inside = (folder.children ?? []).filter(choosable);
+      if (inside.length === 0) return;
+      const all = inside.every((n) => chosen.has(n.path));
+      for (const n of inside) {
+        if (all) chosen.delete(n.path);
+        else chosen.add(n.path);
+      }
+      open.add(folder.path);
+      render();
+    }
+
+    /** The chosen ones, in the order the library lists them. */
+    function add(): void {
+      const picked = state.library.files()
+        .filter((n) => chosen.has(n.path) && n.randomizer)
+        .map((n) => ({ randomizer: n.randomizer!, path: n.path, fresh: false }));
+      if (picked.length) finish(picked);
     }
 
     /** One row: a folder you can open, or a randomizer you can choose. */
@@ -82,7 +160,18 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
           if (isOpen) open.delete(node.path);
           else open.add(node.path);
           render();
-        }, { class: "ghost picker-row picker-folder", style: { paddingLeft: `${8 + depth * 14}px` } });
+        }, {
+          class: "ghost picker-row picker-folder", style: { paddingLeft: `${8 + depth * 14}px` },
+          ...(multiple ? { title: "Right-click to choose everything in it" } : {}),
+        });
+        // In a modal dialog a menu would open behind it, so the right-click
+        // does the one thing the menu would offer.
+        if (multiple) {
+          control.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            chooseFolder(node);
+          });
+        }
         return control;
       }
       const already = node.randomizer ? taken.has(node.randomizer.id) : false;
@@ -90,11 +179,18 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
       // "attack-roll.orangey.json".
       const shown = node.randomizer?.name ?? node.name;
       const label = where ? `${shown} — ${where}` : shown;
-      const choice = button(label, () => choose(node), {
-        class: `ghost picker-row picker-choice${already ? " picker-taken" : ""}`,
+      const isChosen = chosen.has(node.path);
+      const choice = h("button", {
+        type: "button",
+        class: `ghost picker-row picker-choice${already ? " picker-taken" : ""}${isChosen ? " picker-chosen" : ""}`,
         style: { paddingLeft: `${8 + depth * 14}px` },
+        onclick: (e: Event) => clicked(node, e as MouseEvent),
         ...(already ? { disabled: "", title: "Already there" } : {}),
-      });
+        ...(multiple && chosen.size > 0 ? { "aria-pressed": String(isChosen) } : {}),
+      }, label);
+      // Shift-click would select the page's text; the row is what is meant.
+      if (multiple) choice.addEventListener("mousedown", (e) => { if ((e as MouseEvent).shiftKey) e.preventDefault(); });
+      drawn.push(node);
       return choice;
     }
 
@@ -117,6 +213,7 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
     function render(): void {
       const query = (search as HTMLInputElement).value.trim();
       const rows: HTMLElement[] = [];
+      drawn = [];
       const notation = typedNotation();
       if (notation) {
         rows.push(button(`🎲 Add ${notation}`, () => void useNotation(notation), { class: "ghost picker-row picker-notation" }));
@@ -138,13 +235,36 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
         note.textContent = rows.length ? "" : "Your library is empty.";
       }
       setChildren(list, ...rows);
+      renderChosen();
+    }
+
+    const addChosen = button("Add", () => add(), { class: "primary picker-add" });
+    const chosenNote = h("p", { class: "faint picker-chosen-note", "aria-live": "polite" });
+    function renderChosen(): void {
+      if (!multiple) return;
+      const count = chosen.size;
+      addChosen.hidden = count === 0;
+      addChosen.textContent = `Add ${count}`;
+      const room = opts.room?.() ?? Infinity;
+      chosenNote.textContent = count === 0
+        ? "Ctrl-click or Shift-click to choose several; right-click a folder for all of it."
+        : count > room
+          ? `${count} chosen. There is room for ${room} more, so only the first ${room} will go on.`
+          : `${count} chosen. Click more to add them, or press Add ${count}.`;
     }
 
     search.addEventListener("input", render);
     search.addEventListener("keydown", (e) => {
       if ((e as KeyboardEvent).key !== "Enter") return;
       const notation = typedNotation();
-      if (!notation) return;
+      if (!notation) {
+        // Enter in the search box adds what is chosen, when something is.
+        if (multiple && chosen.size > 0) {
+          e.preventDefault();
+          add();
+        }
+        return;
+      }
       e.preventDefault();
       void useNotation(notation);
     });
@@ -164,13 +284,13 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
         for (const child of state.library.find(folder)?.children ?? []) {
           const r = child.randomizer;
           if (r?.type === "dice" && !taken.has(r.id) && diceNotation(r.expression) === expression) {
-            finish({ randomizer: r, path: child.path, fresh: false });
+            finishOne({ randomizer: r, path: child.path, fresh: false });
             return;
           }
         }
         const randomizer = { ...emptyRandomizer("dice", expression), expression } as DiceRandomizer;
         const path = await state.library.create(folder, randomizer);
-        finish({ randomizer, path, fresh: false });
+        finishOne({ randomizer, path, fresh: false });
       } finally {
         making = false;
       }
@@ -189,7 +309,7 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
       if (!name) return;
       const randomizer = emptyRandomizer(type, name);
       const path = await state.library.create("", randomizer);
-      finish({ randomizer, path, fresh: true });
+      finishOne({ randomizer, path, fresh: true });
     }
 
     async function useLink(raw: string): Promise<void> {
@@ -217,7 +337,7 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
         const randomizer = await decodeRandomizer(embedded[1]);
         const path = await state.library.create("", randomizer);
         note.textContent = "";
-        finish({ randomizer, path, fresh: false });
+        finishOne({ randomizer, path, fresh: false });
         state.toast(`"${randomizer.name}" was saved to your library first, so this can point at it.`);
       } catch {
         note.textContent = "That link is damaged, so there is nothing to point at.";
@@ -239,10 +359,12 @@ export function pickRandomizer(opts: PickerOptions): Promise<PickedRandomizer | 
       search,
       list,
       note,
+      multiple ? chosenNote : null,
       h("div", { class: "row" },
         opts.allowLink ? linkField : null,
         opts.allowLink ? button("Use link", () => void useLink((linkField as HTMLInputElement).value), { class: "ghost use-link" }) : null,
         h("span", { class: "spacer" }),
+        multiple ? addChosen : null,
         button("Close", () => finish(null), { class: "picker-close" }),
       ),
     ) as HTMLDialogElement;

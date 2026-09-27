@@ -33,14 +33,19 @@ import {
 } from "../../core/wheel-geometry.ts";
 import { CryptoSource } from "../../core/rng.ts";
 import type { ListItem } from "../../model/randomizer.ts";
-import { easeSpin, motionScale, overshootFraction, settleForSpin, wheelDuration, type FeelSettings } from "../feel.ts";
+import { DOUBLE_TAP_MS, easeSpin, motionScale, overshootFraction, settleForSpin, wheelDuration, type FeelSettings } from "../feel.ts";
 import { h, s, setChildren, windowOf } from "../dom.ts";
 import { imageUrl, imageUrlSync } from "../../storage/images.ts";
 
 export const LABEL_LIMIT = 48;
 export const TICKER_LIMIT = 200;
 /** The disc at the centre; labels stop short of it. */
-const HUB_RADIUS = 16;
+/**
+ * The hub is the wheel's Roll button — a click on a slice does not roll, so a
+ * double-tap there can open the slice's weight instead — so it is sized to be
+ * hit, not only to cover where the slices meet.
+ */
+const HUB_RADIUS = 22;
 
 /** Weight of the wheel's labels; the same value is in .wheel-label in app.css. */
 const WHEEL_LABEL_WEIGHT = 600;
@@ -79,8 +84,13 @@ export interface WheelView {
 export interface WheelOptions {
   items: () => ListItem[];
   id: () => string;
-  /** Called when the user clicks the wheel itself. */
+  /** Called when the user clicks the hub, the wheel's own Roll button. */
   onActivate?: () => void;
+  /**
+   * Called on a double-tap (or double-click) on a slice, with the outcome's
+   * index and where the tap was. Left out, slices do nothing.
+   */
+  onSliceEdit?: (index: number, clientX: number, clientY: number) => void;
   size?: number;
   /** What a slice with a picture shows; left out, the picture. */
   slices?: () => SliceContent | undefined;
@@ -114,6 +124,8 @@ export function createWheel(opts: WheelOptions): WheelView {
   };
 
   let rotor: SVGElement | null = null;
+  /** The last tap on a slice, to tell a double-tap from two single ones. */
+  let lastTap: { index: number; at: number; x: number; y: number } | null = null;
   let tickerStrip: HTMLElement | null = null;
 
   function computeColors(): void {
@@ -188,7 +200,7 @@ export function createWheel(opts: WheelOptions): WheelView {
       return [
         s("clipPath", { id: `slice-${key}` }, s("path", { d: arcPath(seg, cx, cy, radius) })),
         s("clipPath", { id: `disc-${key}` }, s("circle", { cx: String(cxImg), cy: String(cyImg), r: String(side / 2) })),
-        s("g", { "clip-path": `url(#slice-${key})` },
+        s("g", { "clip-path": `url(#slice-${key})`, "data-index": String(seg.index) },
           s("image", {
             href: url,
             x: String(cxImg - side / 2),
@@ -247,20 +259,27 @@ export function createWheel(opts: WheelOptions): WheelView {
       "stroke-width": "1.5",
     });
 
+    // The hub: a circle, and when it rolls, a turning arrow to say so.
+    const hub = s("g", { class: opts.onActivate ? "wheel-hub rolls" : "wheel-hub", onclick: () => opts.onActivate?.() },
+      s("circle", { cx: String(cx), cy: String(cy), r: String(HUB_RADIUS), fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
+      opts.onActivate ? rollMark() : null,
+      opts.onActivate ? s("title", { text: "Roll" }) : null,
+    );
+
     const svg = s(
       "svg",
       {
-        class: "wheel-svg",
+        class: opts.onSliceEdit ? "wheel-svg editable" : "wheel-svg",
         viewBox: `0 0 ${size} ${size}`,
         role: "img",
         "aria-label": `Wheel with ${segments.length} possible outcomes`,
-        onclick: () => opts.onActivate?.(),
       },
       s("circle", { cx: String(cx), cy: String(cy), r: String(radius + 2), fill: "var(--border)" }),
       rotor,
-      s("circle", { cx: String(cx), cy: String(cy), r: String(HUB_RADIUS), fill: "var(--bg-raised)", stroke: "var(--border-strong)" }),
+      hub,
       pointer,
     );
+    svg.addEventListener("pointerup", (e) => sliceTap(e as PointerEvent));
     if (wanted.size) {
       const drawnAt = renderCount;
       const ids = [...wanted];
@@ -272,6 +291,47 @@ export function createWheel(opts: WheelOptions): WheelView {
       });
     }
     return h("div", { class: "wheel-holder" }, svg);
+  }
+
+  /** A circular arrow inside the hub: this is where the wheel is spun. */
+  function rollMark(): SVGElement {
+    const r = HUB_RADIUS * 0.5;
+    const rad = (deg: number) => (deg * Math.PI) / 180;
+    const start = rad(-60);
+    const end = rad(210);
+    const [x1, y1] = [cx + r * Math.cos(start), cy + r * Math.sin(start)];
+    const [x2, y2] = [cx + r * Math.cos(end), cy + r * Math.sin(end)];
+    // Clockwise on screen: the way ahead at the end is along (−sin, cos); the
+    // head's barbs sit back from its tip, either side of the arc.
+    const [tx, ty] = [-Math.sin(end), Math.cos(end)];
+    const [nx, ny] = [Math.cos(end), Math.sin(end)];
+    const tip = [x2 + tx * 3, y2 + ty * 3];
+    const barb = (side: number) => [x2 - tx * 2 + nx * 3.5 * side, y2 - ty * 2 + ny * 3.5 * side];
+    const [b1, b2] = [barb(1), barb(-1)];
+    return s("g", { class: "wheel-roll-mark", fill: "none", stroke: "var(--ink-soft)", "stroke-width": "2.2", "stroke-linecap": "round", "stroke-linejoin": "round" },
+      s("path", { d: `M ${x1} ${y1} A ${r} ${r} 0 1 1 ${x2} ${y2}` }),
+      s("path", { d: `M ${b1[0]} ${b1[1]} L ${tip[0]} ${tip[1]} L ${b2[0]} ${b2[1]}` }),
+    );
+  }
+
+  /**
+   * A tap on a slice: the second one close in time and place on the same
+   * slice is a double-tap, which opens its weight. Never while spinning — the
+   * slice under the finger is moving — and never on the hub, which rolls.
+   */
+  function sliceTap(e: PointerEvent): void {
+    if (!opts.onSliceEdit || cancelSpin) return;
+    const hit = (e.target as Element | null)?.closest?.("[data-index]");
+    if (!hit) {
+      lastTap = null;
+      return;
+    }
+    const index = Number(hit.getAttribute("data-index"));
+    const now = performance.now();
+    const again = lastTap && lastTap.index === index && now - lastTap.at < DOUBLE_TAP_MS
+      && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 24;
+    lastTap = again ? null : { index, at: now, x: e.clientX, y: e.clientY };
+    if (again) opts.onSliceEdit(index, e.clientX, e.clientY);
   }
 
   function renderTicker(): HTMLElement {

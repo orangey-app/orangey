@@ -363,7 +363,11 @@ class AppState {
     // What a row says beyond its headline: the dice inside the outcome and,
     // for a pick, what it was picked from. Both ride in `parts`, the row's
     // existing details line, rather than in a field of their own.
-    const parts = [...(outcome.rolled ?? []), ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : [])];
+    const parts = [
+      ...(outcome.rolled ?? []),
+      ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : []),
+      ...(outcome.picked ? ["picked, not rolled"] : []),
+    ];
     const entry: HistoryRow = {
       id: newId(),
       at: Date.now(),

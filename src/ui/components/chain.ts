@@ -32,6 +32,8 @@ export const CHAIN_FULL_SIZE = 2;
 export interface ChainTarget {
   id: string;
   label: string;
+  /** The outcome was picked from a list, not rolled; the chain says which. */
+  picked?: true;
 }
 
 export interface ChainLink {
@@ -42,6 +44,8 @@ export interface ChainLink {
   from: string;
   /** false when the library no longer has it: it opens all the same. */
   found: boolean;
+  /** The outcome that opened it was picked from a list rather than rolled. */
+  picked?: true;
 }
 
 export interface ChainAdvance {
@@ -56,7 +60,7 @@ export type ChainSlot = "full" | "icon";
 export function chainTarget(r: Randomizer, outcome: Outcome): ChainTarget | null {
   if (r.type !== "list" || outcome.itemIndex === undefined) return null;
   const item = r.items[outcome.itemIndex];
-  return item?.goesTo ? { id: item.goesTo, label: item.label } : null;
+  return item?.goesTo ? { id: item.goesTo, label: item.label, ...(outcome.picked ? { picked: true as const } : {}) } : null;
 }
 
 /**
@@ -85,7 +89,13 @@ export function advanceChain(
 
   const found = look(target.id);
   return {
-    links: [...kept, { id: target.id, name: found?.name ?? target.label, from: target.label, found: found !== null }],
+    links: [...kept, {
+      id: target.id,
+      name: found?.name ?? target.label,
+      from: target.label,
+      found: found !== null,
+      ...(target.picked ? { picked: true as const } : {}),
+    }],
     note: null,
   };
 }
@@ -109,7 +119,7 @@ export function createChainSurface(
   sender: string,
   opts: { onLanded?: (outcome: Outcome) => void; onRoll?: () => void; clickToRoll?: boolean } = {},
 ): { el: HTMLElement; cell: CellView | null } {
-  const from = h("p", { class: "faint chain-from", text: `${sender} rolled ${link.from}` });
+  const from = h("p", { class: "faint chain-from", text: `${sender} ${link.picked ? "picked" : "rolled"} ${link.from}` });
   const found = state.library.findById(link.id)?.randomizer ?? null;
   if (!found) {
     // The same tone as a board's gap: the outcome still comes up and still

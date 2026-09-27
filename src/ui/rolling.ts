@@ -21,9 +21,9 @@ import type { ResultPanel } from "./components/result.ts";
 import type { WheelView } from "./components/wheel.ts";
 import type { DiceTray } from "./components/dice.ts";
 import type { CoinView } from "./components/coin.ts";
-import { chosenFromOffer, offerFromList, rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
+import { chosenFromOffer, offerFromList, pickedOutcome, rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
 import { bagDrawn, bagTake } from "./bag.ts";
-import { withoutDrawn } from "../core/weighted.ts";
+import { isRollable, withoutDrawn } from "../core/weighted.ts";
 import { summarize } from "./mascot/events.ts";
 import { state } from "./state.ts";
 import type { RollOrigin } from "../storage/appdb.ts";
@@ -84,6 +84,12 @@ export interface Roller {
   readonly choosing: boolean;
   /** Take the card at this position; nothing happens when no offer is open. */
   pick(at: number): Promise<void>;
+  /**
+   * The player picks this outcome of a list: it lands as the answer, with no
+   * draw. Nothing happens mid-roll, with cards or a hidden roll waiting, or
+   * for an outcome that cannot come up (off, weightless, or out of the bag).
+   */
+  choose(itemIndex: number): Promise<void>;
 }
 
 export function createRoller(opts: RollerOptions): Roller {
@@ -124,6 +130,16 @@ export function createRoller(opts: RollerOptions): Roller {
     // mascot and the history row, as for any roll. The wheel stayed still
     // while the cards were out and now simply shows the pick.
     await land(randomizer, chosenFromOffer(randomizer.name, outcomes, at), bag, false);
+  }
+
+  async function choose(itemIndex: number): Promise<void> {
+    if (rolling || offered || held) return;
+    const randomizer = opts.randomizer();
+    if (randomizer.type !== "list") return;
+    const item = randomizer.items[itemIndex];
+    const bag = randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
+    if (!item || !isRollable(item) || bag?.has(item.id)) return;
+    await land(randomizer, pickedOutcome(randomizer, itemIndex, state.source()), bag, false);
   }
 
   function skip(): void {
@@ -305,6 +321,7 @@ export function createRoller(opts: RollerOptions): Roller {
       return offered !== null;
     },
     pick,
+    choose,
     discard() {
       held = null;
       offered = null;

@@ -253,6 +253,20 @@ async function main() {
     await page.setViewport(1280, 900);
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".side")).display`), "block");
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".tabbar")).display`), "none");
+    // The library scrolls on its own: a long one used to lengthen the whole
+    // page, and scrolling to its end took the randomizer out of view.
+    const scroll = await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      for (let i = 0; i < 40; i++) {
+        await state.library.create("", { id: "long" + i, type: "coin", name: "Coin " + i, faces: ["Heads", "Tails"], created: now, modified: now });
+      }
+      await new Promise((r) => setTimeout(r, 100));
+      const side = document.querySelector(".side");
+      return { page: document.documentElement.scrollHeight, window: innerHeight, side: side.scrollHeight > side.clientHeight };
+    `);
+    assert.ok(scroll.page <= scroll.window, `the page grew to ${scroll.page}px with the library`);
+    assert.ok(scroll.side, "the library should scroll within its own panel");
     await page.setViewport(375, 720);
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".side")).display`), "none");
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".tabbar")).display`), "flex");
@@ -1702,7 +1716,12 @@ async function main() {
 
     // Rolling one cell leaves the other cell's answer where it was.
     const before = shown[1];
-    await page.evaluate(`document.querySelectorAll(".cell-holder")[0].querySelector(".wheel-svg").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    // A wheel rolls from its hub; a click on a slice does nothing (a
+    // double-tap there edits the slice's weight).
+    await page.evaluate(`document.querySelectorAll(".cell-holder")[0].querySelector(".wheel-rotor path").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(await page.evaluate(`return window.orangey.state.history.length`), 2, "a click on a slice rolled the wheel");
+    await page.evaluate(`document.querySelectorAll(".cell-holder")[0].querySelector(".wheel-hub").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
     await page.waitForFunction(`window.orangey.state.history.length === 3`);
     const after = await page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((el) => el.textContent)`);
     assert.equal(after[1], before, "rolling one cell should not disturb the others");
@@ -2568,8 +2587,13 @@ async function main() {
     assert.ok(fit.wheel > Math.min(fit.width, fit.height) * 0.6, `the wheel is ${Math.round(fit.wheel)}px in a ${fit.width}x${fit.height} window`);
     assert.ok(fit.wheel <= fit.width && !fit.scrolls, "the wheel spills out of the window");
 
-    // Rolled in the pop-out by a click on it, recorded in the tab like any roll.
-    await pip(`d.querySelector(".cell-stage").click()`);
+    // A wheel rolls from its hub: a click on a slice is left for a double
+    // click, which edits it, so it rolls nothing.
+    await pip(`d.querySelector(".wheel-rotor path[data-index]").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(await rows(), 0, "a click on a slice in the pop-out rolled the wheel");
+    // Rolled in the pop-out by a click on its hub, recorded in the tab like any roll.
+    await pip(`d.querySelector(".wheel-hub").dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
     await page.waitForFunction(`window.orangey.state.history.length === 1`);
     assert.equal(await pip(`return d.querySelector(".result-value").textContent`), "Dragon");
     // Where the answer leads: a button, and the swap happens in place.
@@ -2613,6 +2637,162 @@ async function main() {
     await open(page, `#/r/${encodeURIComponent(boardPath)}`);
     await page.waitForFunction(`document.querySelector(".present-button")`);
     assert.equal(await page.evaluate(`return document.querySelector(".popout-button")`), null);
+  });
+
+  await test("AI a list is picked from as well as rolled, and a wheel's slice is weighted where it is played", async (page) => {
+    await open(page, "", { fresh: true });
+    await createList(page, "Hoard", [{ label: "Gold", weight: 1 }]);
+    const path = await createList(page, "Encounters", [
+      { label: "Goblins", weight: 1 }, { label: "Dragon", weight: 1, goesTo: "Hoard" }, { label: "Nothing", weight: 1 },
+    ], "list");
+    await createList(page, "Weather", [{ label: "Sun", weight: 1 }, { label: "Rain", weight: 1 }]);
+    const rows = () => page.evaluate(`return window.orangey.state.history.length`);
+    const pick = (scope, label) => page.evaluate(`
+      [...document.querySelectorAll(${JSON.stringify(`${scope} .outcome-pick`)})].find((b) => b.textContent.includes(${JSON.stringify(label)})).click()`);
+
+    // Every outcome of a list shown as a list is a button, with its odds.
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelectorAll(".outcome-pick").length === 3`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".outcome-list")).overflowY`), "auto", "a long list scrolls within itself");
+    // Pressing one makes it the answer — recorded as picked, not rolled.
+    await pick(".play-card", "Dragon");
+    await page.waitForFunction(`window.orangey.state.history.length === 1`);
+    assert.deepEqual(
+      await page.evaluate(`const h = window.orangey.state.history[0]; return [h.resultText, h.parts]`),
+      ["Dragon", ["picked, not rolled"]],
+    );
+    assert.equal(await page.evaluate(`return document.querySelector(".outcome-pick[aria-current=true] .outcome-label").textContent`), "Dragon");
+    // Where it goes opens beside it, as a roll's would, and says it was picked.
+    await page.waitForFunction(`document.querySelector(".chain-link")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".chain-link .cell-name").textContent`), "Hoard");
+    assert.match(await page.evaluate(`return document.querySelector(".chain-from").textContent`), /picked Dragon/);
+
+    // On a board, without editing it.
+    const board = await createBoard(page, "Tonight", ["Weather", "Encounters"]);
+    await open(page, `#/r/${encodeURIComponent(board)}`);
+    await page.waitForFunction(`document.querySelector('[data-entry="Weather"] .wheel-hub') && document.querySelector('[data-entry="Encounters"] .outcome-pick')`);
+    await page.evaluate(`window.orangey.state.setFeel({ motion: "instant" })`);
+    assert.equal(await page.evaluate(`return document.querySelector(".edit-board").getAttribute("aria-pressed")`), "false");
+    const before = await rows();
+    await pick('[data-entry="Encounters"]', "Goblins");
+    await page.waitForFunction(`window.orangey.state.history.length === ${before + 1}`);
+    // A wheel's slice does not roll it; its hub does.
+    await page.evaluate(`document.querySelector('[data-entry="Weather"] .wheel-rotor path[data-index]').dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(await rows(), before + 1, "a click on a slice rolled the wheel");
+    await page.evaluate(`document.querySelector('[data-entry="Weather"] .wheel-hub').dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await page.waitForFunction(`window.orangey.state.history.length === ${before + 2}`);
+    const answers = () => page.evaluate(`return [...document.querySelectorAll(".cell .result-value")].map((e) => e.textContent)`);
+    const shown = await answers();
+    assert.equal(shown[1], "Goblins");
+
+    // A double tap on a slice opens its weight; one tap does not.
+    const tap = (times) => page.evaluate(`
+      const el = document.querySelector('[data-entry="Weather"] .wheel-rotor path[data-index="0"]');
+      const r = el.getBoundingClientRect();
+      for (let k = 0; k < ${times}; k++) {
+        el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+      }`);
+    await tap(1);
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(await page.evaluate(`return document.querySelector(".weight-editor")`), null, "one tap opened the weight box");
+    await tap(2);
+    await page.waitForFunction(`document.querySelector(".weight-editor .weight-input")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".weight-editor .weight-label").textContent`), "Sun");
+    await page.evaluate(`
+      const input = document.querySelector(".weight-input");
+      input.value = "4";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));`);
+    // Saved to the file, as the editor would have…
+    await page.waitForFunction(`!document.querySelector(".weight-editor")`);
+    const weights = () => page.evaluate(`
+      const { state } = window.orangey;
+      await state.library.flush();
+      return JSON.parse(await state.library.backend.read(state.library.findById("Weather").path)).randomizer.items.map((i) => i.weight);`);
+    for (let i = 0; i < 20 && (await weights())[0] !== 4; i++) await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(await weights(), [4, 1]);
+    // …and the board kept every answer it had.
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(await answers(), shown, "an edit wiped the board's answers");
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AJ several randomizers go on a board at once, from the Add… window and from the library", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.setViewport(1280, 800);
+    const board = await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const folder = await state.library.createFolder("", "Tables");
+      for (const name of ["Alpha", "Bravo", "Charlie", "Delta"]) {
+        await state.library.create(folder, { id: name, type: "list", name, view: "list", created: now, modified: now,
+          items: [{ id: "a", label: "A", weight: 1 }] });
+      }
+      await state.library.flush();
+      await state.savePrefs({ expandedFolders: [folder] });
+      return await state.library.create("", { id: "Tonight", type: "board", name: "Tonight", entries: [], created: now, modified: now });
+    `);
+    const click = (selector, text, mods = {}) => page.evaluate(`
+      const row = [...document.querySelectorAll(${JSON.stringify(selector)})].find((r) => r.textContent.includes(${JSON.stringify(text)}));
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true, ...${JSON.stringify(mods)} }));`);
+    const entries = () => page.evaluate(`return window.orangey.state.library.findById("Tonight").randomizer.entries.map((e) => e.name)`);
+
+    // In the Add… window: Ctrl-click one, Shift-click to the end of a run.
+    await open(page, `#/r/${encodeURIComponent(board)}`);
+    await page.waitForFunction(`document.querySelector(".add-to-board")`);
+    await page.click(".add-to-board");
+    await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
+    await click(".picker-folder", "Tables");
+    await page.waitForFunction(`document.querySelectorAll(".picker-choice").length === 4`);
+    await click(".picker-choice", "Alpha", { ctrlKey: true });
+    await click(".picker-choice", "Charlie", { shiftKey: true });
+    assert.deepEqual(await page.evaluate(`return [...document.querySelectorAll(".picker-chosen")].map((e) => e.textContent)`), ["Alpha", "Bravo", "Charlie"]);
+    assert.equal(await page.evaluate(`return document.querySelector(".picker-add").textContent`), "Add 3");
+    await page.click(".picker-add");
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 3`);
+    assert.deepEqual(await entries(), ["Alpha", "Bravo", "Charlie"]);
+
+    // A right-click on a folder chooses what in it is not there yet.
+    await page.click(".add-to-board");
+    await page.waitForFunction(`document.querySelector(".picker-dialog[open]")`);
+    await page.evaluate(`[...document.querySelectorAll(".picker-folder")].find((r) => r.textContent.includes("Tables"))
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
+    assert.deepEqual(await page.evaluate(`return [...document.querySelectorAll(".picker-chosen")].map((e) => e.textContent)`), ["Delta"]);
+    await page.click(".picker-close");
+    await page.waitForFunction(`!document.querySelector(".picker-dialog[open]")`);
+
+    // In the library: Ctrl-click chooses rather than opens, and dragging one
+    // chosen row carries them all; the one already there is left off.
+    await click(".library .tree-row", "Bravo", { ctrlKey: true });
+    await click(".library .tree-row", "Delta", { ctrlKey: true });
+    assert.equal(await page.evaluate(`return location.hash`), `#/r/${encodeURIComponent(board)}`, "a Ctrl-click opened the randomizer");
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".library .tree-row.selected").length`), 2);
+    await page.evaluate(`
+      const data = new DataTransfer();
+      const row = [...document.querySelectorAll(".library .tree-row")].find((r) => r.textContent.includes("Delta"));
+      const grid = document.querySelector(".board-grid");
+      row.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: data }));
+      grid.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data }));
+      grid.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+      row.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: data }));`);
+    await page.waitForFunction(`document.querySelectorAll(".cell-holder").length === 4`);
+    assert.deepEqual(await entries(), ["Alpha", "Bravo", "Charlie", "Delta"]);
+    await page.waitForFunction(`[...document.querySelectorAll(".toast")].some((t) => t.textContent.includes("1 was already on it"))`);
+
+    // A folder's menu selects everything in it; Escape lets it go.
+    await page.evaluate(`[...document.querySelectorAll(".library .folder-row")].find((r) => r.textContent.includes("Tables"))
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
+    await page.waitForFunction(`document.querySelector(".menu-item")`);
+    await page.evaluate(`[...document.querySelectorAll(".menu-item")].find((m) => m.textContent === "Select all in this folder").click()`);
+    await page.waitForFunction(`document.querySelectorAll(".library .tree-row.selected").length === 4`);
+    await page.evaluate(`document.querySelector(".library .tree-row.selected").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    assert.equal(await page.evaluate(`return document.querySelectorAll(".library .tree-row.selected").length`), 0);
+    assert.equal(await page.evaluate(`return document.querySelector(".library-selection").hidden`), true);
+    // A plain click still opens.
+    await click(".library .tree-row", "Alpha");
+    await page.waitForFunction(`location.hash.includes("alpha")`);
+    assert.deepEqual(page.consoleErrors, []);
   });
 
   // ---- report --------------------------------------------------------------

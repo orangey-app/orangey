@@ -15,6 +15,8 @@ import { tryParse } from "../../core/dice/grammar.ts";
 import { appendChildren, button, h, isTyping, setChildren } from "../dom.ts";
 import { rollOwnerId, state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
+import { createOutcomeList, type OutcomeListView } from "../components/outcomelist.ts";
+import { canQuickEdit, openWeightEditor, saveOutcomeWeight } from "../components/quickweight.ts";
 import { createDiceTray } from "../components/dice.ts";
 import { createCoin } from "../components/coin.ts";
 import { createResultPanel } from "../components/result.ts";
@@ -29,7 +31,7 @@ import { popOutButton } from "../popout.ts";
 import { effectiveFeel, QUICK_DEBOUNCE_MS } from "../feel.ts";
 import { appBase, currentRoute, navigate, wheelLink, type LinkParams } from "../router.ts";
 import type { View } from "../view.ts";
-import { displayPercents, isRollable, withoutDrawn } from "../../core/weighted.ts";
+import { isRollable, withoutDrawn } from "../../core/weighted.ts";
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
 
@@ -96,6 +98,9 @@ export function createPlayView(
   }
 
   let wheel: ReturnType<typeof createWheel> | null = null;
+  /** A list shown as a list, and which of its outcomes is the answer on screen. */
+  let outcomeList: OutcomeListView | null = null;
+  let answerIndex: number | null = null;
   const tray = createDiceTray();
   const coin = createCoin();
 
@@ -107,6 +112,7 @@ export function createPlayView(
 
   function buildStage(): void {
     wheel = null;
+    outcomeList = null;
     setChildren(stage);
     if (randomizer.type === "list") {
       if (randomizer.view === "wheel") {
@@ -116,16 +122,42 @@ export function createPlayView(
           slices: () => (randomizer.type === "list" ? randomizer.slices : undefined),
           colours: () => state.wheelColours(randomizer.type === "list" ? randomizer.palette : undefined),
           onActivate: () => void doRoll(),
+          // Only a wheel with a file behind it: a linked or quick wheel has
+          // nowhere to save a weight to.
+          onSliceEdit: node && canQuickEdit(randomizer.id) ? (index, x, y) => quickEdit(index, x, y) : undefined,
         });
         stage.append(wheel.el);
       } else {
-        stage.append(renderOutcomeList());
+        outcomeList = createOutcomeList({
+          items: () => inPlay(),
+          onPick: (i) => void roller.choose(i),
+          name: randomizer.name,
+        });
+        outcomeList.mark(answerIndex);
+        stage.append(outcomeList.el);
       }
     } else if (randomizer.type === "dice") {
       stage.append(tray.el);
     } else if (randomizer.type === "coin") {
       stage.append(coin.el);
     }
+  }
+
+  /** A double-tap on a slice: its weight, edited in place and saved to the file. */
+  function quickEdit(index: number, clientX: number, clientY: number): void {
+    if (randomizer.type !== "list" || !wheel || roller.rolling) return;
+    const item = randomizer.items[index];
+    if (!item) return;
+    const editing = randomizer.id;
+    openWeightEditor({
+      host: wheel.el, clientX, clientY, label: item.label, weight: item.weight,
+      onSave: (weight) => void saveOutcomeWeight(editing, item.id, weight).then((saved) => {
+        if (!saved || randomizer.id !== editing) return;
+        randomizer = saved;
+        subtitle.textContent = saved.description ?? describeType(saved);
+        showAgain();
+      }),
+    });
   }
 
   /**
@@ -139,18 +171,6 @@ export function createPlayView(
     return withoutDrawn(randomizer.items, bagDrawn(randomizer.id));
   }
 
-  function renderOutcomeList(): HTMLElement {
-    const items = inPlay();
-    const percents = displayPercents(items);
-    return h("ul", { class: "outcome-list" },
-      ...items.map((item, i) =>
-        h("li", { class: item.disabled ? "disabled muted" : "" },
-          h("span", { text: item.label }),
-          h("span", { class: "faint", text: ` ${percents[i].toFixed(1)}%` }),
-        ),
-      ),
-    );
-  }
 
   /** The settings this roll uses: global, this randomizer's own, and the play-time switch. */
   const feelNow = () => effectiveFeel(state.prefs.feel, randomizer.feel, state.prefs.animationsOff);
@@ -198,6 +218,11 @@ export function createPlayView(
       rollButton.disabled = true;
     },
     focusOffer: () => true,
+    // The answer stays marked in a list shown as a list, rolled or picked.
+    onLanded: (outcome) => {
+      answerIndex = outcome.itemIndex ?? null;
+      outcomeList?.mark(answerIndex);
+    },
   });
 
   const doRoll = (): Promise<void> => {
@@ -466,6 +491,7 @@ export function createPlayView(
     rollButton.disabled = false;
     reserveResult();
     result.clear("Ready");
+    answerIndex = null;
     buildStage();
     updateBagLine();
     updateHeaderControls();
@@ -539,6 +565,7 @@ export function createPlayView(
   const refillButton = button("Refill", () => {
     bagRefill(randomizer.id);
     result.clear();
+    answerIndex = null;
     wheel?.refresh();
     if (randomizer.type === "list" && randomizer.view === "list") buildStage();
     updateBagLine();
@@ -657,10 +684,34 @@ export function createPlayView(
   // Settings can change the seed while this view is alive, and the seed line
   // is part of what the panel reserves room for.
   const unsubscribe = state.subscribe(() => {
+    followEdit();
     recent.refresh();
     reserveResult();
     renderShortcuts();
   }, ["history", "prefs", "library"]);
+
+  /**
+   * The same randomizer saved from somewhere else — a weight quick-edited in
+   * the pop-out, or on a board in another tab: show the new version here
+   * too, keeping the answer. Not mid-roll, and not when it became something
+   * the stage would have to be rebuilt for.
+   */
+  function followEdit(): void {
+    if (!node || roller.rolling) return;
+    const fresh = state.library.findById(randomizer.id)?.randomizer;
+    if (!fresh || fresh === randomizer || fresh.type !== randomizer.type) return;
+    if (fresh.type === "list" && randomizer.type === "list" && fresh.view !== randomizer.view) return;
+    randomizer = fresh;
+    subtitle.textContent = fresh.description ?? describeType(fresh);
+    showAgain();
+  }
+
+  /** Redraw after an edit, with the pointer put back on the answer on screen. */
+  function showAgain(): void {
+    wheel?.refresh();
+    if (wheel && answerIndex !== null) void wheel.spinTo(answerIndex, { ...feelNow(), motion: "instant" });
+    outcomeList?.refresh();
+  }
 
   /* ---- presenting, and links for slides -------------------------------- */
 
