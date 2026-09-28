@@ -198,9 +198,23 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   // "Make a choice"; empty is off. An out-of-range value stays in the draft so it
   // can be finished, while `draftProblem` holds the file at its last good state.
   const offerInput = h("input", {
-    type: "number", min: String(OFFER_MIN), max: String(OFFER_MAX), class: "offer-input",
-    value: model.offer !== undefined ? String(model.offer) : "", placeholder: "–",
+    type: "number", max: String(OFFER_MAX), class: "offer-input",
+    value: model.offer !== undefined ? String(model.offer) : "", placeholder: "off",
     "aria-label": "Offer this many outcomes to choose from",
+  });
+  // Empty, 0 and 1 all mean no choice: nobody chooses from one card.
+  const offerOff = (raw: string) => raw === "" || Number(raw) <= 1;
+  offerInput.addEventListener("input", () => {
+    const raw = offerInput.value.trim();
+    model = { ...model, offer: offerOff(raw) ? undefined : Number(raw) };
+    if (offerOff(raw)) delete (model as { offer?: number }).offer;
+    previewRoller.discard();
+    result.clear("Try it");
+    save(offerInput);
+  });
+  // Once you leave the box, "off" shows as off rather than as a 0 or 1.
+  offerInput.addEventListener("change", () => {
+    if (offerOff(offerInput.value.trim())) offerInput.value = "";
   });
   offerInput.addEventListener("input", () => {
     const raw = offerInput.value.trim();
