@@ -123,7 +123,10 @@ export function createInkblotView(placeholder = "Press Generate", onReady?: (rea
         await nextFrame();
         if (mine !== turn) return;
         const prog = skipping ? 1 : Math.min(1, (performance.now() - start) / bloomMs);
-        if (prog >= 1) break;
+        if (prog >= 1) {
+          paint(canvas, small, 1);
+          break;
+        }
         paint(canvas, small, prog);
         // What is left of the frame goes to the full-size blot.
         work(full);
@@ -137,6 +140,9 @@ export function createInkblotView(placeholder = "Press Generate", onReady?: (rea
     if (pictureUrl) URL.revokeObjectURL(pictureUrl);
     pictureUrl = blob ? URL.createObjectURL(blob) : null;
     if (pictureUrl) picture.src = pictureUrl;
+    // Wait until the picture can be drawn, or the card is empty for a frame.
+    if (pictureUrl) await picture.decode().catch(() => {});
+    if (mine !== turn) return;
     picture.alt = `An inkblot (blot ${seed})`;
     picture.hidden = pictureUrl === null;
     canvas.hidden = pictureUrl !== null;
