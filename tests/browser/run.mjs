@@ -202,6 +202,7 @@ async function main() {
     assert.equal(kind, "idb");
     const seeded = await page.evaluate(`return window.orangey.state.library.files().map((f) => f.randomizer.name)`);
     assert.ok(seeded.includes("Forest Encounters"), `starters were not written: ${seeded.join(", ")}`);
+    assert.ok(seeded.includes("Inkblot"), `a fresh library has no inkblot: ${seeded.join(", ")}`);
     await createList(page, "Made on Safari 18", [{ label: "A", weight: 1 }]);
     await page.goto(`${server.origin}/index.html?debug`);
     await page.waitForFunction("window.orangey && window.orangey.state.ready");
@@ -2749,6 +2750,39 @@ async function main() {
       const target = state.library.findById(enc.items[0].goesTo);
       return [enc.items[0].goesTo === "hoard", target.path.startsWith("Treasure/"), target.randomizer.id === "hoard"];`);
     assert.deepEqual(copies, [false, true, false]);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AL an inkblot is generated with a link, lands as a picture, can be downloaded, and history keeps its number", async (page) => {
+    await open(page, "", { fresh: true });
+    const [path, boardPath] = await page.evaluate(`
+      const { state } = window.orangey;
+      await state.setFeel({ motion: "instant" });
+      const now = new Date().toISOString();
+      const ink = await state.library.create("", { id: "ink", type: "inkblot", name: "Inkblot", created: now, modified: now });
+      const board = await state.library.create("", { id: "board", type: "board", name: "Table", created: now, modified: now, entries: [{ id: "ink", name: "Inkblot" }] });
+      return [ink, board];`);
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelector(".roll-button")?.textContent === "Generate"`);
+    const before = await page.evaluate(`
+      const b = document.querySelector(".roll-button");
+      const d = document.querySelector(".inkblot-download");
+      return [b.classList.contains("generate"), !!d && !d.hidden && d.disabled, document.querySelector(".hidden-toggle").hidden];`);
+    assert.deepEqual(before, [true, true, true], "Generate is a link, Download waits for a blot, no hidden roll");
+    await page.click(".roll-button");
+    await page.waitForFunction(`(() => { const i = document.querySelector(".inkblot-picture"); return i && !i.hidden && i.src.startsWith("blob:"); })()`);
+    const after = await page.evaluate(`
+      const row = window.orangey.state.history[0];
+      return [document.querySelector(".inkblot-download").disabled, row.type, row.resultText, (row.parts ?? []).join("|")];`);
+    assert.equal(after[0], false, "Download is offered once the blot has landed");
+    assert.equal(after[1], "inkblot");
+    assert.equal(after[2], "generated");
+    assert.match(after[3], /^blot \d+$/);
+    // A board cell generates too, with the same link instead of Roll.
+    await open(page, `#/r/${encodeURIComponent(boardPath)}`);
+    await page.waitForFunction(`document.querySelector(".cell-roll")?.textContent === "Generate"`);
+    await page.click(".cell-roll");
+    await page.waitForFunction(`(() => { const i = document.querySelector(".cell .inkblot-picture"); return i && !i.hidden; })()`);
     assert.deepEqual(page.consoleErrors, []);
   });
 

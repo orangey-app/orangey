@@ -313,6 +313,20 @@ kept (`Outcome.picked`, "picked, not rolled" in a history row's `parts`,
 lie about luck. Dice inside the picked outcome's text still come from the
 source, as they would on a roll.
 
+**An inkblot is one drawn number.** A roll of an inkblot draws a single
+integer from the source (`Outcome.blot`); everything about the blot follows
+from it in `src/core/inkblot.ts`, which has its own small seeded generators
+and never touches `Math.random`. That is not a feature for getting a blot
+back: the blot is drawn more than once — the bloom on a small canvas, the
+finished picture at 1200 px, the download at 2000 px — and each must be the
+same blot. The shape is a continuous field in "blot units", thresholded per
+pixel, so it does not depend on the size it is drawn at; a unit test checks
+that. The full-size blot is computed a slice per frame
+(`INKBLOT_SLICE_MS`) so the page never locks up, and the finished blot
+becomes an `<img>` so the browser's own Save image works. The settings it
+draws from were chosen by marking a few thousand random blots; users never
+see them.
+
 **All animation timing lives in `src/ui/feel.ts`.** `npm run check` fails the
 build if a duration appears anywhere else, which is what makes the settings
 panel able to change how the whole app feels.

@@ -10,7 +10,7 @@ import { SLICE_CONTENTS, type SliceContent } from "../core/wheel-geometry.ts";
 import type { FeelOverride } from "./feel.ts";
 
 /** The types that can be rolled. A board is not one of them; it holds them. */
-export const ROLLABLE_TYPES = ["list", "dice", "coin", "number"] as const;
+export const ROLLABLE_TYPES = ["list", "dice", "coin", "number", "inkblot"] as const;
 export const RANDOMIZER_TYPES = [...ROLLABLE_TYPES, "board"] as const;
 export type RollableType = (typeof ROLLABLE_TYPES)[number];
 export type RandomizerType = (typeof RANDOMIZER_TYPES)[number];
@@ -128,6 +128,14 @@ export interface NumberRandomizer extends RandomizerBase {
 }
 
 /**
+ * An inkblot: every press draws a new symmetrical blot. It has nothing to set;
+ * the blot comes from one drawn number (see core/inkblot.ts).
+ */
+export interface InkblotRandomizer extends RandomizerBase {
+  type: "inkblot";
+}
+
+/**
  * A board: several randomizers on one screen, rolled together or one at a
  * time. It refers to them by id, so renaming or moving one does not break the
  * board, and carries the name each had when it was added — enough to say what
@@ -144,7 +152,7 @@ export interface BoardRandomizer extends RandomizerBase {
 }
 
 /** Everything that can actually be rolled. */
-export type Rollable = ListRandomizer | DiceRandomizer | CoinRandomizer | NumberRandomizer;
+export type Rollable = ListRandomizer | DiceRandomizer | CoinRandomizer | NumberRandomizer | InkblotRandomizer;
 export type Randomizer = Rollable | BoardRandomizer;
 
 export function isBoard(r: Randomizer): r is BoardRandomizer {
@@ -182,6 +190,8 @@ export function emptyRandomizer(type: RandomizerType, name: string): Randomizer 
       return { ...base, type: "coin", faces: ["Heads", "Tails"] };
     case "number":
       return { ...base, type: "number", min: 1, max: 100, integer: true, inclusiveMax: true, count: 1, unique: false };
+    case "inkblot":
+      return { ...base, type: "inkblot" };
     case "board":
       return { ...base, type: "board", entries: [] };
   }
@@ -264,6 +274,9 @@ export function validateRandomizer(v: unknown, check = new Check(), path = "rand
       }
       break;
     }
+    case "inkblot":
+      // Nothing of its own: the blot comes from the roll, not the file.
+      break;
     case "number":
       check.number(`${path}.min`, o.min);
       check.number(`${path}.max`, o.max);

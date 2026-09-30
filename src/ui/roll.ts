@@ -10,6 +10,7 @@ import { tryParse } from "../core/dice/grammar.ts";
 import { formatResult, speakResult } from "../core/dice/format.ts";
 import { drawNumbers, formatNumbers } from "../core/number.ts";
 import { type RandomSource } from "../core/rng.ts";
+import { INK_SEED_MAX } from "../core/inkblot.ts";
 import { drawWithoutReplacement, isRollable, pickWeightedIndex, rollableIndices, withoutDrawn } from "../core/weighted.ts";
 import type { ListRandomizer, OutcomeReaction, Randomizer } from "../model/randomizer.ts";
 import type { RollResult } from "../core/dice/evaluate.ts";
@@ -43,6 +44,8 @@ export interface Outcome {
   rolled?: string[];
   /** For a pick from an offer: the outcomes it was chosen from, kept in history. */
   offered?: string[];
+  /** For an inkblot: the number the whole blot is drawn from. */
+  blot?: number;
   /**
    * Chosen by the player, not rolled. History says so: a pick must never pass for
    * a random answer.
@@ -78,6 +81,18 @@ export function rollRandomizer(r: Randomizer, rng: RandomSource): Outcome {
         seed: rng.seed,
         side: result.side,
         reaction: r.faceReactions?.[result.side] ?? undefined,
+      };
+    }
+    case "inkblot": {
+      // One draw decides the whole blot; the rest follows from it (core/inkblot.ts).
+      const blot = rng.int(1, INK_SEED_MAX);
+      return {
+        kind: "inkblot",
+        // History reads "Inkblot generated", with the blot's number beneath.
+        text: "generated",
+        speak: `${r.name}: a new inkblot.`,
+        seed: rng.seed,
+        blot,
       };
     }
     case "number": {
@@ -263,6 +278,9 @@ export function longestOutcome(r: Randomizer): string {
     }
     case "board":
       // Each cell on a board sizes its own panel from its own randomizer.
+      return "";
+    case "inkblot":
+      // The blot is the answer; the panel only speaks it.
       return "";
     case "dice": {
       try {

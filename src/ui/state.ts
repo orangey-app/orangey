@@ -332,6 +332,7 @@ class AppState {
       ...(outcome.rolled ?? []),
       ...(outcome.offered ? [`chosen from ${outcome.offered.join(", ")}`] : []),
       ...(outcome.picked ? ["picked, not rolled"] : []),
+      ...(outcome.blot !== undefined ? [`blot ${outcome.blot}`] : []),
     ];
     const entry: HistoryRow = {
       id: newId(),

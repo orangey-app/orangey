@@ -48,6 +48,7 @@ const NEW_TYPES: [RollableType, string][] = [
   ["dice", "New dice"],
   ["coin", "New coin"],
   ["number", "New number"],
+  ["inkblot", "New inkblot"],
 ];
 
 /** One randomizer: where an outcome goes. */

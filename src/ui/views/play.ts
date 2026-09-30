@@ -11,13 +11,14 @@ import { parseQuickOptions, quickText } from "../../import/quick.ts";
 import { encodeRandomizer, LINK_HARD_LIMIT } from "../../model/link.ts";
 import type { LibraryNode } from "../../storage/library.ts";
 import { tryParse } from "../../core/dice/grammar.ts";
-import { appendChildren, button, h, isTyping, setChildren } from "../dom.ts";
+import { appendChildren, button, h, iconButton, isTyping, setChildren } from "../dom.ts";
 import { rollOwnerId, state } from "../state.ts";
 import { createWheel } from "../components/wheel.ts";
 import { createOutcomeList, type OutcomeListView } from "../components/outcomelist.ts";
 import { canQuickEdit, openWeightEditor, saveOutcomeWeight } from "../components/quickweight.ts";
 import { createDiceTray } from "../components/dice.ts";
 import { createCoin } from "../components/coin.ts";
+import { createInkblotView } from "../components/inkblot.ts";
 import { createResultPanel } from "../components/result.ts";
 import { createRecentRolls } from "../components/recent.ts";
 import { createChainRow, type ChainView } from "../components/chain.ts";
@@ -53,6 +54,8 @@ export function createPlayView(
   const result = createResultPanel(fixed ? "Ready" : "Pick something to roll");
   const stage = h("div", { class: "stage" });
   const rollButton = button("Roll", () => void doRoll(), { class: "primary roll-button", style: { width: "100%", minHeight: "52px", fontSize: "17px" } });
+  /** An inkblot is generated, not rolled, and a big button would sit badly under it. */
+  const rollLabel = (): string => (randomizer.type === "inkblot" ? "Generate" : "Roll");
 
   /**
    * Roll behind the screen. Deliberately not a saved preference: a hidden roll
@@ -63,7 +66,7 @@ export function createPlayView(
     if (!hiddenBox.checked && roller.holding) {
       roller.discard();
       result.clear("Ready");
-      rollButton.textContent = "Roll";
+      rollButton.textContent = rollLabel();
     }
   });
   const hiddenToggle = h("label", { class: "row tight hidden-toggle faint" }, hiddenBox, "Hidden");
@@ -88,6 +91,16 @@ export function createPlayView(
     const many = randomizer.type === "list" && !offerSize(randomizer);
     countField.hidden = !many;
     if (!many) countInput.value = "1";
+    // An inkblot shows its answer as the blot itself: no big type, no hidden
+    // roll (there is nothing to hold behind a screen), and Generate as a link.
+    const ink = randomizer.type === "inkblot";
+    result.el.classList.toggle("is-inkblot", ink);
+    rollButton.classList.toggle("generate", ink);
+    rollButton.classList.toggle("primary", !ink);
+    if (!roller.rolling && !roller.holding && !roller.choosing) rollButton.textContent = rollLabel();
+    hiddenToggle.hidden = ink;
+    downloadInkblot.hidden = !ink;
+    if (ink && hiddenBox.checked) hiddenBox.checked = false;
   }
 
   let wheel: ReturnType<typeof createWheel> | null = null;
@@ -96,6 +109,14 @@ export function createPlayView(
   let answerIndex: number | null = null;
   const tray = createDiceTray();
   const coin = createCoin();
+  const inkblot = createInkblotView("Press Generate", (ready) => {
+    downloadInkblot.disabled = !ready;
+  });
+  // Beside Edit and the rest, for an inkblot only; ready once a blot has landed.
+  const downloadInkblot = iconButton("Download this inkblot", "⤓", () => {
+    downloadInkblot.setAttribute("aria-busy", "true");
+    void inkblot.download().finally(() => downloadInkblot.removeAttribute("aria-busy"));
+  }, { class: "icon-button inkblot-download", disabled: true });
 
   function adHocDice(expression: string): Randomizer {
     const r = emptyRandomizer("dice", expression) as Randomizer & { expression: string };
@@ -133,6 +154,8 @@ export function createPlayView(
       stage.append(tray.el);
     } else if (randomizer.type === "coin") {
       stage.append(coin.el);
+    } else if (randomizer.type === "inkblot") {
+      stage.append(inkblot.el);
     }
   }
 
@@ -174,16 +197,17 @@ export function createPlayView(
     wheel: () => wheel,
     tray,
     coin,
+    inkblot,
     feel: feelNow,
     live: true,
     // While a roll runs the button offers to cut it short; pressing it again
     // is what `roller.roll()` reads as "skip".
     onStart: (willAnimate: boolean) => {
-      rollButton.textContent = willAnimate ? "Skip" : "Roll";
+      rollButton.textContent = willAnimate ? "Skip" : rollLabel();
       rollButton.disabled = false;
     },
     onEnd: () => {
-      rollButton.textContent = "Roll";
+      rollButton.textContent = rollLabel();
       rollButton.disabled = false;
       // The quick wheel changed while this roll was spinning; redraw it now
       // rather than under the pointer.
@@ -333,7 +357,7 @@ export function createPlayView(
     if (roller.holding || roller.choosing) {
       roller.discard();
       result.clear("Ready");
-      rollButton.textContent = "Roll";
+      rollButton.textContent = rollLabel();
       rollButton.disabled = false;
     }
     subtitle.textContent = describeType(next);
@@ -470,7 +494,7 @@ export function createPlayView(
     editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
     linkButton.hidden = !fixed && next !== quickModel;
     roller.discard();
-    rollButton.textContent = "Roll";
+    rollButton.textContent = rollLabel();
     rollButton.disabled = false;
     reserveResult();
     result.clear("Ready");
@@ -700,7 +724,7 @@ export function createPlayView(
   // typed, and the pop-out would hold the version from the moment of the press.
   const popButton = node ? popOutButton(() => state.library.findById(randomizer.id)?.randomizer ?? randomizer) : null;
 
-  appendChildren(header, hiddenToggle, countField, animateToggle, presentButton, popButton, linkButton, exitButton);
+  appendChildren(header, hiddenToggle, countField, downloadInkblot, animateToggle, presentButton, popButton, linkButton, exitButton);
 
   if (params.present) present(true);
   if (params.roll) {
@@ -778,6 +802,8 @@ function describeType(r: Randomizer): string {
       return `${r.faces[0]} or ${r.faces[1]}`;
     case "number":
       return `${r.min} to ${r.max}`;
+    case "inkblot":
+      return "A new inkblot every time";
     case "board":
       return `${r.entries.length} randomizer${r.entries.length === 1 ? "" : "s"}`;
   }

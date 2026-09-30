@@ -476,15 +476,15 @@ export function createLibraryView(): View {
   }
 
   async function newRandomizer(type: RandomizerType, folder = selectedFolder): Promise<void> {
-    const titles: Record<RandomizerType, string> = { list: "New wheel", dice: "New dice", coin: "New coin", number: "New number", board: "New board" };
+    const titles: Record<RandomizerType, string> = { list: "New wheel", dice: "New dice", coin: "New coin", number: "New number", inkblot: "Inkblot", board: "New board" };
     const name = await askText(titles[type], { label: "Name", value: titles[type], confirm: "Create", opener: newButton });
     if (!name) return;
     const path = await state.library.create(folder, emptyRandomizer(type, name)).catch(couldNotSave);
     if (!path) return;
     render();
-    // A board is built on the board itself — there is nothing to edit in a
-    // separate screen — so it opens where it is played.
-    navigate(type === "board" ? `#/r/${encodeURIComponent(path)}` : `#/edit/${encodeURIComponent(path)}`);
+    // A board is built on the board itself, and an inkblot has nothing to
+    // edit: both open where they are played.
+    navigate(type === "board" || type === "inkblot" ? `#/r/${encodeURIComponent(path)}` : `#/edit/${encodeURIComponent(path)}`);
   }
 
   async function newFolder(folder = selectedFolder): Promise<void> {
@@ -503,6 +503,7 @@ export function createLibraryView(): View {
       { label: "Dice", onSelect: () => void newRandomizer("dice") },
       { label: "Coin", onSelect: () => void newRandomizer("coin") },
       { label: "Number", onSelect: () => void newRandomizer("number") },
+      { label: "Inkblot", onSelect: () => void newRandomizer("inkblot") },
       { label: "Board", onSelect: () => void newRandomizer("board"), separator: true },
       { label: "Folder", onSelect: () => void newFolder() },
     ], "New"), { class: "primary new-button", "aria-haspopup": "menu", "aria-expanded": "false" });
@@ -543,6 +544,7 @@ function glyphFor(node: LibraryNode): string {
     case "dice": return "🎲";
     case "coin": return "🪙";
     case "number": return "#";
+    case "inkblot": return "🦋";
     case "board": return "▦";
     default: return "•";
   }

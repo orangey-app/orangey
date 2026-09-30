@@ -13,6 +13,7 @@ import { createOutcomeList, type OutcomeListView } from "./outcomelist.ts";
 import { canQuickEdit, openWeightEditor, saveOutcomeWeight } from "./quickweight.ts";
 import { createDiceTray } from "./dice.ts";
 import { createCoin } from "./coin.ts";
+import { createInkblotView } from "./inkblot.ts";
 import { createResultPanel } from "./result.ts";
 import { longestOutcome } from "../roll.ts";
 import { createRoller } from "../rolling.ts";
@@ -62,6 +63,7 @@ export function createCell(
   const stage = h("div", { class: "stage cell-stage" });
   const tray = createDiceTray();
   const coin = createCoin();
+  const inkblot = createInkblotView(opts.clickToRoll ? "Click to generate" : "Press Generate");
   let wheel: ReturnType<typeof createWheel> | null = null;
   /** A list randomizer shown as its outcomes, each one a pick. */
   let outcomeList: OutcomeListView | null = null;
@@ -90,6 +92,8 @@ export function createCell(
     stage.append(tray.el);
   } else if (randomizer.type === "coin") {
     stage.append(coin.el);
+  } else if (randomizer.type === "inkblot") {
+    stage.append(inkblot.el);
   }
   const reserve = () => {
     const offer = randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2 ? randomizer.offer : 0;
@@ -165,6 +169,7 @@ export function createCell(
     wheel: () => wheel,
     tray,
     coin,
+    inkblot,
     feel: feelNow,
     live: true,
     onStart: () => opts.onRoll?.(),
@@ -205,12 +210,14 @@ export function createCell(
     bagLine,
     result.el,
   );
+  // The blot is the answer: the panel stays, for the screen reader, but out of sight.
+  result.el.classList.toggle("is-inkblot", randomizer.type === "inkblot");
 
   if (opts.clickToRoll) {
     el.classList.add("click-to-roll");
     el.tabIndex = 0;
     el.setAttribute("role", "button");
-    el.setAttribute("aria-label", `Roll ${randomizer.name}`);
+    el.setAttribute("aria-label", `${randomizer.type === "inkblot" ? "Generate" : "Roll"} ${randomizer.name}`);
     // A button inside the cell (an offered card, Refill, a list's outcome) is its
     // own press, not a roll; and a wheel rolls from its hub only, so its slices
     // can take a double-tap (the hub calls `rollCell` itself).
@@ -237,15 +244,19 @@ export function createCell(
   };
 }
 
-/** A Roll button for one cell. Pressed mid-roll, it skips to the answer. */
+/**
+ * A Roll button for one cell (Generate, for an inkblot). Pressed mid-roll, it
+ * skips to the answer.
+ */
 export function cellRollButton(cell: CellView, className: string): HTMLElement {
-  const roll = button("Roll", () => {
+  const label = cell.randomizer.type === "inkblot" ? "Generate" : "Roll";
+  const roll = button(label, () => {
     const skipping = cell.rolling;
     const done = cell.roll();
     if (skipping) return;
     roll.textContent = "Skip";
-    void done.then(() => { roll.textContent = "Roll"; });
-  }, { class: className });
+    void done.then(() => { roll.textContent = label; });
+  }, { class: cell.randomizer.type === "inkblot" ? `${className} generate` : className });
   return roll;
 }
 

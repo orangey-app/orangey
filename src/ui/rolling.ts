@@ -14,6 +14,7 @@ import type { ResultPanel } from "./components/result.ts";
 import type { WheelView } from "./components/wheel.ts";
 import type { DiceTray } from "./components/dice.ts";
 import type { CoinView } from "./components/coin.ts";
+import type { InkblotView } from "./components/inkblot.ts";
 import { chosenFromOffer, offerFromList, pickedOutcome, rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
 import { bagDrawn, bagTake } from "./bag.ts";
 import { isRollable, withoutDrawn } from "../core/weighted.ts";
@@ -27,6 +28,7 @@ export interface RollerOptions {
   wheel: () => WheelView | null;
   tray?: DiceTray;
   coin?: CoinView;
+  inkblot?: InkblotView;
   /** The settings this roll animates with, effective overrides included. */
   feel: () => FeelSettings;
   /** Record in history and tell the mascot. The editor's preview passes false. */
@@ -131,6 +133,7 @@ export function createRoller(opts: RollerOptions): Roller {
     opts.wheel()?.skip();
     opts.tray?.skip();
     opts.coin?.skip();
+    opts.inkblot?.skip();
   }
 
   /** Whether this roll has anything to watch, which decides when to reveal. */
@@ -140,6 +143,7 @@ export function createRoller(opts: RollerOptions): Roller {
     if (randomizer.type === "list") return opts.wheel() !== null && outcome.itemIndex !== undefined;
     if (randomizer.type === "dice") return opts.tray !== undefined && outcome.dice !== undefined;
     if (randomizer.type === "coin") return opts.coin !== undefined;
+    if (randomizer.type === "inkblot") return opts.inkblot !== undefined;
     return false;
   }
 
@@ -272,6 +276,8 @@ export function createRoller(opts: RollerOptions): Roller {
       await opts.tray.show(outcome.dice, willAnimate ? feel : { ...feel, motion: "instant" });
     } else if (randomizer.type === "coin" && opts.coin) {
       await opts.coin.show(outcome.text, willAnimate ? feel : { ...feel, motion: "instant" });
+    } else if (randomizer.type === "inkblot" && opts.inkblot && outcome.blot !== undefined) {
+      await opts.inkblot.show(outcome.blot, willAnimate ? feel : { ...feel, motion: "instant" });
     }
 
     if (willAnimate) opts.result.show(outcome);

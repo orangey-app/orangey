@@ -306,6 +306,8 @@ export function createImportView(initialText = ""): View {
         return `${r.faces[0]} or ${r.faces[1]}`;
       case "number":
         return `${r.min} to ${r.max}`;
+      case "inkblot":
+        return "a new inkblot every time";
       case "list":
         return `${r.items.length} outcome${r.items.length === 1 ? "" : "s"}`;
       case "board":

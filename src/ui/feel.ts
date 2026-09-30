@@ -65,6 +65,23 @@ export const QUICK_DEBOUNCE_MS = 300;
  */
 export const DOUBLE_TAP_MS = 350;
 
+/**
+ * An inkblot's bloom: the stain spreads and its edge settles over this long.
+ * A constant rather than a Feel setting (an inkblot has none), but scaled by
+ * the motion level like everything else.
+ */
+export const INKBLOT_BLOOM_MS = 2600;
+/**
+ * How long each frame may spend computing a blot. A full-size blot takes
+ * a large fraction of a second; done in slices, the page keeps responding.
+ */
+export const INKBLOT_SLICE_MS = 8;
+/**
+ * A window nobody can see gets no animation frames; past this wait the
+ * bloom carries on with a timer instead, so it still lands.
+ */
+export const INKBLOT_FRAME_WAIT_MS = 60;
+
 export const LIMITS = {
   wheelDuration: [400, 8000],
   turns: [1, 12],

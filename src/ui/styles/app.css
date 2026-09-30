@@ -1053,3 +1053,48 @@ body.popout-single { height: 100vh; min-height: 0; }
   height: var(--coin);
   font-size: calc(var(--coin) * 0.16);
 }
+
+/* ---- inkblot -------------------------------------------------------------- */
+
+/* The card is paper in every theme: the ink is drawn for paper, and a saved
+   picture should look the same as the one on screen. */
+.inkblot-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+.inkblot-card {
+  width: min(100%, 640px);
+  aspect-ratio: 1.3 / 1;
+  background: #fbf8f1;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.inkblot-canvas, .inkblot-picture { grid-area: 1 / 1; width: 100%; height: 100%; display: block; }
+.inkblot-empty { grid-area: 1 / 1; margin: 0; color: #8a8378; font-size: 15px; }
+.inkblot-canvas[hidden], .inkblot-picture[hidden], .inkblot-empty[hidden] { display: none; }
+.inkblot-download[hidden] { display: none; }
+.inkblot-download { font-size: 20px; line-height: 1; }
+.cell .inkblot-card { width: 100%; }
+/* The blot is the answer: the result panel stays for the screen reader only. */
+.result-panel.is-inkblot { min-height: 0; padding: 0; }
+.result-panel.is-inkblot > :not([role="status"]) { display: none; }
+.hidden-toggle[hidden] { display: none; }
+/* Generate is a link under the blot, not a big button over it. */
+.roll-button.generate, .cell-roll.generate {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  width: auto !important;
+  min-height: 0 !important;
+  font-size: 17px !important;
+  display: block;
+  margin: 0 auto;
+  padding: 6px 12px;
+}
+.roll-button.generate:hover, .cell-roll.generate:hover { color: var(--ink); }
+body.presenting .inkblot-wrap { height: 100%; min-height: 0; }
+body.presenting .inkblot-card { width: auto; height: 100%; max-width: 100%; min-height: 0; }
+.popout-single .inkblot-card { width: min(100cqw, calc(100cqh * 1.3)); }

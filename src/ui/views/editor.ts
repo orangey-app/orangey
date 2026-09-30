@@ -981,6 +981,8 @@ function createSimpleEditor(node: LibraryNode): View {
       toggle("unique", "No repeats"),
       toggle("inclusiveMax", "Include the maximum"),
     );
+  } else if (model.type === "inkblot") {
+    fields.append(h("p", { class: "faint", text: "An inkblot has nothing to set: every press of Generate draws a new blot." }));
   }
 
   const feel = feelCard(

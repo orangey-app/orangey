@@ -58,6 +58,10 @@ export function starters(): Starter[] {
         ["Yes", 45], ["Yes, but…", 15], ["No", 45], ["No, but…", 15],
       ], "list"),
     },
+    {
+      folder: "",
+      randomizer: { ...emptyRandomizer("inkblot", "Inkblot"), description: "A new blot every time: what do you see?" } as Randomizer,
+    },
     { folder: "Dice", randomizer: dice("Attack roll", "d20 + 5", "Longsword, +3 Strength, proficient") },
     { folder: "Dice", randomizer: dice("Advantage", "2d20kh1", "Roll twice, keep the higher") },
     { folder: "Dice", randomizer: dice("Ability score", "4d6kh3", "Roll four, drop the lowest") },

@@ -114,6 +114,12 @@ described under `reaction` above.
 
 `min`, `max`, `integer`, `inclusiveMax`, `count` (1–1000), `unique`.
 
+### `type: "inkblot"`
+
+No fields of its own. Every roll draws a new symmetrical inkblot from one
+number, so the file only names it. Orangey 0.8 and earlier do not know this
+type and refuse the file.
+
 ### `type: "board"`
 
 Several randomizers on one screen, rolled together or one at a time.

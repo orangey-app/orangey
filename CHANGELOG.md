@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Inkblots.** A new kind of randomizer: press **Generate** and a
+  symmetrical inkblot blooms onto a paper card, a different one every time,
+  with no label: what it is, is up to whoever looks. A fresh library starts
+  with one, and **+ New → Inkblot** makes another. It has nothing to set.
+  The finished blot is an ordinary picture, so right-click *Save image* (or a
+  long-press on an iPad) keeps it, and the ⤓ icon beside Edit downloads a
+  larger copy (2000 px, on its paper). It works on a board, where the cell
+  has Generate instead of Roll, and in a pop-out. History reads *Inkblot
+  generated* with the blot's number beneath. Inkblot files are a new type:
+  Orangey 0.8 and earlier refuse them.
+
 ## 0.8.0
 
 Picking from a list, a wheel's weights changed where it is played, several
