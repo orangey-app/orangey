@@ -3,8 +3,8 @@
  *
  * Node has no type checker built in, so this checks what it can without one:
  * every module must strip and bundle cleanly under the bundler's rules, every
- * source file must be reachable, and no animation timing may be hard-coded
- * outside feel.ts.
+ * source file must be reachable, no animation timing may be hard-coded
+ * outside feel.ts, and the folders without a DOM never import from src/ui.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -75,7 +75,24 @@ for (const file of sources) {
   });
 }
 
-// 4. The debug hook stays behind ?debug.
+// 4. The folders without a DOM never import from src/ui. ARCHITECTURE.md
+// promises it, the unit suite depends on it, and Storyboard copies these four
+// folders and nothing else. One exception, named: the settings file checks a
+// loaded file against the app's own limits, and those are timings, which live
+// only in ui/feel.ts (rule 3). Storyboard leaves that file out of its copy.
+const NO_UI = ["core", "model", "import", "storage"];
+const MAY_IMPORT_UI = new Set(["src/model/settings-file.ts"]);
+for (const file of sources) {
+  const rel = relative(root, file).split(sep).join("/");
+  if (!NO_UI.some((folder) => rel.startsWith(`src/${folder}/`)) || MAY_IMPORT_UI.has(rel)) continue;
+  const text = readFileSync(file, "utf8");
+  for (const match of text.matchAll(/\bfrom\s*["'](\.[^"']+)["']/g)) {
+    const target = relative(root, resolve(dirname(file), match[1])).split(sep).join("/");
+    if (target.startsWith("src/ui/")) problems.push(`${rel}: imports ${match[1]} — this folder must not depend on src/ui`);
+  }
+}
+
+// 5. The debug hook stays behind ?debug.
 const main = readFileSync(join(root, "src/main.ts"), "utf8");
 if (!main.includes('URLSearchParams(location.search).has("debug")')) {
   problems.push("src/main.ts: the debug hook must stay behind ?debug");

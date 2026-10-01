@@ -21,6 +21,19 @@
 - **The roll engine moved from `src/ui/roll.ts` to `src/model/roll.ts`.** It
   never used the page, and now sits with the rest of the code that has no DOM,
   which Storyboard copies. Nothing a user sees changes.
+- **The folders without a DOM stay that way.** `npm run check` now fails if
+  anything in `src/core`, `src/model`, `src/import` or `src/storage` imports
+  from `src/ui`, with one named exception (`src/model/settings-file.ts`, which
+  checks loaded settings against timings that live only in `ui/feel.ts`).
+  `src/storage/appdb.ts` was the one other file breaking it: it now takes
+  `FeelSettings` from `src/model/feel.ts`, and the user's own colours
+  (`CustomColour`, `normalizeColours`) moved from the settings file to
+  `src/model/colours.ts`, so storage no longer depends on that file either.
+- **The browser tests' server serves a folder's `index.html`**, as GitHub
+  Pages does. Under a subfolder the offline worker could not install there,
+  so the subpath test only ever checked where it registered. It now also
+  checks that the worker installs and that the app reloads offline from
+  `/tools/orangey/`.
 
 ## 0.8.0
 

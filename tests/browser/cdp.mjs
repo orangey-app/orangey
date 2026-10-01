@@ -77,7 +77,11 @@ export async function serve(dir) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
-      const path = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+      // A folder's address serves its index.html, as GitHub Pages does. The app's
+      // worker precaches "./", so without this it could never install anywhere
+      // but the root.
+      const pathname = decodeURIComponent(url.pathname);
+      const path = pathname.endsWith("/") ? `${pathname}index.html` : pathname;
       const body = await readFile(join(dir, path));
       const headers = {
         "content-type": MIME[extname(path)] ?? "application/octet-stream",

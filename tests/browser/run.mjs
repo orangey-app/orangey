@@ -1214,8 +1214,30 @@ async function main() {
         return reg === "slow" ? "slow" : reg === null ? "refused" : new URL(reg.scope).pathname;
       `);
       assert.notEqual(scope, "refused", "the worker would not register from a subpath");
-      if (scope !== "slow") {
+      if (scope === "slow") console.log("    (worker slow to start: install and offline reload skipped)");
+      else {
         assert.equal(scope, "/tools/orangey/", `the worker claimed the wrong scope: ${scope}`);
+        // Registered is not installed: the install fetches every file it caches,
+        // "./" included, and one failure throws the whole install away.
+        const state = await page.evaluate(`
+          const reg = await navigator.serviceWorker.getRegistration(".");
+          const deadline = Date.now() + 10000;
+          while (Date.now() < deadline) {
+            if (reg.active && reg.active.state === "activated") return "activated";
+            if (!reg.installing && !reg.waiting && !reg.active) return "failed";
+            await new Promise((r) => setTimeout(r, 50));
+          }
+          return "timeout";
+        `);
+        assert.equal(state, "activated", "the worker registered from the subpath but never installed");
+        // And it is what opens the app with the network gone.
+        await page.setOffline(true);
+        try {
+          await page.goto(`${base}index.html?debug&noseed`);
+          await page.waitForFunction("window.orangey && window.orangey.state.ready");
+        } finally {
+          await page.setOffline(false);
+        }
       }
 
       await page.click(".quickbar button:nth-child(2)");
@@ -1236,10 +1258,8 @@ async function main() {
     const nest = join(root, ".tmp", "neighbour");
     rmSync(nest, { recursive: true, force: true });
     mkdirSync(nest, { recursive: true });
-    // At the root of its own server: the test server maps only "/" to
-    // index.html, and the worker precaches "./", so under a subfolder it would
-    // never install. The caches are site-wide either way.
-    cpSync(dist, nest, { recursive: true });
+    // Where it is published: in a folder of its own, beside the neighbour.
+    cpSync(dist, join(nest, "orangey"), { recursive: true });
     const sub = await serve(nest);
     try {
       // Not the app's page: it registers the worker on load, which would clean
@@ -1253,7 +1273,7 @@ async function main() {
         await caches.open("orangey-v0.0.0-00000000");
         await caches.open("workbox-precache-v2-storyboard");
         await caches.open("storyboard-journal");
-        const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => null);
+        const reg = await navigator.serviceWorker.register("/orangey/sw.js", { scope: "/orangey/" }).catch(() => null);
         if (!reg) return "refused";
         // Raced against a clock, like the subpath test: a runner slow to start
         // the worker thread must not hang the suite.

@@ -1993,8 +1993,8 @@ function sourceFor(seed                           )               {
  * content.
  */
 
-                                                  
-                                                              
+                                                     
+                                                        
                                                      
 
                                
@@ -6293,6 +6293,42 @@ function fixTheme(s              )                                            {
   return { scheme, moved: words };
 }
 
+// ---- src/model/colours.ts ----------------------------------------
+/**
+ * Colours the user adds to the palette. Kept apart from the settings file so
+ * that the app database, which stores them, does not depend on that file: it
+ * is the one model file allowed to reach into src/ui (see scripts/check.mjs).
+ */
+
+
+
+/** A colour the user added to the palette. */
+                               
+               
+              
+ 
+
+const MAX_CUSTOM_COLOURS = 64;
+const MAX_COLOUR_NAME = 40;
+
+/** Keep only well-formed colours, lower-case hex, no duplicates, capped. */
+function normalizeColours(raw         )                 {
+  if (!Array.isArray(raw)) return [];
+  const out                 = [];
+  const seen = new Set        ();
+  for (const c of raw) {
+    if (typeof c !== "object" || c === null) continue;
+    const { name, hex } = c                           ;
+    if (typeof name !== "string" || !name.trim() || !isHex(hex)) continue;
+    const h = (hex.startsWith("#") ? hex : `#${hex}`).toLowerCase();
+    if (seen.has(h)) continue;
+    seen.add(h);
+    out.push({ name: name.trim().slice(0, MAX_COLOUR_NAME), hex: h });
+    if (out.length >= MAX_CUSTOM_COLOURS) break;
+  }
+  return out;
+}
+
 // ---- src/model/settings-file.ts ----------------------------------
 /**
  * The `.orangey-settings.json` file: settings worth carrying to another device
@@ -6308,18 +6344,11 @@ function fixTheme(s              )                                            {
 
 
 
+
 const SETTINGS_FORMAT = "orangey-settings";
 const SETTINGS_VERSION = 1;
 const SETTINGS_FILE_NAME = "orangey-settings.json";
 
-/** A colour the user added to the palette. */
-                               
-               
-              
- 
-
-const MAX_CUSTOM_COLOURS = 64;
-const MAX_COLOUR_NAME = 40;
 
                                    
                  
@@ -6463,24 +6492,6 @@ function normalizeCustomScheme(raw         )                           {
   };
 }
 
-/** Keep only well-formed colours, lower-case hex, no duplicates, capped. */
-function normalizeColours(raw         )                 {
-  if (!Array.isArray(raw)) return [];
-  const out                 = [];
-  const seen = new Set        ();
-  for (const c of raw) {
-    if (typeof c !== "object" || c === null) continue;
-    const { name, hex } = c                           ;
-    if (typeof name !== "string" || !name.trim() || !isHex(hex)) continue;
-    const h = (hex.startsWith("#") ? hex : `#${hex}`).toLowerCase();
-    if (seen.has(h)) continue;
-    seen.add(h);
-    out.push({ name: name.trim().slice(0, MAX_COLOUR_NAME), hex: h });
-    if (out.length >= MAX_CUSTOM_COLOURS) break;
-  }
-  return out;
-}
-
 // ---- src/ui/mascot/events.ts -------------------------------------
 /**
  * What the app tells the mascot: facts about what happened, never the name of
@@ -6550,6 +6561,7 @@ function onMascotEvent(target             , handler                             
 
 
                                                          
+
 
 
 
@@ -19598,6 +19610,7 @@ function releasesUrl()         {
  * Every animation timing in the app is one of these values, and each section
  * previews itself: you cannot tune a spin you cannot watch.
  */
+
 
 
 

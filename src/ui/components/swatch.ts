@@ -5,7 +5,7 @@
 
 import { chroma, hexToOklab, hueAngle, isHex } from "../../core/color.ts";
 import { PALETTE, type PaletteColor } from "../styles/palette.ts";
-import { MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS, type CustomColour } from "../../model/settings-file.ts";
+import { MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS, type CustomColour } from "../../model/colours.ts";
 import { appendChildren, button, h, openDialog } from "../dom.ts";
 
 /**

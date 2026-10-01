@@ -10,20 +10,13 @@
 import { hexToRgb, isHex, rgbToHex } from "../core/color.ts";
 import { THEME_NAME_MAX, type CustomScheme } from "../core/theme.ts";
 import { normalizeFeel, type FeelSettings } from "../ui/feel.ts";
+import { MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS, normalizeColours, type CustomColour } from "./colours.ts";
 import { Check, ValidationError } from "./validate.ts";
 
 export const SETTINGS_FORMAT = "orangey-settings";
 export const SETTINGS_VERSION = 1;
 export const SETTINGS_FILE_NAME = "orangey-settings.json";
 
-/** A colour the user added to the palette. */
-export interface CustomColour {
-  name: string;
-  hex: string;
-}
-
-export const MAX_CUSTOM_COLOURS = 64;
-export const MAX_COLOUR_NAME = 40;
 
 export interface PortableSettings {
   scheme: string;
@@ -165,22 +158,4 @@ export function normalizeCustomScheme(raw: unknown): CustomScheme | undefined {
     accent: canonicalHex(c.accent),
     wheel: wheel.map((w) => canonicalHex(w as string)) as CustomScheme["wheel"],
   };
-}
-
-/** Keep only well-formed colours, lower-case hex, no duplicates, capped. */
-export function normalizeColours(raw: unknown): CustomColour[] {
-  if (!Array.isArray(raw)) return [];
-  const out: CustomColour[] = [];
-  const seen = new Set<string>();
-  for (const c of raw) {
-    if (typeof c !== "object" || c === null) continue;
-    const { name, hex } = c as Record<string, unknown>;
-    if (typeof name !== "string" || !name.trim() || !isHex(hex)) continue;
-    const h = (hex.startsWith("#") ? hex : `#${hex}`).toLowerCase();
-    if (seen.has(h)) continue;
-    seen.add(h);
-    out.push({ name: name.trim().slice(0, MAX_COLOUR_NAME), hex: h });
-    if (out.length >= MAX_CUSTOM_COLOURS) break;
-  }
-  return out;
 }

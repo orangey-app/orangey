@@ -19,7 +19,8 @@ import { makeItem } from "../../model/randomizer.ts";
 import { rollDice } from "../../core/dice/evaluate.ts";
 import { CryptoSource } from "../../core/rng.ts";
 
-import { SETTINGS_FILE_NAME, MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS } from "../../model/settings-file.ts";
+import { SETTINGS_FILE_NAME } from "../../model/settings-file.ts";
+import { MAX_COLOUR_NAME, MAX_CUSTOM_COLOURS } from "../../model/colours.ts";
 import { ValidationError } from "../../model/validate.ts";
 import { SINGLE_FILE_NAME, isSingleFile, releasesUrl } from "../single.ts";
 import { storageAdvice, storageEnv } from "../../storage/fsdir.ts";

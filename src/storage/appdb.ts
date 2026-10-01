@@ -5,8 +5,8 @@
  * content.
  */
 
-import type { FeelSettings } from "../ui/feel.ts";
-import type { CustomColour } from "../model/settings-file.ts";
+import type { FeelSettings } from "../model/feel.ts";
+import type { CustomColour } from "../model/colours.ts";
 import type { CustomScheme } from "../core/theme.ts";
 
 export interface HistoryEntry {
