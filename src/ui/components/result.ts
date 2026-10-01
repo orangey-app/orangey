@@ -11,7 +11,7 @@
 
 import { h, setChildren } from "../dom.ts";
 import { imageUrl, imageUrlSync } from "../../storage/images.ts";
-import type { Outcome } from "../roll.ts";
+import type { Outcome } from "../../model/roll.ts";
 
 export interface ResultPanel {
   el: HTMLElement;

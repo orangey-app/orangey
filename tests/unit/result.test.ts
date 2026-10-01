@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { longestOutcome, rollRandomizer } from "../../src/ui/roll.ts";
+import { longestOutcome, rollRandomizer } from "../../src/model/roll.ts";
 import { RESULT_SMALL_AT, RESULT_TWO_LINES_AT, resultIsSmall, resultLines } from "../../src/ui/components/result.ts";
 import { emptyRandomizer, makeItem, type Randomizer } from "../../src/model/randomizer.ts";
 import { SeededSource } from "../../src/core/rng.ts";

@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { emitMascotEvent, onMascotEvent, summarize, type MascotEvent } from "../../src/ui/mascot/events.ts";
-import { rollRandomizer } from "../../src/ui/roll.ts";
+import { rollRandomizer } from "../../src/model/roll.ts";
 import { emptyRandomizer, makeItem, type Randomizer } from "../../src/model/randomizer.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 

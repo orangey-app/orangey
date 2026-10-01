@@ -16,7 +16,7 @@ import { state } from "./state.ts";
 import { createCell, type CellView } from "./components/cell.ts";
 import { advanceChain, chainTarget, createChainSurface, type ChainLink } from "./components/chain.ts";
 import { loadBoardTemps } from "./board-temps.ts";
-import type { Outcome } from "./roll.ts";
+import type { Outcome } from "../model/roll.ts";
 
 /** The part of the API this file uses; the DOM typings do not have it yet. */
 interface PipApi {

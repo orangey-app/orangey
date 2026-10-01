@@ -18,7 +18,7 @@ import { isPresenting, setPresenting } from "../presenting.ts";
 import { popOutButton } from "../popout.ts";
 import { cellRollButton, createCell, createMissingCell, type CellView } from "../components/cell.ts";
 import { advanceChain, chainTarget, createChainSurface, type ChainLink } from "../components/chain.ts";
-import type { Outcome } from "../roll.ts";
+import type { Outcome } from "../../model/roll.ts";
 import { createRecentRolls } from "../components/recent.ts";
 import { pickRandomizers } from "../components/picker.ts";
 import { draggedPaths, LIBRARY_PATHS_TYPE } from "../dragpaths.ts";

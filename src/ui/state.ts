@@ -17,7 +17,7 @@ import { starters } from "../model/starters.ts";
 import { normalizeColours, normalizeCustomScheme, parseSettings, portableSettings, serializeSettings, type CustomColour } from "../model/settings-file.ts";
 import { deriveTheme, THEME_TOKENS } from "../core/theme.ts";
 import { WHEEL_COLOURS, WHEEL_SPARE } from "../core/palette-assign.ts";
-import type { Outcome } from "./roll.ts";
+import type { Outcome } from "../model/roll.ts";
 import { emitMascotEvent, type MascotEvent } from "./mascot/events.ts";
 
 /**

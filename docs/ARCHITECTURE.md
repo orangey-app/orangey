@@ -34,7 +34,7 @@ their own package later.
 ## Rules that the code depends on
 
 **The result is decided before the animation starts, and shown only when it
-ends.** `rollRandomizer` produces a complete outcome; `wheel.spinTo` is then
+ends.** `rollRandomizer` (`src/model/roll.ts`, no DOM) produces a complete outcome; `wheel.spinTo` is then
 handed a target and works out a pleasant way to arrive at it. Nothing displays
 that outcome until the animation resolves — the result panel holds a muted
 "Rolling…", the dice tumble through values that are not the answer, the coin

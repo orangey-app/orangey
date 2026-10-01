@@ -9,7 +9,7 @@ import {
 } from "../../src/model/link.ts";
 import { parseRoute, wheelLink } from "../../src/ui/router.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer, type Randomizer } from "../../src/model/randomizer.ts";
-import { rollRandomizer } from "../../src/ui/roll.ts";
+import { rollRandomizer } from "../../src/model/roll.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 import { ValidationError } from "../../src/model/validate.ts";
 

@@ -25,7 +25,7 @@ import { pictureCell } from "../components/picture.ts";
 import { pickRandomizer } from "../components/picker.ts";
 import { pruneImages } from "../../storage/images.ts";
 import { usedImageIds } from "../storage-actions.ts";
-import { longestOutcome } from "../roll.ts";
+import { longestOutcome } from "../../model/roll.ts";
 import { createRoller } from "../rolling.ts";
 import { createResultPanel } from "../components/result.ts";
 import { backTarget, currentRoute, editHash, navigate, parseRoute, referrer } from "../router.ts";

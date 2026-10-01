@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ParseError, diceNotation, parse, tryParse } from "../../src/core/dice/grammar.ts";
 import { evaluate, expressionBounds, rollDice } from "../../src/core/dice/evaluate.ts";
 import { formatResult, speakResult } from "../../src/core/dice/format.ts";
-import { longestOutcome, rollRandomizer } from "../../src/ui/roll.ts";
+import { longestOutcome, rollRandomizer } from "../../src/model/roll.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import { SeededSource, type RandomSource } from "../../src/core/rng.ts";
 

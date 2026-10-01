@@ -22,7 +22,7 @@ import { createInkblotView } from "../components/inkblot.ts";
 import { createResultPanel } from "../components/result.ts";
 import { createRecentRolls } from "../components/recent.ts";
 import { createChainRow, type ChainView } from "../components/chain.ts";
-import { longestOutcome } from "../roll.ts";
+import { longestOutcome } from "../../model/roll.ts";
 import { createRoller } from "../rolling.ts";
 import { bagDrawn, bagLoad, bagRefill } from "../bag.ts";
 import { openLinkDialog } from "../components/linkdialog.ts";

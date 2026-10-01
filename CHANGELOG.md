@@ -12,6 +12,15 @@
   has Generate instead of Roll, and in a pop-out. History reads *Inkblot
   generated* with the blot's number beneath. Inkblot files are a new type:
   Orangey 0.8 and earlier refuse them.
+- **Orangey's offline copy no longer deletes its neighbours'.** When Orangey
+  updated, its worker cleared every offline cache on the site, not only its
+  own older ones. Nothing else used the site before, so nobody noticed; with
+  Storyboard published beside it at `/storyboard/`, each Orangey update would
+  have wiped Storyboard's offline copy. The worker now deletes only caches
+  named `orangey-v…`, and a browser test says so.
+- **The roll engine moved from `src/ui/roll.ts` to `src/model/roll.ts`.** It
+  never used the page, and now sits with the rest of the code that has no DOM,
+  which Storyboard copies. Nothing a user sees changes.
 
 ## 0.8.0
 

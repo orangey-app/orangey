@@ -4,7 +4,7 @@
  * type needs no mascot changes.
  */
 
-import type { Outcome } from "../roll.ts";
+import type { Outcome } from "../../model/roll.ts";
 import type { OutcomeReaction, Randomizer } from "../../model/randomizer.ts";
 
 export type Extreme = "max" | "min" | null;

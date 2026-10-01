@@ -103,6 +103,12 @@ writeFileSync(join(dist, "icon-512-maskable.png"), makeIcon(512, { inset: 0.78 }
  */
 const hash = createHash("sha256").update(js).update(css).digest("hex").slice(0, 8);
 
+/*
+ * On activation the worker deletes its own older caches, and only those: the
+ * Cache API is shared by the whole site, so another app published beside
+ * Orangey (orangey-app.github.io/storyboard/) keeps its offline copy when
+ * Orangey updates. Every cache this worker makes is named "orangey-v…".
+ */
 const sw = `// Orangey service worker: precache the shell so the app opens offline.
 const CACHE = "orangey-v${version}-${hash}";
 // Not orangey.html: it is only built with --single, and one missing asset
@@ -112,7 +118,7 @@ self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("orangey-v") && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;

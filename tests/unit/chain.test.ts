@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { CHAIN_FULL_SIZE, advanceChain, chainPlacement, chainTarget, type ChainLink } from "../../src/ui/components/chain.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
-import { rollRandomizer } from "../../src/ui/roll.ts";
+import { rollRandomizer } from "../../src/model/roll.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 
 const link = (id: string, name = id): ChainLink => ({ id, name, from: "", found: true });

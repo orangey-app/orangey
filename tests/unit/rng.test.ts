@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { CryptoSource, SeededSource, seedHash64, hash32, intFromWords } from "../../src/core/rng.ts";
-import { chosenFromOffer, offerFromList, rollListMany } from "../../src/ui/roll.ts";
+import { chosenFromOffer, offerFromList, rollListMany } from "../../src/model/roll.ts";
 import { emptyRandomizer, makeItem, type ListRandomizer } from "../../src/model/randomizer.ts";
 import {
   NotRollableError,

@@ -15,7 +15,7 @@ import type { WheelView } from "./components/wheel.ts";
 import type { DiceTray } from "./components/dice.ts";
 import type { CoinView } from "./components/coin.ts";
 import type { InkblotView } from "./components/inkblot.ts";
-import { chosenFromOffer, offerFromList, pickedOutcome, rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "./roll.ts";
+import { chosenFromOffer, offerFromList, pickedOutcome, rollListMany, rollRandomizer, whyCannotRoll, type Outcome } from "../model/roll.ts";
 import { bagDrawn, bagTake } from "./bag.ts";
 import { isRollable, withoutDrawn } from "../core/weighted.ts";
 import { summarize } from "./mascot/events.ts";

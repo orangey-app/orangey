@@ -4,7 +4,7 @@ import { BOARD_LIMIT, canRoll, emptyRandomizer, isBoard, type BoardRandomizer } 
 import { parseFile, serialize, wrap } from "../../src/model/file.ts";
 import { Check } from "../../src/model/validate.ts";
 import { validateRandomizer } from "../../src/model/randomizer.ts";
-import { rollRandomizer, whyCannotRoll } from "../../src/ui/roll.ts";
+import { rollRandomizer, whyCannotRoll } from "../../src/model/roll.ts";
 import { SeededSource } from "../../src/core/rng.ts";
 import { LibraryService } from "../../src/storage/library.ts";
 import { MemoryBackend } from "../../src/storage/memory.ts";

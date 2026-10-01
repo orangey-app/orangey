@@ -4,7 +4,7 @@ import {
   INK_PAPER, INK_SEED_MAX, inkBuild, inkFieldNow, inkHeight, inkPaint, inkParams, inkResolve, inkTouchesEdge,
 } from "../../src/core/inkblot.ts";
 import { SeededSource } from "../../src/core/rng.ts";
-import { rollRandomizer } from "../../src/ui/roll.ts";
+import { rollRandomizer } from "../../src/model/roll.ts";
 import { emptyRandomizer, validateRandomizer } from "../../src/model/randomizer.ts";
 import { Check } from "../../src/model/validate.ts";
 

@@ -6,7 +6,7 @@
  * unit test can answer on its own is left to tests/unit.
  */
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { launch, serve } from "./cdp.mjs";
@@ -1222,6 +1222,57 @@ async function main() {
       await page.waitForFunction("window.orangey.state.history.length === 1");
       const value = await page.evaluate(`return document.querySelector(".result-value").textContent`);
       assert.match(value, /^\d+$/, `no result: ${value}`);
+      assert.deepEqual(page.consoleErrors, []);
+    } finally {
+      await sub.close();
+      rmSync(nest, { recursive: true, force: true });
+    }
+  });
+
+  await test("R the worker clears only its own old caches, so an app beside it stays offline", async (page) => {
+    // The Cache API belongs to the whole site, and Storyboard is published beside
+    // Orangey on it. A worker that cleared every cache but its own would wipe
+    // Storyboard's offline copy on each Orangey update.
+    const nest = join(root, ".tmp", "neighbour");
+    rmSync(nest, { recursive: true, force: true });
+    mkdirSync(nest, { recursive: true });
+    // At the root of its own server: the test server maps only "/" to
+    // index.html, and the worker precaches "./", so under a subfolder it would
+    // never install. The caches are site-wide either way.
+    cpSync(dist, nest, { recursive: true });
+    const sub = await serve(nest);
+    try {
+      // Not the app's page: it registers the worker on load, which would clean
+      // up before the caches below exist. A blank page on the same site registers
+      // nothing (and page.goto would wait for the app, so navigate directly).
+      writeFileSync(join(nest, "blank.html"), "<!doctype html><title>blank</title>");
+      const loaded = page.waitFor("Page.loadEventFired");
+      await page.send("Page.navigate", { url: `${sub.origin}/blank.html` });
+      await loaded;
+      const keys = await page.evaluate(`
+        await caches.open("orangey-v0.0.0-00000000");
+        await caches.open("workbox-precache-v2-storyboard");
+        await caches.open("storyboard-journal");
+        const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => null);
+        if (!reg) return "refused";
+        // Raced against a clock, like the subpath test: a runner slow to start
+        // the worker thread must not hang the suite.
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const w = reg.active;
+          if (w && w.state === "activated") return (await caches.keys()).sort();
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return "slow";
+      `);
+      assert.notEqual(keys, "refused", "the worker would not register");
+      if (keys === "slow") console.log("    (worker slow to start: cache check skipped)");
+      else {
+        assert.ok(!keys.includes("orangey-v0.0.0-00000000"), `Orangey's old cache survived: ${keys}`);
+        assert.ok(keys.includes("workbox-precache-v2-storyboard"), `a neighbour's cache was deleted: ${keys}`);
+        assert.ok(keys.includes("storyboard-journal"), `a neighbour's cache was deleted: ${keys}`);
+        assert.equal(keys.filter((k) => k.startsWith("orangey-v")).length, 1, `expected exactly Orangey's current cache: ${keys}`);
+      }
       assert.deepEqual(page.consoleErrors, []);
     } finally {
       await sub.close();

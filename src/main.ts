@@ -1,6 +1,6 @@
 import { mountApp } from "./ui/app.ts";
 import { state } from "./ui/state.ts";
-import { rollRandomizer } from "./ui/roll.ts";
+import { rollRandomizer } from "./model/roll.ts";
 import { effectiveFeel } from "./ui/feel.ts";
 import { decodeRandomizer } from "./model/link.ts";
 import { appBase, navigate, slideLink } from "./ui/router.ts";

@@ -12,7 +12,7 @@ import { drawNumbers, formatNumbers } from "../core/number.ts";
 import { type RandomSource } from "../core/rng.ts";
 import { INK_SEED_MAX } from "../core/inkblot.ts";
 import { drawWithoutReplacement, isRollable, pickWeightedIndex, rollableIndices, withoutDrawn } from "../core/weighted.ts";
-import type { ListRandomizer, OutcomeReaction, Randomizer } from "../model/randomizer.ts";
+import type { ListRandomizer, OutcomeReaction, Randomizer } from "./randomizer.ts";
 import type { RollResult } from "../core/dice/evaluate.ts";
 
 export interface Outcome {

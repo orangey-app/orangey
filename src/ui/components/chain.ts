@@ -12,7 +12,7 @@
 import type { Randomizer } from "../../model/randomizer.ts";
 import { h, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
-import type { Outcome } from "../roll.ts";
+import type { Outcome } from "../../model/roll.ts";
 import { cellRollButton, createCell, type CellView } from "./cell.ts";
 
 /** How many randomizers in a chain keep their full size. The rest are icons. */
