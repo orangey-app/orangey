@@ -7,8 +7,7 @@ import { CryptoSource, SeededSource, type RandomSource } from "../core/rng.ts";
 import { appdb, HISTORY_CAP, HISTORY_IN_MEMORY, type HistoryEntry, type Prefs, type RollOrigin } from "../storage/appdb.ts";
 import { LibraryService, type LibraryBackend } from "../storage/library.ts";
 import { MemoryBackend } from "../storage/memory.ts";
-import { openOpfs, reopenFolder } from "../storage/fsdir.ts";
-import { IndexedDbBackend } from "../storage/idb.ts";
+import { locateLibrary } from "../storage/locate.ts";
 import { useImageStore } from "../storage/images.ts";
 import type { Randomizer } from "../model/randomizer.ts";
 import { newId } from "../model/randomizer.ts";
@@ -74,24 +73,6 @@ export interface Toast {
 
 /** How often coming back to the tab may re-read a folder library. */
 const RESCAN_DELAY = 30_000;
-
-/**
- * The browser's own storage: the origin-private filesystem where writable,
- * IndexedDB otherwise. A library already in IndexedDB wins over an empty
- * filesystem, so a browser that gains OPFS in an update (Safari did) does not
- * hide it.
- */
-async function pickBrowserStorage(): Promise<LibraryBackend | null> {
-  const opfs = await openOpfs();
-  if (!opfs) return IndexedDbBackend.open();
-  const empty = (await opfs.list("").catch(() => [])).length === 0;
-  if (!empty || (await IndexedDbBackend.exists()) === false) return opfs;
-  const idb = await IndexedDbBackend.open();
-  if (!idb) return opfs;
-  if ((await idb.list("").catch(() => [])).length > 0) return idb;
-  idb.close();
-  return opfs;
-}
 
 export const DEFAULT_PREFS: Prefs = {
   feel: DEFAULT_FEEL,
@@ -171,12 +152,9 @@ class AppState {
     // Storage, in order of preference: the folder chosen last time (if reopening
     // needs no prompt), the origin-private filesystem, IndexedDB, and only then
     // memory, which the UI flags because nothing survives.
-    let backend: LibraryBackend | null = null;
-    const remembered = await reopenFolder();
-    if (remembered && remembered !== "ask") backend = remembered;
-    this.folderNeedsPermission = remembered === "ask";
-    backend ??= await pickBrowserStorage();
-    backend ??= new MemoryBackend();
+    const located = await locateLibrary();
+    this.folderNeedsPermission = located.folder === "ask";
+    const backend: LibraryBackend = located.backend ?? new MemoryBackend();
     this.setLibrary(new LibraryService(backend));
     await this.library.refresh();
 

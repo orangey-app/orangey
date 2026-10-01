@@ -29,6 +29,11 @@
   `FeelSettings` from `src/model/feel.ts`, and the user's own colours
   (`CustomColour`, `normalizeColours`) moved from the settings file to
   `src/model/colours.ts`, so storage no longer depends on that file either.
+- **Where the library is, decided in `src/storage/locate.ts`.** The rule
+  (the folder chosen last time, else the browser's own storage) moved out of
+  `src/ui/state.ts`, so Storyboard, which copies `src/storage`, finds the same
+  library Orangey does. `reopenFolder` and `regrantFolder` take the access a
+  caller needs: Orangey asks for "readwrite" as before, a reader for "read".
 - **The browser tests' server serves a folder's `index.html`**, as GitHub
   Pages does. Under a subfolder the offline worker could not install there,
   so the subpath test only ever checked where it registered. It now also

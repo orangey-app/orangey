@@ -240,18 +240,21 @@ export async function pickFolder(): Promise<DirectoryBackend | null> {
   return backend;
 }
 
+/** What a caller needs from a folder: Orangey writes, a reader such as Storyboard only reads. */
+export type FolderAccess = "read" | "readwrite";
+
 /**
  * Reopen the folder chosen last time, if the browser still lets us.
  * Returns the backend when permission is already granted, "ask" when the user
  * has to click to grant it again (browsers require a gesture), or null when
  * no folder was ever chosen.
  */
-export async function reopenFolder(): Promise<DirectoryBackend | "ask" | null> {
+export async function reopenFolder(access: FolderAccess = "readwrite"): Promise<DirectoryBackend | "ask" | null> {
   const handle = await appdb.get<DirHandle>("folderHandle");
   if (!handle) return null;
   try {
     const query = (handle as unknown as { queryPermission?: (o: unknown) => Promise<string> }).queryPermission;
-    const state = query ? await query.call(handle, { mode: "readwrite" }) : "granted";
+    const state = query ? await query.call(handle, { mode: access }) : "granted";
     if (state === "granted") return new DirectoryBackend(handle, "fsa", handle.name);
     return "ask";
   } catch {
@@ -260,11 +263,11 @@ export async function reopenFolder(): Promise<DirectoryBackend | "ask" | null> {
 }
 
 /** Grant access again after a reload; must be called from a click. */
-export async function regrantFolder(): Promise<DirectoryBackend | null> {
+export async function regrantFolder(access: FolderAccess = "readwrite"): Promise<DirectoryBackend | null> {
   const handle = await appdb.get<DirHandle>("folderHandle");
   if (!handle) return null;
   const request = (handle as unknown as { requestPermission?: (o: unknown) => Promise<string> }).requestPermission;
-  const state = request ? await request.call(handle, { mode: "readwrite" }) : "granted";
+  const state = request ? await request.call(handle, { mode: access }) : "granted";
   return state === "granted" ? new DirectoryBackend(handle, "fsa", handle.name) : null;
 }
 

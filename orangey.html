@@ -4615,18 +4615,21 @@ async function pickFolder()                                   {
   return backend;
 }
 
+/** What a caller needs from a folder: Orangey writes, a reader such as Storyboard only reads. */
+                                                
+
 /**
  * Reopen the folder chosen last time, if the browser still lets us.
  * Returns the backend when permission is already granted, "ask" when the user
  * has to click to grant it again (browsers require a gesture), or null when
  * no folder was ever chosen.
  */
-async function reopenFolder()                                           {
+async function reopenFolder(access               = "readwrite")                                           {
   const handle = await appdb.get           ("folderHandle");
   if (!handle) return null;
   try {
     const query = (handle                                                                    ).queryPermission;
-    const state = query ? await query.call(handle, { mode: "readwrite" }) : "granted";
+    const state = query ? await query.call(handle, { mode: access }) : "granted";
     if (state === "granted") return new DirectoryBackend(handle, "fsa", handle.name);
     return "ask";
   } catch {
@@ -4635,11 +4638,11 @@ async function reopenFolder()                                           {
 }
 
 /** Grant access again after a reload; must be called from a click. */
-async function regrantFolder()                                   {
+async function regrantFolder(access               = "readwrite")                                   {
   const handle = await appdb.get           ("folderHandle");
   if (!handle) return null;
   const request = (handle                                                                      ).requestPermission;
-  const state = request ? await request.call(handle, { mode: "readwrite" }) : "granted";
+  const state = request ? await request.call(handle, { mode: access }) : "granted";
   return state === "granted" ? new DirectoryBackend(handle, "fsa", handle.name) : null;
 }
 
@@ -4856,6 +4859,54 @@ class IndexedDbBackend                           {
     const parts = path.split("/").slice(0, -1);
     return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
   }
+}
+
+// ---- src/storage/locate.ts ---------------------------------------
+/**
+ * Where the library is. One rule, used by Orangey and by Storyboard (which
+ * copies this folder), so the two can never disagree about it.
+ *
+ * In order: the folder on disk chosen last time, if the browser still lets us
+ * in without a click; the browser's own storage; and only then memory, which
+ * the UI flags because nothing survives. A remembered folder that needs a
+ * click to reopen is reported as `folder: "ask"` alongside the browser
+ * storage, and the caller decides what to show meanwhile.
+ */
+
+
+
+                                                   
+
+/**
+ * The browser's own storage: the origin-private filesystem where writable,
+ * IndexedDB otherwise. A library already in IndexedDB wins over an empty
+ * filesystem, so a browser that gains OPFS in an update (Safari did) does not
+ * hide it.
+ */
+async function pickBrowserStorage()                                 {
+  const opfs = await openOpfs();
+  if (!opfs) return IndexedDbBackend.open();
+  const empty = (await opfs.list("").catch(() => [])).length === 0;
+  if (!empty || (await IndexedDbBackend.exists()) === false) return opfs;
+  const idb = await IndexedDbBackend.open();
+  if (!idb) return opfs;
+  if ((await idb.list("").catch(() => [])).length > 0) return idb;
+  idb.close();
+  return opfs;
+}
+
+                                  
+                                                                                      
+                                 
+                                                                                  
+                       
+ 
+
+/** Orangey asks for "readwrite"; a reader such as Storyboard asks for "read". */
+async function locateLibrary(access               = "readwrite")                           {
+  const remembered = await reopenFolder(access);
+  if (remembered && remembered !== "ask") return { backend: remembered, folder: null };
+  return { backend: await pickBrowserStorage(), folder: remembered === "ask" ? "ask" : null };
 }
 
 // ---- src/storage/zip.ts ------------------------------------------
@@ -6559,7 +6610,6 @@ function onMascotEvent(target             , handler                             
 
 
 
-
                                                          
 
 
@@ -6624,24 +6674,6 @@ function rollsInScope(rows              , ids          )               {
 
 /** How often coming back to the tab may re-read a folder library. */
 const RESCAN_DELAY = 30_000;
-
-/**
- * The browser's own storage: the origin-private filesystem where writable,
- * IndexedDB otherwise. A library already in IndexedDB wins over an empty
- * filesystem, so a browser that gains OPFS in an update (Safari did) does not
- * hide it.
- */
-async function pickBrowserStorage()                                 {
-  const opfs = await openOpfs();
-  if (!opfs) return IndexedDbBackend.open();
-  const empty = (await opfs.list("").catch(() => [])).length === 0;
-  if (!empty || (await IndexedDbBackend.exists()) === false) return opfs;
-  const idb = await IndexedDbBackend.open();
-  if (!idb) return opfs;
-  if ((await idb.list("").catch(() => [])).length > 0) return idb;
-  idb.close();
-  return opfs;
-}
 
 const DEFAULT_PREFS        = {
   feel: DEFAULT_FEEL,
@@ -6721,12 +6753,9 @@ class AppState {
     // Storage, in order of preference: the folder chosen last time (if reopening
     // needs no prompt), the origin-private filesystem, IndexedDB, and only then
     // memory, which the UI flags because nothing survives.
-    let backend                        = null;
-    const remembered = await reopenFolder();
-    if (remembered && remembered !== "ask") backend = remembered;
-    this.folderNeedsPermission = remembered === "ask";
-    backend ??= await pickBrowserStorage();
-    backend ??= new MemoryBackend();
+    const located = await locateLibrary();
+    this.folderNeedsPermission = located.folder === "ask";
+    const backend                 = located.backend ?? new MemoryBackend();
     this.setLibrary(new LibraryService(backend));
     await this.library.refresh();
 
