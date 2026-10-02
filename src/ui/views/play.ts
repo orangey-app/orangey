@@ -31,6 +31,7 @@ import { popOutButton } from "../popout.ts";
 import { effectiveFeel, QUICK_DEBOUNCE_MS } from "../feel.ts";
 import { appBase, currentRoute, navigate, wheelLink, type LinkParams } from "../router.ts";
 import type { View } from "../view.ts";
+import { credit } from "../packs.ts";
 import { isRollable, withoutDrawn } from "../../core/weighted.ts";
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
@@ -491,7 +492,8 @@ export function createPlayView(
     randomizer = next;
     title.textContent = next.type === "dice" ? (next as { expression: string }).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
-    editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    editLink.style.display = node && !locked && next.id === node.randomizer?.id ? "" : "none";
+    if (packCredit) packCredit.hidden = !(node && next.id === node.randomizer?.id);
     linkButton.hidden = !fixed && next !== quickModel;
     roller.discard();
     rollButton.textContent = rollLabel();
@@ -527,7 +529,12 @@ export function createPlayView(
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer as { expression: string }).expression : randomizer.name });
   const subtitle = h("p", { class: "muted", text: randomizer.description ?? describeType(randomizer) });
   const editLink = button("Edit", () => node && navigate(`#/edit/${encodeURIComponent(node.path)}`), { class: "ghost edit-link" });
-  editLink.style.display = node ? "" : "none";
+  // Part of an installed pack: its credit under the title, and no Edit (the
+  // editor would only offer an editable copy).
+  const pack = node ? state.library.packOf(node.path)?.pack ?? null : null;
+  const locked = !!pack?.installed;
+  editLink.style.display = node && !locked ? "" : "none";
+  const packCredit = pack?.installed ? credit(pack) : null;
 
   // A wheel that arrived in a link is nobody's until it is saved. Not offered in
   // full screen, where this row is hidden.
@@ -552,7 +559,7 @@ export function createPlayView(
     scopeName: () => listNames(onScreen().map((r) => r.name)),
   });
 
-  const header = h("div", { class: "row" }, h("div", {}, title, subtitle), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
+  const header = h("div", { class: "row" }, h("div", {}, title, subtitle, packCredit), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
 
   // The mascot sits in a corner of the result panel, never over the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));

@@ -26,6 +26,8 @@ import { pickRandomizer } from "../components/picker.ts";
 import { pruneImages } from "../../storage/images.ts";
 import { usedImageIds } from "../storage-actions.ts";
 import { longestOutcome } from "../../model/roll.ts";
+import { keepRefs, showRefs } from "../../model/refs.ts";
+import { attachRefPicker } from "../components/refpicker.ts";
 import { createRoller } from "../rolling.ts";
 import { createResultPanel } from "../components/result.ts";
 import { backTarget, currentRoute, editHash, navigate, parseRoute, referrer } from "../router.ts";
@@ -327,6 +329,23 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
   };
 
   const tbody = h("tbody");
+  // `{@` in an outcome: pick a table to roll there. The picked one's id is
+  // remembered so the save keeps it, even when another table has its name.
+  const picked = new Map<string, string>();
+  const findByName = (name: string) => {
+    const id = picked.get(name.toLowerCase());
+    return id ? [{ id }] : state.library.refs.byName(name);
+  };
+  const stored = (typed: string, previous: string) => keepRefs(typed, previous, findByName);
+  const detachPicker = attachRefPicker(tbody, ".label-cell input, .desc-cell input", {
+    candidates: () => state.library.files().flatMap((f) => {
+      const r = f.randomizer;
+      if (!r || r.id === model.id || r.type === "board" || r.type === "inkblot") return [];
+      const slash = f.path.lastIndexOf("/");
+      return [{ id: r.id, name: r.name, folder: slash < 0 ? "" : f.path.slice(0, slash) }];
+    }),
+    onPick: (c) => picked.set(c.name.replace(/[{}|]/g, "").trim().toLowerCase(), c.id),
+  });
   const footer = h("div", { class: "faint" });
   const bulkBar = h("div", { class: "row tight gap-s" });
 
@@ -386,12 +405,12 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     const where = rowFor(e.target);
     if (!where) return;
     const el = e.target as HTMLInputElement;
-    if (el.closest(".label-cell")) update(where.item.id, (i) => ({ ...i, label: el.value }), false, el);
+    if (el.closest(".label-cell")) update(where.item.id, (i) => ({ ...i, label: stored(el.value, i.label) }), false, el);
     else if (el.closest(".weight-cell")) {
       const v = Number.parseFloat(el.value);
       if (Number.isFinite(v) && v >= 0) update(where.item.id, (i) => ({ ...i, weight: v }), false, el);
     } else if (el.closest(".desc-cell")) {
-      update(where.item.id, (i) => ({ ...i, description: el.value || undefined }), false, el);
+      update(where.item.id, (i) => ({ ...i, description: stored(el.value, i.description ?? "") || undefined }), false, el);
     }
   });
 
@@ -515,11 +534,11 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
       "aria-label": item.color ? `Colour, currently ${item.color}` : "Colour, currently automatic",
     });
 
-    const label = h("input", { type: "text", value: item.label, "aria-label": "Outcome" });
+    const label = h("input", { type: "text", value: showRefs(item.label), "aria-label": "Outcome" });
     const weight = h("input", { type: "number", min: "0", step: "any", value: String(item.weight), "aria-label": "Weight" });
     const description = h("input", {
       type: "text",
-      value: item.description ?? "",
+      value: showRefs(item.description ?? ""),
       "aria-label": "Description",
       placeholder: "—",
     });
@@ -856,6 +875,7 @@ function createListEditor(node: LibraryNode, initial: ListRandomizer, from?: str
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
+      detachPicker();
       if (wheelFrame) cancelAnimationFrame(wheelFrame);
       const problem = draftProblem(model);
       if (problem) state.toast(`Your last change to ${model.name} was not saved: ${problem}`);

@@ -10,6 +10,8 @@
 import { FILE_SUFFIX, FORMAT, FORMAT_VERSION, fileNameFor, parseFile, serialize, wrap, type OrangeyFile } from "../model/file.ts";
 import type { Randomizer } from "../model/randomizer.ts";
 import { Check, ValidationError } from "../model/validate.ts";
+import { publicManifest, readManifest, readPackList, type NeededPack, type PackManifest } from "../model/pack.ts";
+import { remapRefs, refIdsOf } from "../model/refs.ts";
 import { basename, join, parent, sanitizeName } from "./paths.ts";
 
 export const LIBRARY_FORMAT = "orangey-library";
@@ -29,18 +31,32 @@ export interface ReadLibraryFile {
   entries: { path: string; file: OrangeyFile }[];
   /** Randomizers that could not be read, by path, with the reason. */
   failed: { path: string; message: string }[];
+  /** Set when the file is a pack: who made it, its version and licence (model/pack.ts). */
+  pack?: PackManifest;
+  /** Installed packs it was exported without, that something in it uses. */
+  needs?: NeededPack[];
 }
 
 /**
  * The text of a library file. Two-space indent and the randomizer's usual key
  * order, so it reads like a `.orangey.json` and diffs like one.
  */
-export function serializeLibrary(name: string, exported: string, folders: readonly string[], entries: readonly LibraryFileEntry[]): string {
+export function serializeLibrary(
+  name: string,
+  exported: string,
+  folders: readonly string[],
+  entries: readonly LibraryFileEntry[],
+  pack?: PackManifest,
+  needs: readonly NeededPack[] = [],
+): string {
   const doc = {
     format: LIBRARY_FORMAT,
     version: LIBRARY_FORMAT_VERSION,
     name,
     exported,
+    // Only what travels: never where this copy was installed from.
+    ...(pack ? { pack: publicManifest(pack) } : {}),
+    ...(needs.length ? { needs } : {}),
     folders: [...folders],
     randomizers: entries.map((e) => ({
       path: e.path,
@@ -93,6 +109,9 @@ export function parseLibrary(text: string): ReadLibraryFile {
   }
 
   const name = typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 200) : "Library";
+  // A pack that cannot say who made it or which version it is cannot be
+  // installed or updated, so a broken pack block refuses the whole file.
+  const pack = o.pack === undefined ? undefined : publicManifest(readManifest(o.pack, "library.pack"));
   const folders = Array.isArray(o.folders)
     ? [...new Set(o.folders.filter((f): f is string => typeof f === "string").map(safeFolder).filter(Boolean))]
     : [];
@@ -122,7 +141,8 @@ export function parseLibrary(text: string): ReadLibraryFile {
     used.add(path.toLowerCase());
     entries.push({ path, file: { ...file, randomizer } });
   });
-  return { name, folders, entries, failed };
+  const needs = readPackList(o.needs);
+  return { name, folders, entries, failed, ...(pack ? { pack } : {}), ...(needs.length ? { needs } : {}) };
 }
 
 /**
@@ -154,9 +174,9 @@ export function withoutPictures(r: Randomizer): { randomizer: Randomizer; pictur
   return { randomizer: pictures ? { ...r, items } : r, pictures };
 }
 
-/** The ids a randomizer points at: its outcomes' "Goes to", a board's entries. */
+/** The ids a randomizer points at: its outcomes' "Goes to" and `{@references}`, a board's entries. */
 export function linkedIds(r: Randomizer): string[] {
-  if (r.type === "list") return r.items.flatMap((i) => (i.goesTo ? [i.goesTo] : []));
+  if (r.type === "list") return [...r.items.flatMap((i) => (i.goesTo ? [i.goesTo] : [])), ...refIdsOf(r)];
   if (r.type === "board") return r.entries.map((e) => e.id);
   return [];
 }
@@ -168,8 +188,16 @@ export function linkedIds(r: Randomizer): string[] {
  */
 export function relink(r: Randomizer, ids: ReadonlyMap<string, string>): Randomizer {
   const moved = (id: string | undefined): id is string => id !== undefined && ids.has(id) && ids.get(id) !== id;
-  if (r.type === "list" && r.items.some((i) => moved(i.goesTo))) {
-    return { ...r, items: r.items.map((i) => (moved(i.goesTo) ? { ...i, goesTo: ids.get(i.goesTo)! } : i)) };
+  if (r.type === "list" && (r.items.some((i) => moved(i.goesTo)) || refIdsOf(r).some(moved))) {
+    return {
+      ...r,
+      items: r.items.map((i) => {
+        const label = remapRefs(i.label, ids);
+        const description = i.description === undefined ? undefined : remapRefs(i.description, ids);
+        if (!moved(i.goesTo) && label === i.label && description === i.description) return i;
+        return { ...i, label, ...(description === undefined ? {} : { description }), ...(moved(i.goesTo) ? { goesTo: ids.get(i.goesTo)! } : {}) };
+      }),
+    };
   }
   if (r.type === "board" && r.entries.some((e) => moved(e.id))) {
     return { ...r, entries: r.entries.map((e) => (moved(e.id) ? { ...e, id: ids.get(e.id)! } : e)) };
@@ -185,6 +213,8 @@ export interface ExportSource {
 
 export interface ExportPlan {
   entries: LibraryFileEntry[];
+  /** What was left out because it is in an installed pack, by pack: the pack's key and how many. */
+  leftOut: Map<string, number>;
   /** Randomizers put in because something chosen links to them. */
   linked: number;
   /** Pictures left out. */
@@ -198,7 +228,13 @@ export interface ExportPlan {
  * `base` is taken off the chosen ones' paths, so an exported folder arrives as
  * itself; a randomizer brought in by a link keeps its whole path.
  */
-export function planExport(all: readonly ExportSource[], chosen: readonly string[], base = ""): ExportPlan {
+export function planExport(
+  all: readonly ExportSource[],
+  chosen: readonly string[],
+  base = "",
+  /** Says which pack a path belongs to, when that pack must stay out; its tables are left out and counted. */
+  packOf: (path: string) => string | null = () => null,
+): ExportPlan {
   const byPath = new Map(all.map((s) => [s.path, s]));
   const byId = new Map<string, ExportSource>();
   for (const s of all) if (s.randomizer && !byId.has(s.randomizer.id)) byId.set(s.randomizer.id, s);
@@ -206,6 +242,7 @@ export function planExport(all: readonly ExportSource[], chosen: readonly string
   const entries: LibraryFileEntry[] = [];
   let linked = 0;
   let pictures = 0;
+  const leftOut = new Map<string, number>();
   const queue: { source: ExportSource; fromLink: boolean }[] = chosen
     .map((p) => byPath.get(p))
     .filter((s): s is ExportSource => !!s?.randomizer)
@@ -214,6 +251,13 @@ export function planExport(all: readonly ExportSource[], chosen: readonly string
     const { source, fromLink } = queue.shift()!;
     if (included.has(source.path)) continue;
     included.add(source.path);
+    const pack = packOf(source.path);
+    if (pack !== null) {
+      // An installed pack's tables are its author's to hand out; links into it
+      // stay, and the export names the pack instead.
+      leftOut.set(pack, (leftOut.get(pack) ?? 0) + 1);
+      continue;
+    }
     const stripped = withoutPictures(source.randomizer!);
     pictures += stripped.pictures;
     const relative = !fromLink && base && source.path.startsWith(`${base}/`) ? source.path.slice(base.length + 1) : source.path;
@@ -224,5 +268,5 @@ export function planExport(all: readonly ExportSource[], chosen: readonly string
       if (target && !included.has(target.path)) queue.push({ source: target, fromLink: true });
     }
   }
-  return { entries, linked, pictures };
+  return { entries, linked, pictures, leftOut };
 }

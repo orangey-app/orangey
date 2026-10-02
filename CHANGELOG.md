@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Packs.** A folder can be published as a pack: **Publish as a pack…** on
+  its menu asks for a title, author, version, licence, web page and
+  description, and downloads one file to put online. Installing it (drop the
+  file on Import, or open `…/#/install?from=<its address>`) puts it in a
+  folder of its own, with a *pack* badge and the author's credit under every
+  table in it. An installed pack is locked, so the next version can replace
+  it: dropping the newer file (or **Check for an update**) shows what is new
+  and what goes, and keeps every table's id. **Make an editable copy** gives
+  a free copy. The author can say journals in writing apps may not keep
+  copies of it. Format in FORMAT.md, *A pack*.
+  Installed packs are never copied into a backup or export (they are their
+  authors' to hand out): the ZIP and library files list them instead, and
+  restoring offers to install each again, from its link where it has one.
+- **Tables inside tables.** An outcome can roll another table: type `{@` in
+  an outcome and pick one, and "A {@Weather} morning" rolls as "A foggy
+  morning". The file keeps the table's id behind the name (`{@Weather|id}`),
+  so renaming or moving the table breaks nothing, and renaming it updates the
+  name everywhere it is used. Up to 8 tables deep, never round in a circle;
+  history notes which table gave what. Exports, packs and imports carry the
+  tables referred to. Format in FORMAT.md.
+- **Browser tests can run one at a time:** `ONLY=AM npm run test:browser`
+  (in CMD, `set ONLY=AM` first, and `set ONLY=` after)
+  runs the tests whose names start with AM.
 - **Inkblots.** A new kind of randomizer: press **Generate** and a
   symmetrical inkblot blooms onto a paper card, a different one every time,
   with no label: what it is, is up to whoever looks. A fresh library starts

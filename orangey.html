@@ -1456,6 +1456,24 @@ body.presenting .inkblot-wrap { height: 100%; min-height: 0; }
 body.presenting .inkblot-card { width: auto; height: 100%; max-width: 100%; min-height: 0; }
 .popout-single .inkblot-card { width: min(100cqw, calc(100cqh * 1.3)); }
 
+/* Packs: the badge on an installed pack's folder, its credit, the publish form. */
+.pack-badge { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); white-space: nowrap; }
+.pack-credit { color: var(--ink-faint); font-size: 14px; margin: 2px 0 0; }
+.pack-credit a { color: inherit; }
+.pack-description { white-space: pre-line; }
+.pack-dialog { max-width: 34rem; }
+.pack-dialog form { display: grid; gap: 10px; }
+.pack-dialog textarea { width: 100%; font: inherit; }
+.pack-dialog .check { display: flex; gap: 6px; align-items: flex-start; font-size: 14px; }
+.form-problem { color: var(--danger, #b3261e); font-size: 14px; margin: 0; }
+.install-pack .warning { color: var(--danger, #b3261e); }
+
+/* Typing {@ in an outcome: the tables to roll there. */
+.ref-picker { position: fixed; z-index: 50; margin: 0; padding: 4px; list-style: none; background: var(--bg-raised); border: 1px solid var(--line, #ccc); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.15); max-height: 260px; overflow: auto; }
+.ref-picker li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.ref-picker li.active, .ref-picker li:hover { background: var(--accent-soft); }
+.ref-picker .ref-folder { color: var(--ink-faint); font-size: 13px; }
+
 </style>
 </head>
 <body>
@@ -3488,6 +3506,348 @@ function naturalCompare(a        , b        )         {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
+// ---- src/model/pack.ts -------------------------------------------
+/**
+ * A pack: a folder of randomizers an author publishes, with who made it, its
+ * version and its licence (format in FORMAT.md).
+ *
+ * A pack travels as a library file with a `pack` block. In a library it is a
+ * folder holding `orangey-pack.json`:
+ * - in the author's own folder the file has no `installed`, and only remembers
+ *   the details for publishing the next version; the folder stays editable;
+ * - in a folder a pack was installed into, `installed` is set, and the folder
+ *   is locked, so an update can replace it without losing anyone's edits.
+ *   "Make an editable copy" gives a free copy instead.
+ */
+
+
+
+const PACK_FILE = "orangey-pack.json";
+const PACK_FORMAT = "orangey-pack";
+const PACK_FORMAT_VERSION = 1;
+
+                               
+                                                                             
+             
+                
+                 
+                                                                      
+                  
+                   
+                    
+                       
+     
+                                                                          
+                                                                              
+     
+                           
+ 
+
+/** What the library keeps beside an installed pack. */
+                                                     
+                                               
+                     
+                                                                                          
+                  
+     
+                                                                        
+                                                                               
+                                            
+     
+                               
+ 
+
+const VERSION_PATTERN = /^\d{1,6}(\.\d{1,6}){0,3}$/;
+const MAX_TEXT = 200;
+const MAX_DESCRIPTION = 2000;
+
+/**
+ * Checks a pack block (from a library file, or `orangey-pack.json`) and gives
+ * back a clean one: unknown keys dropped, text trimmed. Throws a
+ * ValidationError naming what is wrong.
+ */
+function readManifest(raw         , path = "pack")                {
+  const check = new Check();
+  if (!check.object(path, raw)) check.throwIfFailed();
+  const o = raw                           ;
+  const text = (key        , required         , max = MAX_TEXT)                     => {
+    const v = o[key];
+    if (v === undefined || v === null || v === "") {
+      if (required) check.fail(`${path}.${key}`, "is needed");
+      return undefined;
+    }
+    if (typeof v !== "string") {
+      check.fail(`${path}.${key}`, "expected text");
+      return undefined;
+    }
+    // One line, except a description, which may keep its paragraphs.
+    const t = (key === "description" ? v.replace(/\r\n?/g, "\n") : v.replace(/\s+/g, " ")).trim();
+    if (required && !t) check.fail(`${path}.${key}`, "is needed");
+    if (t.length > max) check.fail(`${path}.${key}`, `longer than ${max} characters`);
+    return t || undefined;
+  };
+  const id = text("id", true);
+  const title = text("title", true);
+  const author = text("author", true);
+  const version = text("version", true);
+  if (version && !VERSION_PATTERN.test(version)) check.fail(`${path}.version`, `expected numbers with dots, like "1.2"`);
+  const licence = text("licence", false);
+  const homepage = text("homepage", false, 500);
+  if (homepage && !/^https?:\/\//i.test(homepage)) check.fail(`${path}.homepage`, "expected an address starting with https://");
+  const description = text("description", false, MAX_DESCRIPTION);
+  if (o.allowSnapshots !== undefined && typeof o.allowSnapshots !== "boolean") check.fail(`${path}.allowSnapshots`, "expected true or false");
+  const installed = text("installed", false);
+  const source = text("source", false, 2000);
+  let ids                                    ;
+  if (o.ids !== undefined) {
+    if (check.object(`${path}.ids`, o.ids)) {
+      ids = {};
+      for (const [k, v] of Object.entries(o.ids                           )) if (typeof v === "string") ids[k] = v;
+    }
+  }
+  check.throwIfFailed();
+  const m                = { id: id , title: title , author: author , version: version  };
+  if (licence) m.licence = licence;
+  if (homepage) m.homepage = homepage;
+  if (description) m.description = description;
+  if (o.allowSnapshots === false) m.allowSnapshots = false;
+  if (installed) m.installed = installed;
+  if (source) m.source = source;
+  if (ids && Object.keys(ids).length) m.ids = ids;
+  return m;
+}
+
+/** The parts that travel with the pack: what an install adds is left behind. */
+function publicManifest(m               )               {
+  const { installed: _i, source: _s, ids: _ids, ...rest } = m;
+  return rest;
+}
+
+/** The text of `orangey-pack.json`. */
+function serializeManifest(m               )         {
+  return `${JSON.stringify({ format: PACK_FORMAT, version: PACK_FORMAT_VERSION, pack: m }, null, 2)}\n`;
+}
+
+/** Reads `orangey-pack.json`. Throws a ValidationError when it is not one. */
+function parseManifestFile(text        )                {
+  let doc         ;
+  try {
+    doc = JSON.parse(text);
+  } catch (e) {
+    throw new ValidationError([{ path: PACK_FILE, message: `not valid JSON (${(e         ).message})` }]);
+  }
+  const o = (doc ?? {})                           ;
+  if (o.format !== PACK_FORMAT) throw new ValidationError([{ path: `${PACK_FILE}.format`, message: `expected "${PACK_FORMAT}"` }]);
+  return readManifest(o.pack, PACK_FILE);
+}
+
+/**
+ * Compares two versions number by number: "1.10" is newer than "1.9", and
+ * "1.2" is the same as "1.2.0". Negative when a is older.
+ */
+function compareVersions(a        , b        )         {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+/** The version after this one, for the publish form: "1.2" → "1.3". */
+function nextVersion(v        )         {
+  if (!VERSION_PATTERN.test(v)) return "1.0";
+  const parts = v.split(".").map(Number);
+  parts[parts.length - 1]++;
+  return parts.join(".");
+}
+
+/** "Ironsworn Delve by Shawn · v1.2 · CC BY 4.0": one line of credit. */
+function creditLine(m              )         {
+  return [`${m.title} by ${m.author}`, `v${m.version}`, m.licence].filter(Boolean).join(" · ");
+}
+
+/** Whether apps may keep a copy of this pack's tables in a player's file. */
+const snapshotsAllowed = (m                                 )          => m?.allowSnapshots !== false;
+
+// ---- packs a backup or export needs ------------------------------------------------
+
+/**
+ * Exports leave installed packs out (they are their authors' to hand out, with
+ * their credit), and say instead which packs they needed, so the import can
+ * offer to install them again. In a ZIP this is a file at the top:
+ */
+const PACKS_FILE = "orangey-packs.json";
+
+/** A pack an export needed: who made it, its version, and where it came from when known. */
+                                                  
+                  
+ 
+
+function neededFrom(m               )             {
+  const out             = publicManifest(m);
+  if (m.source) out.source = m.source;
+  return out;
+}
+
+function serializePackList(packs                       )         {
+  return `${JSON.stringify({ format: "orangey-packs", version: 1, packs }, null, 2)}\n`;
+}
+
+/** The list back; anything that is not a readable pack is left out rather than refusing the rest. */
+function readPackList(raw         )               {
+  if (!Array.isArray(raw)) return [];
+  const out               = [];
+  for (const item of raw) {
+    try {
+      const m = readManifest(item);
+      const n = neededFrom(m);
+      if (n.source && !/^https?:\/\//i.test(n.source)) delete n.source;
+      out.push(n);
+    } catch {
+      // Not a pack: skipped.
+    }
+  }
+  return out;
+}
+
+function parsePackList(text        )               {
+  try {
+    const doc = JSON.parse(text)                                         ;
+    return doc?.format === "orangey-packs" ? readPackList(doc.packs) : [];
+  } catch {
+    return [];
+  }
+}
+
+// ---- src/model/refs.ts -------------------------------------------
+/**
+ * Tables inside tables: `{@Weather}` in an outcome rolls the randomizer called
+ * Weather and puts its answer there ("A {@Weather} morning" → "A foggy morning").
+ *
+ * In the file a reference is `{@Name|id}`. The id is what counts, so renaming
+ * or moving the table, or a second table with the same name, breaks nothing;
+ * the name is there for people, and for anything that cannot roll it. A
+ * reference written by hand as `{@Name}` works too: the editor and an import
+ * fill in the id when exactly one table has that name. The editor shows
+ * `{@Name}` and keeps the ids out of sight (`showRefs` / `keepRefs`).
+ *
+ * Rolling follows references up to MAX_REF_DEPTH deep and never round in a
+ * circle; what cannot be rolled shows as its name.
+ */
+
+                                                  
+
+/** `{@Name}` or `{@Name|id}`. The name cannot hold braces or a bar. */
+const REF_PATTERN = /\{@([^{}|]{1,80})(?:\|([^{}|\s]{1,80}))?\}/g;
+const MAX_REF_DEPTH = 8;
+
+                      
+               
+              
+ 
+
+/** Finds what a reference points at: by id first, then by name. */
+                              
+                                                  
+                                                                                                           
+                                              
+ 
+
+/** One reference as it was rolled, for history and Storyboard. */
+                          
+             
+               
+               
+ 
+
+const fresh = () => new RegExp(REF_PATTERN.source, "g");
+
+function refsIn(text                    )        {
+  if (!text || !text.includes("{@")) return [];
+  return [...text.matchAll(fresh())].map((m) => (m[2] ? { name: m[1].trim(), id: m[2] } : { name: m[1].trim() }));
+}
+
+/** The ids a randomizer's outcomes refer to (labels and descriptions). */
+function refIdsOf(r            )           {
+  if (r.type !== "list") return [];
+  return r.items.flatMap((i) => [...refsIn(i.label), ...refsIn(i.description)].flatMap((ref) => (ref.id ? [ref.id] : [])));
+}
+
+/** What a reference points at, or null: by id while that id exists, else by a name only one table has. */
+function resolveRef(ref     , resolver             )                    {
+  if (ref.id) {
+    const found = resolver.byId(ref.id);
+    if (found) return found;
+  }
+  const named = resolver.byName(ref.name);
+  return named.length === 1 ? named[0] : null;
+}
+
+/** For the editor and anywhere text is shown to people: `{@Name|id}` → `{@Name}`. */
+function showRefs(text        )         {
+  return text.includes("{@") ? text.replace(fresh(), (_w, name        ) => `{@${name.trim()}}`) : text;
+}
+
+/**
+ * The other way, as the editor saves: each `{@Name}` typed takes the id it
+ * had in `previous` (so a reference the person did not touch keeps pointing
+ * where it pointed, even at a table renamed since), else the id of the one
+ * table with that name; else it stays a name, to be filled in later.
+ */
+function keepRefs(typed        , previous        , findByName                                             )         {
+  if (!typed.includes("{@")) return typed;
+  const had = new Map                ();
+  for (const ref of refsIn(previous)) if (ref.id && !had.has(ref.name.toLowerCase())) had.set(ref.name.toLowerCase(), ref.id);
+  return typed.replace(fresh(), (whole, rawName        , id                    ) => {
+    const name = rawName.trim();
+    if (id) return `{@${name}|${id}}`;
+    const known = had.get(name.toLowerCase());
+    if (known) return `{@${name}|${known}}`;
+    const found = findByName(name);
+    return found.length === 1 ? `{@${name}|${found[0].id}}` : whole;
+  });
+}
+
+/** Sends references to other ids (an import that had to give a table a new id). */
+function remapRefs(text        , ids                             )         {
+  if (!text.includes("{@")) return text;
+  return text.replace(fresh(), (whole, name        , id                    ) => {
+    const to = id ? ids.get(id) : undefined;
+    return to && to !== id ? `{@${name}|${to}}` : whole;
+  });
+}
+
+/** After a table is renamed: the references to it say its new name. */
+function renameRefs(text        , id        , name        )         {
+  if (!text.includes("{@")) return text;
+  const clean = name.replace(/[{}|]/g, "").trim() || "?";
+  return text.replace(fresh(), (whole, _old        , refId                    ) => (refId === id ? `{@${clean}|${id}}` : whole));
+}
+
+/** Fills in the id of every `{@Name}` that one table answers to (an import, a hand-written file). */
+function fillRefIds(text        , resolver             )         {
+  if (!text.includes("{@")) return text;
+  return text.replace(fresh(), (whole, rawName        , id                    ) => {
+    if (id) return whole;
+    const named = resolver.byName(rawName.trim());
+    return named.length === 1 ? `{@${rawName.trim()}|${named[0].id}}` : whole;
+  });
+}
+
+/** A resolver over a plain list of randomizers. */
+function resolverFor(all                      )              {
+  const byId = new Map                    ();
+  const byName = new Map                      ();
+  for (const r of all) {
+    if (!byId.has(r.id)) byId.set(r.id, r);
+    const key = r.name.trim().toLowerCase();
+    byName.set(key, [...(byName.get(key) ?? []), r]);
+  }
+  return { byId: (id) => byId.get(id) ?? null, byName: (name) => byName.get(name.trim().toLowerCase()) ?? [] };
+}
+
 // ---- src/storage/libraryfile.ts ----------------------------------
 /**
  * A library, or part of one, as one plain-text file:
@@ -3500,6 +3860,8 @@ function naturalCompare(a        , b        )         {
 
 
                                                          
+
+
 
 
 
@@ -3520,18 +3882,32 @@ const LIBRARY_FILE_SUFFIX = ".orangey-library.json";
                                                  
                                                                       
                                               
+                                                                                           
+                      
+                                                                            
+                       
  
 
 /**
  * The text of a library file. Two-space indent and the randomizer's usual key
  * order, so it reads like a `.orangey.json` and diffs like one.
  */
-function serializeLibrary(name        , exported        , folders                   , entries                             )         {
+function serializeLibrary(
+  name        ,
+  exported        ,
+  folders                   ,
+  entries                             ,
+  pack               ,
+  needs                        = [],
+)         {
   const doc = {
     format: LIBRARY_FORMAT,
     version: LIBRARY_FORMAT_VERSION,
     name,
     exported,
+    // Only what travels: never where this copy was installed from.
+    ...(pack ? { pack: publicManifest(pack) } : {}),
+    ...(needs.length ? { needs } : {}),
     folders: [...folders],
     randomizers: entries.map((e) => ({
       path: e.path,
@@ -3584,6 +3960,9 @@ function parseLibrary(text        )                  {
   }
 
   const name = typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 200) : "Library";
+  // A pack that cannot say who made it or which version it is cannot be
+  // installed or updated, so a broken pack block refuses the whole file.
+  const pack = o.pack === undefined ? undefined : publicManifest(readManifest(o.pack, "library.pack"));
   const folders = Array.isArray(o.folders)
     ? [...new Set(o.folders.filter((f)              => typeof f === "string").map(safeFolder).filter(Boolean))]
     : [];
@@ -3613,7 +3992,8 @@ function parseLibrary(text        )                  {
     used.add(path.toLowerCase());
     entries.push({ path, file: { ...file, randomizer } });
   });
-  return { name, folders, entries, failed };
+  const needs = readPackList(o.needs);
+  return { name, folders, entries, failed, ...(pack ? { pack } : {}), ...(needs.length ? { needs } : {}) };
 }
 
 /**
@@ -3645,9 +4025,9 @@ function withoutPictures(r            )                                         
   return { randomizer: pictures ? { ...r, items } : r, pictures };
 }
 
-/** The ids a randomizer points at: its outcomes' "Goes to", a board's entries. */
+/** The ids a randomizer points at: its outcomes' "Goes to" and `{@references}`, a board's entries. */
 function linkedIds(r            )           {
-  if (r.type === "list") return r.items.flatMap((i) => (i.goesTo ? [i.goesTo] : []));
+  if (r.type === "list") return [...r.items.flatMap((i) => (i.goesTo ? [i.goesTo] : [])), ...refIdsOf(r)];
   if (r.type === "board") return r.entries.map((e) => e.id);
   return [];
 }
@@ -3659,8 +4039,16 @@ function linkedIds(r            )           {
  */
 function relink(r            , ids                             )             {
   const moved = (id                    )               => id !== undefined && ids.has(id) && ids.get(id) !== id;
-  if (r.type === "list" && r.items.some((i) => moved(i.goesTo))) {
-    return { ...r, items: r.items.map((i) => (moved(i.goesTo) ? { ...i, goesTo: ids.get(i.goesTo)  } : i)) };
+  if (r.type === "list" && (r.items.some((i) => moved(i.goesTo)) || refIdsOf(r).some(moved))) {
+    return {
+      ...r,
+      items: r.items.map((i) => {
+        const label = remapRefs(i.label, ids);
+        const description = i.description === undefined ? undefined : remapRefs(i.description, ids);
+        if (!moved(i.goesTo) && label === i.label && description === i.description) return i;
+        return { ...i, label, ...(description === undefined ? {} : { description }), ...(moved(i.goesTo) ? { goesTo: ids.get(i.goesTo)  } : {}) };
+      }),
+    };
   }
   if (r.type === "board" && r.entries.some((e) => moved(e.id))) {
     return { ...r, entries: r.entries.map((e) => (moved(e.id) ? { ...e, id: ids.get(e.id)  } : e)) };
@@ -3676,6 +4064,8 @@ function relink(r            , ids                             )             {
 
                              
                               
+                                                                                                    
+                               
                                                                    
                  
                            
@@ -3689,7 +4079,13 @@ function relink(r            , ids                             )             {
  * `base` is taken off the chosen ones' paths, so an exported folder arrives as
  * itself; a randomizer brought in by a link keeps its whole path.
  */
-function planExport(all                         , chosen                   , base = "")             {
+function planExport(
+  all                         ,
+  chosen                   ,
+  base = "",
+  /** Says which pack a path belongs to, when that pack must stay out; its tables are left out and counted. */
+  packOf                                  = () => null,
+)             {
   const byPath = new Map(all.map((s) => [s.path, s]));
   const byId = new Map                      ();
   for (const s of all) if (s.randomizer && !byId.has(s.randomizer.id)) byId.set(s.randomizer.id, s);
@@ -3697,6 +4093,7 @@ function planExport(all                         , chosen                   , bas
   const entries                     = [];
   let linked = 0;
   let pictures = 0;
+  const leftOut = new Map                ();
   const queue                                                = chosen
     .map((p) => byPath.get(p))
     .filter((s)                    => !!s?.randomizer)
@@ -3705,6 +4102,13 @@ function planExport(all                         , chosen                   , bas
     const { source, fromLink } = queue.shift() ;
     if (included.has(source.path)) continue;
     included.add(source.path);
+    const pack = packOf(source.path);
+    if (pack !== null) {
+      // An installed pack's tables are its author's to hand out; links into it
+      // stay, and the export names the pack instead.
+      leftOut.set(pack, (leftOut.get(pack) ?? 0) + 1);
+      continue;
+    }
     const stripped = withoutPictures(source.randomizer );
     pictures += stripped.pictures;
     const relative = !fromLink && base && source.path.startsWith(`${base}/`) ? source.path.slice(base.length + 1) : source.path;
@@ -3715,7 +4119,7 @@ function planExport(all                         , chosen                   , bas
       if (target && !included.has(target.path)) queue.push({ source: target, fromLink: true });
     }
   }
-  return { entries, linked, pictures };
+  return { entries, linked, pictures, leftOut };
 }
 
 // ---- src/storage/library.ts --------------------------------------
@@ -3726,6 +4130,8 @@ function planExport(all                         , chosen                   , bas
  * Dropbox or Git cannot conflict with an index. Per-device extras (favourites,
  * recents) live in the app database, not in the user's files.
  */
+
+
 
 
 
@@ -3779,7 +4185,21 @@ const IMAGE_DIR = "images";
                                   
      
                                    
+                                                                                                       
+                       
+                                                                    
+                     
  
+
+/** Refused because the place is inside an installed pack. */
+class LockedError extends Error {
+           pack              ;
+  constructor(pack              ) {
+    super(`This is part of the pack “${pack.title}”, which an update would replace: make an editable copy to change it.`);
+    this.name = "LockedError";
+    this.pack = pack;
+  }
+}
 
                             
                     
@@ -3799,6 +4219,9 @@ class LibraryService {
    */
   #byPath = new Map                     ();
   #byId = new Map                     ();
+  #byName = new Map                      ();
+  /** Randomizers renamed in the editor since the last flush: references to them get the new name then. */
+  #renamed = new Map                ();
   #pending = new Map                ();
   #timer                                       = null;
   #writeDelayMs        ;
@@ -3851,10 +4274,15 @@ class LibraryService {
   #reindex()       {
     this.#byPath = new Map();
     this.#byId = new Map();
+    this.#byName = new Map();
     const walk = (node             )       => {
       this.#byPath.set(node.path, node);
       const id = node.randomizer?.id;
       if (id && !this.#byId.has(id)) this.#byId.set(id, node);
+      if (node.randomizer) {
+        const key = node.randomizer.name.trim().toLowerCase();
+        this.#byName.set(key, [...(this.#byName.get(key) ?? []), node.randomizer]);
+      }
       for (const child of node.children ?? []) walk(child);
     };
     if (this.#tree) walk(this.#tree);
@@ -3910,7 +4338,17 @@ class LibraryService {
     const files = children.filter((c) => c.kind === "file");
     folders.sort((a, b) => naturalCompare(a.name, b.name));
     files.sort((a, b) => naturalCompare(this.#title(a), this.#title(b)));
-    return { kind: "folder", path, name, children: [...folders, ...files] };
+    const node              = { kind: "folder", path, name, children: [...folders, ...files] };
+    // A pack's details sit beside its randomizers; not at the top, which is
+    // the whole library rather than a pack in it.
+    if (path !== "" && entries.some((e) => e.kind === "file" && e.name === PACK_FILE)) {
+      try {
+        node.pack = parseManifestFile(await this.backend.read(join(path, PACK_FILE)));
+      } catch (e) {
+        node.packError = e instanceof ValidationError ? e.issues.map((i) => `${i.path}: ${i.message}`).join("; ") : String(e);
+      }
+    }
+    return node;
   }
 
   #title(node             )         {
@@ -3955,6 +4393,12 @@ class LibraryService {
     return this.#byId.get(id) ?? null;
   }
 
+  /** For `{@references}` (model/refs.ts): the library's randomizers by id and by name. */
+           refs              = {
+    byId: (id) => this.#byId.get(id)?.randomizer ?? null,
+    byName: (name) => this.#byName.get(name.trim().toLowerCase()) ?? [],
+  };
+
   /** Search names, tags, descriptions and outcome labels. */
   search(query        )              {
     const q = query.trim().toLowerCase();
@@ -3985,9 +4429,160 @@ class LibraryService {
     return hits;
   }
 
+  // ---- packs ---------------------------------------------------------------
+
+  /** The pack a path is in (or is), nearest first: its folder and details. */
+  packOf(path        )                                                      {
+    for (let p = path; ; p = parent(p)) {
+      const node = this.find(p);
+      if (node?.kind === "folder" && node.pack) return { folder: node, pack: node.pack };
+      if (p === "") return null;
+    }
+  }
+
+  /** The folder an installed pack with this id was installed into. */
+  findPack(id        )                     {
+    return this.folders().find((f) => f.pack?.installed && f.pack.id === id) ?? null;
+  }
+
+  /** Every installed pack, with its folder. */
+  installedPacks()                                                 {
+    return this.folders().flatMap((f) => (f.pack?.installed ? [{ folder: f, pack: f.pack }] : []));
+  }
+
+  /** Inside an installed pack, so not to be changed by hand. The pack's own folder counts. */
+  isLocked(path        )          {
+    return !!this.packOf(path)?.pack.installed;
+  }
+
+  /**
+   * Throws a LockedError for a change inside an installed pack. The pack's
+   * own folder may still be renamed, moved or deleted (`root`), which is how
+   * a pack is put somewhere else or uninstalled.
+   */
+  #guard(path        , root = false)       {
+    const found = this.packOf(path);
+    if (!found?.pack.installed) return;
+    if (root && found.folder.path === path) return;
+    throw new LockedError(found.pack);
+  }
+
+  /**
+   * Remembers a folder's publishing details (the author's own folder: no
+   * `installed`, so it stays editable). The folder keeps them for the next version.
+   */
+  async setPackDetails(folder        , pack              )                {
+    if (folder === "") throw new Error("the whole library cannot be a pack; choose a folder");
+    this.#guard(folder);
+    await this.backend.write(join(folder, PACK_FILE), serializeManifest(publicManifest(pack)));
+    await this.refresh();
+  }
+
+  /**
+   * Installs a pack into a new folder at the top, named after it ("Title",
+   * "Title 2"…). Its randomizers keep their ids unless one is taken here; those
+   * that cannot are remembered, so an update lands on the same ids.
+   */
+  async installPack(read                 , opts                                  = {})                                             {
+    if (!read.pack) throw new Error("that file is not a pack");
+    await this.flush();
+    const base = sanitizeName(read.pack.title) || "Pack";
+    const taken = new Set((await this.backend.list("")).map((e) => e.name.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()) || name.toLowerCase() === IMAGE_DIR; n++) name = `${base} ${n}`;
+    await this.backend.mkdir(name);
+    const added = await this.#writePack(name, read, {}, opts);
+    return { folder: name, added };
+  }
+
+  /**
+   * Replaces an installed pack's randomizers with another version's. Ids the
+   * pack had here are kept, so boards, "goes to" and Storyboard journals that
+   * point at them still work; what the new version dropped goes.
+   */
+  async updatePack(folder        , read                 , opts                                  = {})                                                            {
+    const node = this.find(folder);
+    if (!node?.pack?.installed || !read.pack) throw new Error("that folder is not an installed pack");
+    if (node.pack.id !== read.pack.id) throw new Error("that file is a different pack");
+    await this.flush();
+    const before = new Map(this.files(node).flatMap((f) => (f.randomizer ? [[f.randomizer.id, f.path]         ] : [])));
+    const oldIds = node.pack.ids ?? {};
+    for (const child of node.children ?? []) await this.backend.remove(child.path);
+    await this.#writePack(folder, read, oldIds, { source: opts.source ?? node.pack.source, now: opts.now });
+    const local = (id        ) => oldIds[id] ?? id;
+    const after = new Set(read.entries.map((e) => local(e.file.randomizer.id)));
+    let kept = 0;
+    for (const id of before.keys()) if (after.has(id)) kept++;
+    return { added: after.size - kept, removed: before.size - kept, kept };
+  }
+
+  async #writePack(folder        , read                 , oldIds                        , opts                                 )                  {
+    // Ids that belong to this pack's folder already are its own, not taken.
+    const ownIds = new Set(Object.values(oldIds));
+    const inPack = (id        ) => {
+      const at = this.findById(id);
+      return at ? at.path === folder || at.path.startsWith(`${folder}/`) : false;
+    };
+    const ids = new Map                ();
+    const claimed = new Set        ();
+    for (const e of read.entries) {
+      const id = e.file.randomizer.id;
+      let local = oldIds[id] ?? id;
+      const clash = (this.findById(local) && !inPack(local) && !ownIds.has(local)) || claimed.has(local);
+      if (clash) local = newId();
+      ids.set(id, local);
+      claimed.add(local);
+    }
+    for (const f of read.folders) await this.backend.mkdir(join(folder, f));
+    // A pack's bare `{@Name}` means a table in the pack, so only those answer.
+    const packNames = resolverFor(read.entries.map((e) => ({ ...e.file.randomizer, id: ids.get(e.file.randomizer.id)  })));
+    for (const e of read.entries) {
+      const path = join(folder, e.path);
+      if (parent(path)) await this.backend.mkdir(parent(path));
+      const r = withRefIds(relink({ ...e.file.randomizer, id: ids.get(e.file.randomizer.id)  }, ids), packNames);
+      await this.backend.write(path, serialize({ ...e.file, randomizer: r }));
+    }
+    const moved                         = {};
+    for (const [from, to] of ids) if (from !== to) moved[from] = to;
+    const installed                = { ...publicManifest(read.pack ), installed: (opts.now ?? new Date()).toISOString() };
+    if (opts.source) installed.source = opts.source;
+    if (Object.keys(moved).length) installed.ids = moved;
+    await this.backend.write(join(folder, PACK_FILE), serializeManifest(installed));
+    await this.refresh();
+    return read.entries.length;
+  }
+
+  /**
+   * A copy of an installed pack that is the user's own: new ids (the links
+   * between its randomizers follow), no pack details, so nothing locks it and
+   * no update touches it.
+   */
+  async copyPack(folder        )                  {
+    const node = this.find(folder);
+    if (!node?.pack) throw new Error("that folder is not a pack");
+    await this.flush();
+    const files = this.files(node).filter((f) => f.randomizer);
+    const ids = new Map(files.map((f) => [f.randomizer .id, newId()]         ));
+    const base = sanitizeName(`${node.name} (copy)`);
+    const taken = new Set((await this.backend.list(parent(folder))).map((e) => e.name.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} ${n}`;
+    const target = join(parent(folder), name);
+    await this.backend.mkdir(target);
+    for (const f of this.folders(node)) if (f !== node) await this.backend.mkdir(join(target, f.path.slice(folder.length + 1)));
+    for (const f of files) {
+      const r = f.randomizer ;
+      const copy = relink({ ...r, id: ids.get(r.id) , ...(r.type === "list" ? { items: r.items.map((i) => ({ ...i, id: newId() })) } : {}) }              , ids);
+      await this.backend.write(join(target, f.path.slice(folder.length + 1)), serialize({ ...wrap(copy), unknown: f.extras }));
+    }
+    await this.refresh();
+    return target;
+  }
+
   // ---- mutations -----------------------------------------------------------
 
   async createFolder(parentPath        , name        )                  {
+    this.#guard(parentPath);
     const clean = sanitizeName(name) || "New folder";
     const existing = (await this.backend.list(parentPath)).map((e) => e.name.toLowerCase());
     let final = clean;
@@ -4001,6 +4596,7 @@ class LibraryService {
   }
 
   async create(parentPath        , randomizer            )                  {
+    this.#guard(parentPath);
     const taken = (await this.backend.list(parentPath)).map((e) => e.name);
     const path = join(parentPath, fileNameFor(randomizer.name, taken));
     await this.backend.write(path, serialize(wrap(randomizer)));
@@ -4010,7 +4606,9 @@ class LibraryService {
 
   /** Queue a save. Repeated calls for the same file coalesce. */
   save(path        , randomizer            )       {
+    this.#guard(path);
     const node = this.find(path);
+    if (node?.randomizer && node.randomizer.id === randomizer.id && node.randomizer.name !== randomizer.name) this.#renamed.set(randomizer.id, randomizer.name);
     this.#pending.set(path, serialize({ ...wrap(randomizer), unknown: node?.extras }));
     if (node) node.randomizer = randomizer;
     if (this.#timer) clearTimeout(this.#timer);
@@ -4051,12 +4649,16 @@ class LibraryService {
         for (const fn of this.#errorListeners) fn(failures[0]);
         throw failures[0];
       }
+      const renamed = [...this.#renamed];
+      this.#renamed.clear();
+      for (const [id, name] of renamed) await this.#renameRefsTo(id, name);
     });
     this.#flushing = run.catch(() => {});
     await run;
   }
 
   async rename(path        , newName        )                  {
+    this.#guard(path, true);
     await this.flush();
     const node = this.find(path);
     if (!node) throw new Error(`nothing at ${path}`);
@@ -4068,6 +4670,8 @@ class LibraryService {
       return target;
     }
     const randomizer = { ...node.randomizer , name: newName, modified: new Date().toISOString() };
+    // References to it say its new name, so the editor shows the name people now know.
+    if (node.randomizer && node.randomizer.name !== newName) await this.#renameRefsTo(node.randomizer.id, newName);
     const taken = (await this.backend.list(parent(path))).map((e) => e.name).filter((n) => n !== basename(path));
     const target = join(parent(path), fileNameFor(newName, taken));
     await this.backend.write(path, serialize({ ...wrap(randomizer), unknown: node.extras }));
@@ -4084,7 +4688,25 @@ class LibraryService {
     return target;
   }
 
+  /** Rewrites `{@Old|id}` to `{@New|id}` in every other randomizer that refers to it. Locked packs are left as their author made them. */
+  async #renameRefsTo(id        , name        )                {
+    for (const f of this.files()) {
+      const r = f.randomizer;
+      if (r?.type !== "list" || r.id === id || !refIdsOf(r).includes(id) || this.isLocked(f.path)) continue;
+      const items = r.items.map((i) => ({
+        ...i,
+        label: renameRefs(i.label, id, name),
+        ...(i.description === undefined ? {} : { description: renameRefs(i.description, id, name) }),
+      }));
+      const next = { ...r, items };
+      await this.backend.write(f.path, serialize({ ...wrap(next), unknown: f.extras }));
+      f.randomizer = next;
+    }
+  }
+
   async move(path        , toFolder        )                  {
+    this.#guard(path, true);
+    this.#guard(toFolder);
     await this.flush();
     const name = basename(path);
     const taken = (await this.backend.list(toFolder)).map((e) => e.name);
@@ -4108,6 +4730,7 @@ class LibraryService {
   }
 
   async duplicate(path        )                  {
+    this.#guard(path);
     await this.flush();
     const node = this.find(path);
     if (!node?.randomizer) throw new Error(`nothing to duplicate at ${path}`);
@@ -4123,6 +4746,7 @@ class LibraryService {
   }
 
   async remove(path        )                {
+    this.#guard(path, true);
     await this.flush();
     await this.backend.remove(path);
     // Dropping the node drops everything under it, which is what the backend
@@ -4144,7 +4768,7 @@ class LibraryService {
   async importArchive(
     entries                                  ,
     onCollision                                                             ,
-  )                                                                                {
+  )                                                                                                 {
     const parsed                                                      = [];
     let failed = 0;
     for (const entry of entries) {
@@ -4174,7 +4798,7 @@ class LibraryService {
     folders                   ,
     into        ,
     onCollision                                                             ,
-  )                                                                {
+  )                                                                                 {
     return this.#importFiles(entries, folders, into, onCollision);
   }
 
@@ -4184,9 +4808,11 @@ class LibraryService {
     folders                   ,
     into        ,
     onCollision                                                             ,
-  )                                                                {
+  )                                                                                 {
     await this.flush();
-    const result = { added: 0, replaced: 0, skipped: 0 };
+    // `inPacks`: left alone because they would land in an installed pack (an
+    // old backup that still carried its tables); the pack itself is there.
+    const result = { added: 0, replaced: 0, skipped: 0, inPacks: 0 };
     // The image store owns a folder at the top; a library's own folder of
     // that name is moved aside rather than mixed into it.
     const place = (path        ) => {
@@ -4206,6 +4832,13 @@ class LibraryService {
     for (const entry of entries) {
       const path = place(entry.path);
       const r = entry.file.randomizer;
+      // Nothing is written into an installed pack by an import: an update would
+      // undo it. Those are passed over, and the rest still comes in.
+      if (this.isLocked(parent(path)) || this.isLocked(path)) {
+        if (this.findById(r.id)) idFor(r.id, r.id);
+        result.inPacks++;
+        continue;
+      }
       const here = this.find(path);
       if (here?.kind === "file" || planned.has(path.toLowerCase())) {
         const answer = await onCollision(path);
@@ -4243,10 +4876,14 @@ class LibraryService {
     }
 
     for (const folder of folders) await this.backend.mkdir(place(folder));
+    // A `{@Name}` written by hand gets the id of the one table with that name,
+    // here or arriving with it.
+    const arriving = writes.map((w) => relink(w.file.randomizer, ids));
+    const names = resolverFor([...arriving, ...this.files().flatMap((f) => (f.randomizer ? [f.randomizer] : []))]);
     for (const w of writes) {
       const folder = parent(w.path);
       if (folder) await this.backend.mkdir(folder);
-      const linked = relink(w.file.randomizer, ids);
+      const linked = withRefIds(relink(w.file.randomizer, ids), names);
       // Untouched (its own id, and `relink` returned the same object): write the
       // exact text it arrived with.
       const unchanged = w.text !== undefined && linked === w.file.randomizer;
@@ -4265,6 +4902,24 @@ class LibraryService {
   depth(path        )         {
     return segments(path).length;
   }
+}
+
+/**
+ * The same randomizer with each bare `{@Name}` given the id of the one table
+ * by that name; the very same object when there was nothing to fill in, so an
+ * untouched file is still written as it arrived.
+ */
+function withRefIds(r            , names             )             {
+  if (r.type !== "list" || !r.items.some((i) => i.label.includes("{@") || i.description?.includes("{@"))) return r;
+  let changed = false;
+  const items = r.items.map((i) => {
+    const label = fillRefIds(i.label, names);
+    const description = i.description === undefined ? undefined : fillRefIds(i.description, names);
+    if (label === i.label && description === i.description) return i;
+    changed = true;
+    return { ...i, label, ...(description === undefined ? {} : { description }) };
+  });
+  return changed ? { ...r, items } : r;
 }
 
 // ---- src/storage/memory.ts ---------------------------------------
@@ -7031,6 +7686,8 @@ const state = new AppState();
                                                                      
                                            
                                           
+                                                                                   
+                                                                
                                            
                                              
 
@@ -7097,6 +7754,8 @@ function parseRoute(hash        )        {
       return { name: "library", params };
     case "import":
       return { name: "import", params };
+    case "install":
+      return { name: "install", from: new URLSearchParams(query).get("from"), params };
     case "history":
       return { name: "history", params };
     case "settings":
@@ -7678,6 +8337,8 @@ function tryParse(input        )                                                
 
 
 
+
+
                                                           
 
 
@@ -7867,7 +8528,7 @@ function createWheel(opts              )            {
       const room = plan.get(seg.index)?.label;
       if (!room) return [];
       const { ink } = labelFor(colorByIndex[seg.index] ?? "#888888");
-      const text = fitLabelToWidth(item.label, room.length, (t) => measureWheelLabel(t, room.fontSize));
+      const text = fitLabelToWidth(showRefs(item.label), room.length, (t) => measureWheelLabel(t, room.fontSize));
       // Anchored at its outer end and running inwards along the radius,
       // reading outwards — horizontal once the slice is under the pointer.
       const [x, y] = pointOnCircle(cx, cy, room.outer, seg.midAngle);
@@ -7982,7 +8643,7 @@ function createWheel(opts              )            {
       "div",
       { class: "ticker-strip" },
       ...items.slice(0, 400).map((item, i) =>
-        h("div", { class: "ticker-row", style: { background: i % 2 ? "var(--bg-raised)" : "transparent" } }, item.label),
+        h("div", { class: "ticker-row", style: { background: i % 2 ? "var(--bg-raised)" : "transparent" } }, showRefs(item.label)),
       ),
     );
     return h(
@@ -8129,6 +8790,8 @@ function createWheel(opts              )            {
  * the screen.
  */
 
+
+
                                                           
 
 
@@ -8163,7 +8826,7 @@ function createOutcomeList(opts
         title: live ? `Pick ${item.label}` : "Cannot come up now",
         onclick: () => opts.onPick(i),
       },
-        h("span", { class: "outcome-label", text: item.label }),
+        h("span", { class: "outcome-label", text: showRefs(item.label) }),
         h("span", { class: "outcome-odds", text: live ? `${percents[i].toFixed(1)}%` : "—" }),
       )                     ;
       pick.disabled = !live;
@@ -11233,6 +11896,7 @@ function totalText(r            )         {
                                                                                    
                                                            
 
+
                           
                            
                                                  
@@ -11269,14 +11933,16 @@ function totalText(r            )         {
                      
      
                 
+                                                                                         
+                    
  
 
-function rollRandomizer(r            , rng              )          {
+function rollRandomizer(r            , rng              , refs              )          {
   switch (r.type) {
     case "board":
       throw new Error("a board is rolled one randomizer at a time");
     case "list":
-      return rollList(r, rng);
+      return rollList(r, rng, refs);
     case "dice": {
       const result = rollDice(r.expression, rng);
       return {
@@ -11332,6 +11998,23 @@ function rollRandomizer(r            , rng              )          {
 
 /** `{2d4}` in an outcome's text. Braces are required, so nothing else is touched. */
 const INLINE_DICE = /\{([^{}]{1,60})\}/g;
+/** Dice and references alike, so both are expanded in one pass, left to right. */
+const INLINE = /\{([^{}]{1,170})\}/g;
+
+/** What expanding an outcome's text needs besides the random source. */
+                  
+                   
+                     
+                                         
+                   
+                
+                                                                                         
+                   
+ 
+
+const REF_FOR_WIDTH = /\{@([^{}|]{1,80})(?:\|[^{}|\s]{1,80})?\}/g;
+/** `self`: the table being rolled, so a reference back to it is a circle too. */
+const inline = (rolled          , refs              , self         )         => ({ rolled, refs, parts: [], depth: 0, within: self ? [self] : [] });
 
 /**
  * Roll the dice written into an outcome's text: "{2d4} wolves" → "3 wolves".
@@ -11341,35 +12024,64 @@ const INLINE_DICE = /\{([^{}]{1,60})\}/g;
  * Draws from the same source, only ever after the pick: changing that order
  * breaks seeded rolls.
  */
-function expandInlineDice(text        , rng              , rolled          )         {
-  return text.replace(INLINE_DICE, (whole, expression        ) => {
-    const parsed = tryParse(expression);
+function expandInline(text        , rng              , ctx        )         {
+  return text.replace(INLINE, (whole, inner        ) => {
+    if (inner.startsWith("@")) return expandRef(whole, rng, ctx);
+    if (inner.length > 60) return whole;
+    const parsed = tryParse(inner);
     if (!parsed.ok) return whole;
-    const result = evaluate(parsed.expression, rng, expression);
-    rolled.push(formatResult(result));
+    const result = evaluate(parsed.expression, rng, inner);
+    ctx.rolled.push(formatResult(result));
     return String(result.total);
   });
 }
 
-function rollList(r                , rng              )          {
-  return listOutcome(r, pickWeightedIndex(r.items, rng), rng);
+/**
+ * `{@Name|id}`: rolls that table and gives its answer, whose own dice and
+ * references are expanded in turn. Without a resolver, past the depth limit,
+ * in a circle, or when nothing answers to it, the reference reads as its name.
+ * Nested tables roll as plain draws: a bag's memory and an offer belong to the
+ * table rolled on its own.
+ */
+function expandRef(whole        , rng              , ctx        )         {
+  const m = /^\{@([^{}|]{1,80})(?:\|([^{}|\s]{1,80}))?\}$/.exec(whole);
+  if (!m) return whole;
+  const name = m[1].trim();
+  const target = ctx.refs ? resolveRef(m[2] ? { name, id: m[2] } : { name }, ctx.refs) : null;
+  if (!target || target.type === "board" || target.type === "inkblot" || ctx.depth >= MAX_REF_DEPTH || ctx.within.includes(target.id)) return name;
+  let text        ;
+  if (target.type === "list") {
+    if (!target.items.some(isRollable)) return name;
+    const item = target.items[pickWeightedIndex(target.items, rng)];
+    text = expandInline(item.label, rng, { ...ctx, parts: [], depth: ctx.depth + 1, within: [...ctx.within, target.id] });
+  } else {
+    text = rollRandomizer(target, rng).text;
+  }
+  if (ctx.depth === 0) ctx.parts.push({ id: target.id, name: target.name, text });
+  return text;
+}
+
+function rollList(r                , rng              , refs              )          {
+  return listOutcome(r, pickWeightedIndex(r.items, rng), rng, false, refs);
 }
 
 /**
  * One outcome of a list once the pick is made, shared by a single roll and an
  * offer so both say the same thing. The only draws here are the dice in the text.
  */
-function listOutcome(r                , index        , rng              , picked = false)          {
+function listOutcome(r                , index        , rng              , picked = false, refs              )          {
   const item = r.items[index];
   const total = r.items.reduce((a, i) => a + (i.disabled || i.weight <= 0 ? 0 : i.weight), 0);
   const percent = total > 0 ? (item.weight / total) * 100 : 0;
   const pct = `${percent.toFixed(percent < 10 ? 1 : 0)}%`;
   // After the pick, never before it (seeded rolls).
   const rolled           = [];
-  const label = expandInlineDice(item.label, rng, rolled);
-  const description = item.description ? expandInlineDice(item.description, rng, rolled) : undefined;
+  const ctx = inline(rolled, refs, r.id);
+  const label = expandInline(item.label, rng, ctx);
+  const description = item.description ? expandInline(item.description, rng, ctx) : undefined;
+  const refParts = ctx.parts.map((p) => `${p.name}: ${p.text}`);
   // A pick had no odds: saying "20%" under it would suggest it was rolled.
-  const parts = [...rolled, description, picked ? "picked" : pct].filter(Boolean);
+  const parts = [...rolled, ...refParts, description, picked ? "picked" : pct].filter(Boolean);
   return {
     kind: "list",
     text: label,
@@ -11380,6 +12092,7 @@ function listOutcome(r                , index        , rng              , picked
     image: item.image,
     reaction: item.reaction,
     ...(rolled.length ? { rolled } : {}),
+    ...(ctx.parts.length ? { parts: ctx.parts } : {}),
   };
 }
 
@@ -11389,7 +12102,7 @@ function listOutcome(r                , index        , rng              , picked
  * no picture shows and no tagged reaction fires. A bag draws without putting
  * back and stops when it runs out.
  */
-function rollListMany(r                , n        , rng              , drawn                      )          {
+function rollListMany(r                , n        , rng              , drawn                      , refs              )          {
   const bag = r.withoutReplacement === true;
   const pool = bag && drawn ? withoutDrawn(r.items, drawn) : r.items;
   const wanted = Math.max(1, Math.min(20, Math.trunc(n)));
@@ -11399,7 +12112,8 @@ function rollListMany(r                , n        , rng              , drawn    
     : Array.from({ length: wanted }, () => pickWeightedIndex(pool, rng));
 
   const rolled           = [];
-  const labels = indices.map((i) => expandInlineDice(r.items[i].label, rng, rolled));
+  const ctx = inline(rolled, refs, r.id);
+  const labels = indices.map((i) => expandInline(r.items[i].label, rng, ctx));
   const text = labels.join(", ");
   return {
     kind: "list",
@@ -11410,6 +12124,7 @@ function rollListMany(r                , n        , rng              , drawn    
     // Deliberately no itemIndex, image or reaction: see above.
     indices,
     ...(rolled.length ? { rolled } : {}),
+    ...(ctx.parts.length ? { parts: ctx.parts } : {}),
   };
 }
 
@@ -11418,8 +12133,8 @@ function rollListMany(r                , n        , rng              , drawn    
  * a roll that landed there, with no draw behind it. Dice in its text still roll
  * from `rng`.
  */
-function pickedOutcome(r                , index        , rng              )          {
-  return { ...listOutcome(r, index, rng, true), picked: true };
+function pickedOutcome(r                , index        , rng              , refs              )          {
+  return { ...listOutcome(r, index, rng, true, refs), picked: true };
 }
 
 /**
@@ -11427,10 +12142,10 @@ function pickedOutcome(r                , index        , rng              )     
  * without putting back. A path of its own, so no existing roll draws any
  * differently and seeded rolls still reproduce.
  */
-function offerFromList(r                , m        , rng              )            {
+function offerFromList(r                , m        , rng              , refs              )            {
   const wanted = Math.max(1, Math.trunc(m));
   const indices = drawWithoutReplacement(r.items, Math.min(wanted, rollableIndices(r.items).length), rng);
-  return indices.map((index) => listOutcome(r, index, rng));
+  return indices.map((index) => listOutcome(r, index, rng, false, refs));
 }
 
 /**
@@ -11468,9 +12183,9 @@ function whyCannotRoll(r            , drawn                      )              
   return null;
 }
 
-/** A label with every rollable `{expr}` at its maximum. */
+/** A label with every rollable `{expr}` at its maximum, and each reference as its name. */
 function widestLabel(label        )         {
-  return label.replace(INLINE_DICE, (whole, expression        ) => {
+  return label.replace(REF_FOR_WIDTH, (_w, name        ) => name.trim()).replace(INLINE_DICE, (whole, expression        ) => {
     try {
       return String(expressionBounds(expression).max);
     } catch {
@@ -11696,7 +12411,7 @@ function createRoller(opts               )         {
     const item = randomizer.items[itemIndex];
     const bag = randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
     if (!item || !isRollable(item) || bag?.has(item.id)) return;
-    await land(randomizer, pickedOutcome(randomizer, itemIndex, state.source()), bag, false);
+    await land(randomizer, pickedOutcome(randomizer, itemIndex, state.source(), state.library.refs), bag, false);
   }
 
   function skip()       {
@@ -11758,7 +12473,7 @@ function createRoller(opts               )         {
     if (rollable.type === "list" && randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2) {
       let outcomes           ;
       try {
-        outcomes = offerFromList(rollable, randomizer.offer, state.source());
+        outcomes = offerFromList(rollable, randomizer.offer, state.source(), state.library.refs);
       } catch (e) {
         const reason = (e         ).message;
         opts.result.clear(reason);
@@ -11794,8 +12509,8 @@ function createRoller(opts               )         {
     try {
       const many = Math.max(1, Math.trunc(opts.count?.() ?? 1));
       outcome = many > 1 && rollable.type === "list"
-        ? rollListMany(rollable, many, state.source(), bag ?? undefined)
-        : rollRandomizer(rollable, state.source());
+        ? rollListMany(rollable, many, state.source(), bag ?? undefined, state.library.refs)
+        : rollRandomizer(rollable, state.source(), state.library.refs);
     } catch (e) {
       const reason = (e         ).message;
       opts.result.clear(reason);
@@ -12911,6 +13626,663 @@ function createPopoutSlot(root            )             {
   };
 }
 
+// ---- src/ui/storage-actions.ts -----------------------------------
+/**
+ * Actions on where the library is kept, shared by the library's storage badge
+ * and Settings. Nothing here draws: each returns whether something changed.
+ */
+
+
+                                                                          
+
+
+
+
+
+
+
+
+
+
+
+/** Whether this browser lets the library be a real folder (Chrome and Edge do). */
+function canUseFolder()          {
+  return canPickFolder();
+}
+
+                                                            
+
+/** One sentence about where the library is, for a tooltip or a settings line. */
+function describeStorage(kind        )         {
+  switch (kind) {
+    case "fsa":
+      return "A folder on this computer. The files there are the library, so they are yours to back up, sync or keep in Git.";
+    case "memory":
+      return "Nothing is being saved. This browser gave Orangey no storage, so the library goes when the page closes.";
+    case "idb":
+      return "This browser's own storage (IndexedDB). It survives reloads and works offline, and goes if you clear this site's data.";
+    default:
+      return "This browser's own storage. It survives reloads and works offline, and goes if you clear this site's data.";
+  }
+}
+
+/**
+ * Whether the browser has promised to keep this site's data. Asking is separate
+ * (`askToPersist`) because Firefox shows a prompt for it.
+ */
+async function isPersisted()                          {
+  try {
+    if (!navigator.storage?.persisted) return null;
+    return await navigator.storage.persisted();
+  } catch {
+    return null;
+  }
+}
+
+async function askToPersist()                          {
+  try {
+    if (!navigator.storage?.persist) return null;
+    return await navigator.storage.persist();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Point the library at a folder on this computer, offering to copy what is
+ * already there into it when the folder is empty.
+ */
+async function useFolder()                   {
+  const backend = await pickFolder().catch(() => null);
+  if (!backend) return false;
+  const previous = state.library;
+  const next = new LibraryService(backend);
+  await next.refresh();
+  if (next.files().length === 0 && previous.files().length > 0) {
+    const copy = await askConfirm(
+      "Copy your library into this folder?",
+      `The folder is empty. Copy the ${previous.files().length} randomizers you have now into it?`,
+      { confirm: "Copy" },
+    );
+    if (copy) {
+      for (const file of previous.files()) {
+        if (!file.randomizer) continue;
+        const folder = parent(file.path);
+        if (folder) await backend.mkdir(folder);
+        await backend.write(file.path, serialize(wrap(file.randomizer)));
+      }
+      // Pictures are not in the tree, so copy them backend to backend, or every wheel
+      // with one arrives pointing at nothing.
+      const pictures = await previous.backend.list(IMAGE_DIR).catch(() => []);
+      if (pictures.length) await backend.mkdir(IMAGE_DIR);
+      for (const picture of pictures) {
+        if (picture.kind !== "file") continue;
+        const at = `${IMAGE_DIR}/${picture.name}`;
+        await backend.writeBytes(at, await previous.backend.readBytes(at));
+      }
+      await next.refresh();
+    }
+  }
+  state.setLibrary(next);
+  state.folderNeedsPermission = false;
+  void state.savePrefs({ backend: "fsa" });
+  state.toast(`Library is now the folder “${backend.label}”`);
+  return true;
+}
+
+async function stopUsingFolder()                {
+  await forgetFolder();
+  state.toast("Reload to go back to browser storage.");
+}
+
+/**
+ * A copy of a randomizer with its pictures inline, so a single exported file
+ * works on a machine that has never seen this library.
+ */
+async function portableRandomizer(r            )                      {
+  if (r.type !== "list" || !r.items.some((i) => i.image)) return r;
+  const items = await Promise.all(r.items.map(async (item) => {
+    if (!item.image) return item;
+    const { image: _image, ...rest } = item;
+    const inline = await imageDataUrl(item.image);
+    // A picture the store has lost drops the reference; it would resolve to
+    // nothing there either.
+    return inline ? { ...rest, imageData: inline } : rest;
+  }));
+  return { ...r, items };
+}
+
+/**
+ * The way back in: pictures a file brought go to the store, and outcomes go
+ * back to naming ids.
+ */
+async function absorbImages(r            )                      {
+  if (r.type !== "list" || !r.items.some((i) => i.imageData)) return r;
+  const items = await Promise.all(r.items.map(async (item) => {
+    if (!item.imageData) return item;
+    const { imageData, ...rest } = item;
+    try {
+      return { ...rest, image: await putImageData(imageData) };
+    } catch {
+      // An unreadable picture costs the outcome only its picture.
+      return rest;
+    }
+  }));
+  return { ...r, items };
+}
+
+/** Every picture these randomizers point at. */
+function usedImageIds(randomizers              )              {
+  const ids = new Set        ();
+  for (const r of randomizers) {
+    if (r.type !== "list") continue;
+    for (const item of r.items) if (item.image) ids.add(item.image);
+  }
+  return ids;
+}
+
+/**
+ * Installed packs stay out of every export: they are their authors' to hand
+ * out, with their credit and licence, and installing one again keeps its ids,
+ * so whatever of yours points at it works again. These say which pack a path
+ * is in (null when none, or when it is the author's own folder) and turn the
+ * packs left out into the list an export carries instead.
+ */
+function installedPackOf(library                , path        )                {
+  const found = library.packOf(path);
+  return found?.pack.installed ? found.pack.id : null;
+}
+
+function neededPacks(library                , ids                  )               {
+  return [...ids].flatMap((id) => {
+    const pack = library.findPack(id)?.pack;
+    return pack ? [neededFrom(pack)] : [];
+  });
+}
+
+/** "Delve Oracles and Ruins": for a toast. */
+const packNames = (packs                       ) =>
+  packs.length <= 2 ? packs.map((p) => p.title).join(" and ") : `${packs.slice(0, 2).map((p) => p.title).join(", ")} and ${packs.length - 2} more`;
+
+/**
+ * The pictures for an archive, as files: packed once however many wheels use
+ * them, and viewable when the ZIP is opened.
+ */
+async function pictureEntries(randomizers              )                      {
+  const entries             = [];
+  for (const id of usedImageIds(randomizers)) {
+    const bytes = await imageBytes(id);
+    if (!bytes) continue;
+    // Under its real extension, so the file opens rather than being a JPEG called .png.
+    const name = (await imageStoredName(id)) ?? `${id}.png`;
+    entries.push({ path: `${IMAGE_DIR}/${name}`, bytes });
+  }
+  return entries;
+}
+
+/**
+ * The files a board needs elsewhere: itself and every randomizer it points at.
+ * A reference whose randomizer is gone is reported rather than packed.
+ */
+function boardBundle(
+  library                ,
+  board                 ,
+)                                                                                        {
+  const entries                                   = [];
+  const missing           = [];
+  const packIds = new Set        ();
+  const boardNode = library.findById(board.id);
+  if (boardNode) entries.push({ path: boardNode.path, text: serialize(wrap(board)) });
+  for (const entry of board.entries) {
+    const node = library.findById(entry.id);
+    if (!node?.randomizer) {
+      missing.push(entry.name);
+      continue;
+    }
+    const pack = installedPackOf(library, node.path);
+    if (pack !== null) {
+      packIds.add(pack);
+      continue;
+    }
+    entries.push({ path: node.path, text: serialize(wrap(node.randomizer)) });
+  }
+  return { entries, missing, packs: neededPacks(library, packIds) };
+}
+
+/**
+ * Boards in the library that point at something no longer there, reported
+ * after an archive import.
+ */
+function missingOnBoards(library                )                                        {
+  return library
+    .files()
+    .map((f) => f.randomizer)
+    .filter((r)                       => Boolean(r) && r .type === "board")
+    .map((board) => ({
+      name: board.name,
+      missing: board.entries.filter((e) => !library.findById(e.id)).map((e) => e.name),
+    }))
+    .filter((b) => b.missing.length > 0);
+}
+
+async function exportBoardZip(board                 )                {
+  const { entries, missing, packs } = boardBundle(state.library, board);
+  const packed = board.entries
+    .map((e) => state.library.findById(e.id))
+    .filter((n) => n?.randomizer && installedPackOf(state.library, n.path) === null)
+    .map((n) => n .randomizer );
+  const list = packs.length ? [{ path: PACKS_FILE, text: serializePackList(packs) }] : [];
+  const zip = await createZip([...entries, ...list, ...(await pictureEntries(packed))]);
+  downloadBytes(`${slugify(board.name)}.zip`, zip);
+  const count = `${entries.length} file${entries.length === 1 ? "" : "s"}`;
+  state.toast(
+    (missing.length
+      ? `Exported ${count}. Missing from your library: ${missing.join(", ")}.`
+      : `Exported ${count}: the board and everything on it.`) +
+      (packs.length ? ` Tables from ${packNames(packs)} stay out; the file names the pack${packs.length === 1 ? "" : "s"} to install.` : ""),
+  );
+}
+
+/** The whole tree as a ZIP: the backup that works in every browser. */
+async function exportLibraryZip()                {
+  // Your own work; each installed pack is named in orangey-packs.json instead.
+  const own = state.library.files().filter((f) => f.randomizer && installedPackOf(state.library, f.path) === null);
+  const randomizers = own.map((f) => f.randomizer );
+  const entries = own.map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer )) }));
+  const packs = state.library.installedPacks().map((p) => neededFrom(p.pack));
+  const list = packs.length ? [{ path: PACKS_FILE, text: serializePackList(packs) }] : [];
+  const pictures = await pictureEntries(randomizers);
+  const zip = await createZip([...entries, ...list, ...pictures]);
+  downloadBytes("orangey-library.zip", zip);
+  state.toast(
+    `Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}` +
+      `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}` +
+      `${packs.length ? `. Installed packs (${packNames(packs)}) are not copied: the backup lists them, to install again when you restore it` : ""}`,
+  );
+}
+
+/**
+ * Chosen randomizers as one plain-text library file (see
+ * `storage/libraryfile.ts`), named each time starting from `defaultName`.
+ * `base` is stripped from the front of the chosen paths; `folders` are carried
+ * even when empty; linked randomizers come along.
+ */
+async function exportLibraryFile(opts   
+                           
+                      
+                
+                              
+                              
+ )                {
+  const name = (await askText("Export as a library file", {
+    label: "Name", value: opts.defaultName, confirm: "Export", opener: opts.opener,
+  }))?.trim();
+  if (!name) return;
+  const sources = state.library.files().map((n) => ({ path: n.path, randomizer: n.randomizer ?? undefined }));
+  const plan = planExport(sources, opts.paths, opts.base ?? "", (p) => installedPackOf(state.library, p));
+  const needs = neededPacks(state.library, plan.leftOut.keys());
+  if (plan.entries.length === 0) {
+    state.toast(needs.length ? `Those are all in the pack ${packNames(needs)}, which is its author's to share: send them its file or link instead.` : "There is nothing there to export.");
+    return;
+  }
+  // Every folder on the way to a randomizer, and the empty ones asked for.
+  const folders = new Set(opts.folders ?? []);
+  for (const entry of plan.entries) {
+    const parts = segments(parent(entry.path));
+    for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
+  }
+  folders.delete("");
+  const text = serializeLibrary(name, new Date().toISOString(), [...folders].sort(), plan.entries, undefined, needs);
+  download(`${slugify(name)}${LIBRARY_FILE_SUFFIX}`, text, "application/json");
+  const count = plan.entries.length;
+  state.toast(
+    `Exported ${count} randomizer${count === 1 ? "" : "s"}` +
+      `${plan.linked ? `, ${plan.linked} of them because something chosen goes to ${plan.linked === 1 ? "it" : "them"}` : ""}.` +
+      `${plan.pictures ? ` ${plan.pictures} picture${plan.pictures === 1 ? " was" : "s were"} left out; the ZIP export keeps pictures.` : ""}` +
+      `${needs.length ? ` Tables from ${packNames(needs)} stay out; the file names the pack${needs.length === 1 ? "" : "s"} to install.` : ""}`,
+  );
+}
+
+// ---- src/ui/packs.ts ---------------------------------------------
+/**
+ * Packs on screen: publishing a folder as one, installing one from a file or a
+ * link, updating it, its credit, and the editable copy (model/pack.ts has the
+ * rules, storage/library.ts the files).
+ */
+
+
+
+
+
+
+                                                         
+
+
+
+
+
+                                      
+
+const LICENCES = ["CC BY 4.0", "CC BY-SA 4.0", "CC BY-NC 4.0", "CC BY-NC-SA 4.0", "CC0 1.0", "MIT", "All rights reserved"];
+
+// ---- publishing -----------------------------------------------------------------
+
+/**
+ * "Publish as a pack…" on a folder: asks for the details (remembered in the
+ * folder for next time, with the version moved on by one), then downloads the
+ * pack file to put on a website, itch.io or a forum.
+ */
+function publishPack(folder             , opener                     )       {
+  const before                        = folder.pack ?? {};
+  const input = (name        , label        , value        , extra                         = {}) => {
+    const el = h("input", { type: "text", name, value, "aria-label": label, ...extra });
+    return { el, field: h("label", { class: "field" }, h("span", { class: "field-label", text: label }), el) };
+  };
+  const title = input("title", "Title", before.title ?? folder.name);
+  const author = input("author", "Author", before.author ?? "");
+  const version = input("version", "Version", before.version ? nextVersion(before.version) : "1.0", { inputmode: "decimal" });
+  const licence = input("licence", "Licence", before.licence ?? "", { list: "pack-licences", placeholder: "CC BY 4.0" });
+  const homepage = input("homepage", "Web page (optional)", before.homepage ?? "", { type: "url", placeholder: "https://" });
+  const description = h("textarea", { name: "description", "aria-label": "Description", rows: "3" });
+  description.value = before.description ?? "";
+  const snapshots = h("input", { type: "checkbox", name: "allowSnapshots" });
+  snapshots.checked = before.allowSnapshots !== false;
+  const problem = h("p", { class: "form-problem", role: "alert" });
+  problem.hidden = true;
+
+  const dialog = h("dialog", { class: "pack-dialog", "aria-label": "Publish as a pack" },
+    h("form", { method: "dialog", onsubmit: (e       ) => { e.preventDefault(); submit(); } },
+      h("h2", { text: `Publish “${folder.name}” as a pack` }),
+      h("p", { class: "faint", text: "A pack is a file with this folder's randomizers and your name on it. People install it in one step, see your credit wherever they roll, and get your next version as an update." }),
+      title.field, author.field, version.field, licence.field,
+      h("datalist", { id: "pack-licences" }, ...LICENCES.map((l) => h("option", { value: l }))),
+      homepage.field,
+      h("label", { class: "field" }, h("span", { class: "field-label", text: "Description (optional)" }), description),
+      h("label", { class: "check" }, snapshots, h("span", { text: " Let writing apps keep a copy in a player's journal, so it rolls on a computer without this pack" })),
+      problem,
+      h("div", { class: "row gap-l" },
+        h("div", { class: "spacer" }),
+        button("Cancel", () => dialog.close(), { type: "button" }),
+        h("button", { type: "submit", class: "primary" }, "Publish"),
+      ),
+    ),
+  );
+
+  function submit()       {
+    let pack              ;
+    try {
+      pack = readManifest({
+        id: before.id ?? newId(),
+        title: title.el.value,
+        author: author.el.value,
+        version: version.el.value,
+        licence: licence.el.value,
+        homepage: homepage.el.value,
+        description: description.value,
+        allowSnapshots: snapshots.checked,
+      });
+    } catch (e) {
+      problem.hidden = false;
+      problem.textContent = e instanceof ValidationError ? e.issues.map((i) => `${i.path.replace(/^pack\./, "")} ${i.message}`).join("; ") : String(e);
+      return;
+    }
+    dialog.close();
+    void writePack(folder, pack);
+  }
+
+  openDialog(dialog, opener);
+  (before.author ? version.el : author.el).focus();
+}
+
+async function writePack(folder             , pack              )                {
+  await state.library.setPackDetails(folder.path, pack);
+  const node = state.library.find(folder.path) ?? folder;
+  const sources = state.library.files().map((n) => ({ path: n.path, randomizer: n.randomizer ?? undefined }));
+  // Someone else's installed pack that this one uses stays out, and is named as needed.
+  const plan = planExport(sources, state.library.files(node).map((n) => n.path), node.path, (p) => installedPackOf(state.library, p));
+  const needs = neededPacks(state.library, plan.leftOut.keys());
+  const folders = new Set        ();
+  for (const f of state.library.folders(node)) if (f !== node) folders.add(f.path.slice(node.path.length + 1));
+  for (const e of plan.entries) {
+    const parts = segments(parent(e.path));
+    for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
+  }
+  const text = serializeLibrary(pack.title, new Date().toISOString(), [...folders].sort(), plan.entries, pack, needs);
+  download(`${slugify(pack.title)}-${pack.version}${LIBRARY_FILE_SUFFIX}`, text, "application/json");
+  state.toast(
+    `Published ${pack.title} ${pack.version}: ${plan.entries.length} randomizer${plan.entries.length === 1 ? "" : "s"}.` +
+      (plan.linked ? ` ${plan.linked} of them are outside the folder and came along because something in it goes to them; move them in to keep the pack tidy.` : "") +
+      (plan.pictures ? ` ${plan.pictures} picture${plan.pictures === 1 ? " was" : "s were"} left out.` : "") +
+      (needs.length ? ` It uses ${needs.map((n) => n.title).join(", ")}, which ${needs.length === 1 ? "is" : "are"} not copied in: players install ${needs.length === 1 ? "it" : "them"} too.` : ""),
+  );
+}
+
+// ---- installing and updating ----------------------------------------------------
+
+/** A pack read and waiting for the person to say yes: from a dropped file, or fetched from a link. */
+let waiting                                                    = null;
+
+/**
+ * Packs an import needed and this library does not have (a backup's installed
+ * packs, or a file that uses one). Kept until each is installed or the person
+ * says later, so installing one returns here for the next.
+ */
+let needed               = [];
+
+const stillNeeded = () => (needed = needed.filter((p) => !state.library.findPack(p.id)));
+
+/**
+ * After an import: when it named packs this library lacks, shows the screen
+ * that offers them and returns true; otherwise false, and nothing changes.
+ */
+function offerNeeded(packs                                   )          {
+  const known = new Set(needed.map((p) => p.id));
+  needed = [...needed, ...(packs ?? []).filter((p) => !known.has(p.id))];
+  if (stillNeeded().length === 0) return false;
+  // Already on #/install (a pack just installed from a dropped file): replacing
+  // the address is what makes the screen draw again.
+  navigate("#/install", location.hash === "#/install");
+  return true;
+}
+
+function neededCard()         {
+  const out         = [
+    h("h2", { text: needed.length === 1 ? "One pack to install again" : `${needed.length} packs to install again` }),
+    h("p", { text: "What you brought in uses these packs. Packs are not copied into backups and exports: they are their authors' to hand out. Installing one again gives back the tables that point at it." }),
+  ];
+  const list = h("ul", { class: "needed-packs" });
+  for (const p of needed) {
+    list.append(h("li", {},
+      credit(p),
+      p.source
+        ? button("Install from its link", () => navigate(`#/install?from=${encodeURIComponent(p.source )}`), { class: "primary install-needed" })
+        : h("p", { class: "faint", text: "Installed from a file: find that file (or ask its author) and drop it on Import." }),
+    ));
+  }
+  out.push(list, h("div", { class: "row gap-s" }, button("Later", () => { needed = []; navigate("#/library"); }, { class: "ghost" })));
+  return out;
+}
+
+/** Shows the install screen for a pack read from a file or pasted text. */
+function offerPack(read                 , source         )       {
+  waiting = { read, source };
+  navigate("#/install");
+}
+
+/** Where a pack's file can be fetched from, as a link to install it: `…/#/install?from=<address>`. */
+function installLink(appBase        , from        )         {
+  return `${appBase}#/install?from=${encodeURIComponent(from)}`;
+}
+
+/**
+ * The install screen. With `from`, the pack is fetched from that address first.
+ * Nothing is installed until the person presses the button: a link alone
+ * never writes into anyone's library.
+ */
+function createInstallView(from               )       {
+  const el = h("div", { class: "card install-pack", "aria-busy": "true" });
+  let gone = false;
+
+  const show = (read                 , source         ) => {
+    if (gone) return;
+    el.removeAttribute("aria-busy");
+    el.replaceChildren(...installCard(read, source));
+  };
+  const fail = (title        , ...more                   ) => {
+    if (gone) return;
+    el.removeAttribute("aria-busy");
+    el.replaceChildren(h("h2", { text: title }), ...more.map((m) => (typeof m === "string" ? h("p", { text: m }) : m)));
+  };
+
+  if (from) {
+    el.append(h("p", { class: "faint", text: "Fetching the pack…" }));
+    void fetchPack(from).then(
+      (read) => show(read, from),
+      (e       ) =>
+        fail("That pack could not be fetched", e.message,
+          h("p", {}, "You can download it yourself and drop the file on the Import page: ", h("a", { href: from, target: "_blank", rel: "noopener", text: from })),
+          button("Go to Import", () => navigate("#/import"))),
+    );
+  } else if (waiting) {
+    const w = waiting;
+    waiting = null;
+    show(w.read, w.source);
+  } else if (stillNeeded().length) {
+    el.removeAttribute("aria-busy");
+    el.replaceChildren(...neededCard());
+  } else {
+    fail("No pack to install", "Drop a pack file on the Import page, or open an install link.", button("Go to Import", () => navigate("#/import")));
+  }
+  return { el, destroy: () => void (gone = true) };
+}
+
+async function fetchPack(from        )                           {
+  let url     ;
+  try {
+    url = new URL(from);
+  } catch {
+    throw new Error("The link does not hold a web address.");
+  }
+  if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") throw new Error("Packs are fetched over https only.");
+  let text        ;
+  try {
+    const res = await fetch(url, { credentials: "omit" });
+    if (!res.ok) throw new Error(`The site answered ${res.status}.`);
+    text = await res.text();
+  } catch (e) {
+    // A refused cross-site fetch looks the same as no network, so both are said.
+    throw new Error(e instanceof TypeError ? "The site did not let Orangey fetch the file (or there is no connection)." : (e         ).message);
+  }
+  const read = parseLibrary(text);
+  if (!read.pack) throw new Error("That file is a library file, not a pack: it says nothing of who made it or which version it is.");
+  return read;
+}
+
+/** What the person sees before saying yes: the credit, what is in it, and what will happen. */
+function installCard(read                 , source         )         {
+  const pack = read.pack ;
+  const here = state.library.findPack(pack.id);
+  const out         = [h("h2", { text: pack.title }), credit(pack)];
+  if (pack.description) out.push(h("p", { class: "pack-description", text: pack.description }));
+  const count = read.entries.length;
+  out.push(h("p", { class: "faint", text: `${count} randomizer${count === 1 ? "" : "s"}${read.failed.length ? `, and ${read.failed.length} that could not be read` : ""}.` }));
+
+  const done = (folder        ) => {
+    if (!state.prefs.expandedFolders.includes(folder)) void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, folder] });
+    // A pack that uses another, or the next pack a backup needs: offered now.
+    if (!offerNeeded(read.needs)) navigate("#/library");
+  };
+
+  if (!here?.pack) {
+    out.push(
+      h("p", { text: "It goes into a folder of its own and stays as its author made it. To change it, make an editable copy." }),
+      h("div", { class: "row gap-s" },
+        button("Install pack", async () => {
+          const { folder } = await state.library.installPack(read, { source });
+          state.toast(`Installed ${pack.title} ${pack.version} in “${folder}”`);
+          done(folder);
+        }, { class: "primary install-button" }),
+        button("Cancel", () => navigate("#/library"), { class: "ghost" }),
+      ),
+    );
+    return out;
+  }
+
+  const installed = here.pack;
+  const order = compareVersions(pack.version, installed.version);
+  const names = (rs          ) => (rs.length > 6 ? `${rs.slice(0, 6).join(", ")} and ${rs.length - 6} more` : rs.join(", "));
+  const local = (id        ) => installed.ids?.[id] ?? id;
+  const now = state.library.files(here).flatMap((f) => (f.randomizer ? [f.randomizer] : []));
+  const incoming = new Set(read.entries.map((e) => local(e.file.randomizer.id)));
+  const nowIds = new Set(now.map((r) => r.id));
+  const added = read.entries.filter((e) => !nowIds.has(local(e.file.randomizer.id))).map((e) => e.file.randomizer.name);
+  const removed = now.filter((r) => !incoming.has(r.id)).map((r) => r.name);
+
+  out.push(h("p", {
+    class: "pack-state",
+    text: order > 0
+      ? `You have version ${installed.version} in “${here.path}”. This is ${pack.version}.`
+      : order === 0
+        ? `You have this version (${installed.version}) already, in “${here.path}”.`
+        : `You have a newer version (${installed.version}) in “${here.path}”. This is ${pack.version}.`,
+  }));
+  if (read.failed.length) {
+    // Updating from a damaged file would delete what it failed to carry.
+    out.push(
+      h("p", { class: "warning", text: `This file has ${read.failed.length} randomizer${read.failed.length === 1 ? "" : "s"} that could not be read (${names(read.failed.map((f) => f.path))}), so it cannot update the pack: that would remove them. Ask its author for a fixed file.` }),
+      h("div", { class: "row gap-s" }, button("Back to the library", () => navigate("#/library"), { class: "ghost" })),
+    );
+    return out;
+  }
+  if (added.length) out.push(h("p", { text: `New: ${names(added)}.` }));
+  if (removed.length) out.push(h("p", { class: "warning", text: `No longer in it: ${names(removed)}. Updating removes ${removed.length === 1 ? "it" : "them"} from your library.` }));
+  const label = order > 0 ? `Update to ${pack.version}` : order === 0 ? "Install it again" : `Go back to ${pack.version}`;
+  out.push(h("div", { class: "row gap-s" },
+    button(label, async () => {
+      const result = await state.library.updatePack(here.path, read, { source });
+      state.toast(`${pack.title} is now ${pack.version}: ${result.kept} kept, ${result.added} new, ${result.removed} removed`);
+      done(here.path);
+    }, { class: order > 0 ? "primary update-button" : "update-button" }),
+    button("Cancel", () => navigate("#/library"), { class: "ghost" }),
+  ));
+  return out;
+}
+
+// ---- credit -----------------------------------------------------------------------
+
+/** "Delve Oracles by A. Writer · v1.0 · CC BY 4.0", with the web page as a link. */
+function credit(pack              )              {
+  return h("p", { class: "pack-credit" },
+    creditLine(pack),
+    pack.homepage ? h("span", {}, " · ", h("a", { href: pack.homepage, target: "_blank", rel: "noopener", text: "web page" })) : null,
+  );
+}
+
+/** "About this pack": the credit, the description, and where updates come from. */
+function aboutPack(folder             , opener                     )       {
+  const pack = folder.pack                 ;
+  const dialog = h("dialog", { class: "pack-dialog", "aria-label": pack.title },
+    h("h2", { text: pack.title }),
+    credit(pack),
+    pack.description ? h("p", { class: "pack-description", text: pack.description }) : null,
+    pack.installed ? h("p", { class: "faint", text: `Installed ${new Date(pack.installed).toLocaleDateString()}${pack.source ? ` from ${pack.source}` : ""}. Drop a newer version of its file on the Import page to update it.` }) : null,
+    pack.allowSnapshots === false ? h("p", { class: "faint", text: "Its author asks writing apps not to keep copies of it in journals." }) : null,
+    h("div", { class: "row gap-l" },
+      h("div", { class: "spacer" }),
+      pack.source ? button("Check for an update", () => { dialog.close(); navigate(`#/install?from=${encodeURIComponent(pack.source )}`); }) : null,
+      button("Close", () => dialog.close(), { class: "primary" }),
+    ),
+  );
+  openDialog(dialog, opener);
+}
+
+/** "Make an editable copy": the pack's randomizers as the user's own. */
+async function editableCopy(folder        )                  {
+  const copy = await state.library.copyPack(folder);
+  state.toast(`“${copy}” is yours to change; updates to the pack leave it alone.`);
+  return copy;
+}
+
 // ---- src/ui/views/play.ts ----------------------------------------
 /**
  * The play screen, which a GM keeps open during a game: one tap to roll, the
@@ -12945,6 +14317,7 @@ function createPopoutSlot(root            )             {
 
 
                                        
+
 
 
 const PRESETS = [4, 6, 8, 10, 12, 20, 100];
@@ -13405,7 +14778,8 @@ function createPlayView(
     randomizer = next;
     title.textContent = next.type === "dice" ? (next                          ).expression : next.name;
     subtitle.textContent = next.description ?? describeType(next);
-    editLink.style.display = node && next.id === node.randomizer?.id ? "" : "none";
+    editLink.style.display = node && !locked && next.id === node.randomizer?.id ? "" : "none";
+    if (packCredit) packCredit.hidden = !(node && next.id === node.randomizer?.id);
     linkButton.hidden = !fixed && next !== quickModel;
     roller.discard();
     rollButton.textContent = rollLabel();
@@ -13441,7 +14815,12 @@ function createPlayView(
   const title = h("h1", { text: randomizer.type === "dice" ? (randomizer                          ).expression : randomizer.name });
   const subtitle = h("p", { class: "muted", text: randomizer.description ?? describeType(randomizer) });
   const editLink = button("Edit", () => node && navigate(`#/edit/${encodeURIComponent(node.path)}`), { class: "ghost edit-link" });
-  editLink.style.display = node ? "" : "none";
+  // Part of an installed pack: its credit under the title, and no Edit (the
+  // editor would only offer an editable copy).
+  const pack = node ? state.library.packOf(node.path)?.pack ?? null : null;
+  const locked = !!pack?.installed;
+  editLink.style.display = node && !locked ? "" : "none";
+  const packCredit = pack?.installed ? credit(pack) : null;
 
   // A wheel that arrived in a link is nobody's until it is saved. Not offered in
   // full screen, where this row is hidden.
@@ -13466,7 +14845,7 @@ function createPlayView(
     scopeName: () => listNames(onScreen().map((r) => r.name)),
   });
 
-  const header = h("div", { class: "row" }, h("div", {}, title, subtitle), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
+  const header = h("div", { class: "row" }, h("div", {}, title, subtitle, packCredit), h("div", { class: "spacer" }), editLink, node ? null : saveAdHoc);
 
   // The mascot sits in a corner of the result panel, never over the Roll button.
   result.el.append(h("div", { class: "mascot-slot" }));
@@ -14112,286 +15491,6 @@ function draggedPaths(raw        , first        )           {
     // A drag from somewhere else that happens to use the name: one path.
   }
   return [first];
-}
-
-// ---- src/ui/storage-actions.ts -----------------------------------
-/**
- * Actions on where the library is kept, shared by the library's storage badge
- * and Settings. Nothing here draws: each returns whether something changed.
- */
-
-
-                                                                          
-
-
-
-
-
-
-
-
-
-
-/** Whether this browser lets the library be a real folder (Chrome and Edge do). */
-function canUseFolder()          {
-  return canPickFolder();
-}
-
-                                                            
-
-/** One sentence about where the library is, for a tooltip or a settings line. */
-function describeStorage(kind        )         {
-  switch (kind) {
-    case "fsa":
-      return "A folder on this computer. The files there are the library, so they are yours to back up, sync or keep in Git.";
-    case "memory":
-      return "Nothing is being saved. This browser gave Orangey no storage, so the library goes when the page closes.";
-    case "idb":
-      return "This browser's own storage (IndexedDB). It survives reloads and works offline, and goes if you clear this site's data.";
-    default:
-      return "This browser's own storage. It survives reloads and works offline, and goes if you clear this site's data.";
-  }
-}
-
-/**
- * Whether the browser has promised to keep this site's data. Asking is separate
- * (`askToPersist`) because Firefox shows a prompt for it.
- */
-async function isPersisted()                          {
-  try {
-    if (!navigator.storage?.persisted) return null;
-    return await navigator.storage.persisted();
-  } catch {
-    return null;
-  }
-}
-
-async function askToPersist()                          {
-  try {
-    if (!navigator.storage?.persist) return null;
-    return await navigator.storage.persist();
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Point the library at a folder on this computer, offering to copy what is
- * already there into it when the folder is empty.
- */
-async function useFolder()                   {
-  const backend = await pickFolder().catch(() => null);
-  if (!backend) return false;
-  const previous = state.library;
-  const next = new LibraryService(backend);
-  await next.refresh();
-  if (next.files().length === 0 && previous.files().length > 0) {
-    const copy = await askConfirm(
-      "Copy your library into this folder?",
-      `The folder is empty. Copy the ${previous.files().length} randomizers you have now into it?`,
-      { confirm: "Copy" },
-    );
-    if (copy) {
-      for (const file of previous.files()) {
-        if (!file.randomizer) continue;
-        const folder = parent(file.path);
-        if (folder) await backend.mkdir(folder);
-        await backend.write(file.path, serialize(wrap(file.randomizer)));
-      }
-      // Pictures are not in the tree, so copy them backend to backend, or every wheel
-      // with one arrives pointing at nothing.
-      const pictures = await previous.backend.list(IMAGE_DIR).catch(() => []);
-      if (pictures.length) await backend.mkdir(IMAGE_DIR);
-      for (const picture of pictures) {
-        if (picture.kind !== "file") continue;
-        const at = `${IMAGE_DIR}/${picture.name}`;
-        await backend.writeBytes(at, await previous.backend.readBytes(at));
-      }
-      await next.refresh();
-    }
-  }
-  state.setLibrary(next);
-  state.folderNeedsPermission = false;
-  void state.savePrefs({ backend: "fsa" });
-  state.toast(`Library is now the folder “${backend.label}”`);
-  return true;
-}
-
-async function stopUsingFolder()                {
-  await forgetFolder();
-  state.toast("Reload to go back to browser storage.");
-}
-
-/**
- * A copy of a randomizer with its pictures inline, so a single exported file
- * works on a machine that has never seen this library.
- */
-async function portableRandomizer(r            )                      {
-  if (r.type !== "list" || !r.items.some((i) => i.image)) return r;
-  const items = await Promise.all(r.items.map(async (item) => {
-    if (!item.image) return item;
-    const { image: _image, ...rest } = item;
-    const inline = await imageDataUrl(item.image);
-    // A picture the store has lost drops the reference; it would resolve to
-    // nothing there either.
-    return inline ? { ...rest, imageData: inline } : rest;
-  }));
-  return { ...r, items };
-}
-
-/**
- * The way back in: pictures a file brought go to the store, and outcomes go
- * back to naming ids.
- */
-async function absorbImages(r            )                      {
-  if (r.type !== "list" || !r.items.some((i) => i.imageData)) return r;
-  const items = await Promise.all(r.items.map(async (item) => {
-    if (!item.imageData) return item;
-    const { imageData, ...rest } = item;
-    try {
-      return { ...rest, image: await putImageData(imageData) };
-    } catch {
-      // An unreadable picture costs the outcome only its picture.
-      return rest;
-    }
-  }));
-  return { ...r, items };
-}
-
-/** Every picture these randomizers point at. */
-function usedImageIds(randomizers              )              {
-  const ids = new Set        ();
-  for (const r of randomizers) {
-    if (r.type !== "list") continue;
-    for (const item of r.items) if (item.image) ids.add(item.image);
-  }
-  return ids;
-}
-
-/**
- * The pictures for an archive, as files: packed once however many wheels use
- * them, and viewable when the ZIP is opened.
- */
-async function pictureEntries(randomizers              )                      {
-  const entries             = [];
-  for (const id of usedImageIds(randomizers)) {
-    const bytes = await imageBytes(id);
-    if (!bytes) continue;
-    // Under its real extension, so the file opens rather than being a JPEG called .png.
-    const name = (await imageStoredName(id)) ?? `${id}.png`;
-    entries.push({ path: `${IMAGE_DIR}/${name}`, bytes });
-  }
-  return entries;
-}
-
-/**
- * The files a board needs elsewhere: itself and every randomizer it points at.
- * A reference whose randomizer is gone is reported rather than packed.
- */
-function boardBundle(
-  library                ,
-  board                 ,
-)                                                                   {
-  const entries                                   = [];
-  const missing           = [];
-  const boardNode = library.findById(board.id);
-  if (boardNode) entries.push({ path: boardNode.path, text: serialize(wrap(board)) });
-  for (const entry of board.entries) {
-    const node = library.findById(entry.id);
-    if (!node?.randomizer) {
-      missing.push(entry.name);
-      continue;
-    }
-    entries.push({ path: node.path, text: serialize(wrap(node.randomizer)) });
-  }
-  return { entries, missing };
-}
-
-/**
- * Boards in the library that point at something no longer there, reported
- * after an archive import.
- */
-function missingOnBoards(library                )                                        {
-  return library
-    .files()
-    .map((f) => f.randomizer)
-    .filter((r)                       => Boolean(r) && r .type === "board")
-    .map((board) => ({
-      name: board.name,
-      missing: board.entries.filter((e) => !library.findById(e.id)).map((e) => e.name),
-    }))
-    .filter((b) => b.missing.length > 0);
-}
-
-async function exportBoardZip(board                 )                {
-  const { entries, missing } = boardBundle(state.library, board);
-  const packed = board.entries
-    .map((e) => state.library.findById(e.id)?.randomizer)
-    .filter((r)                  => Boolean(r));
-  const zip = await createZip([...entries, ...(await pictureEntries(packed))]);
-  downloadBytes(`${slugify(board.name)}.zip`, zip);
-  const count = `${entries.length} file${entries.length === 1 ? "" : "s"}`;
-  state.toast(
-    missing.length
-      ? `Exported ${count}. Missing from your library: ${missing.join(", ")}.`
-      : `Exported ${count}: the board and everything on it.`,
-  );
-}
-
-/** The whole tree as a ZIP: the backup that works in every browser. */
-async function exportLibraryZip()                {
-  const randomizers = state.library.files().map((f) => f.randomizer).filter((r)                  => Boolean(r));
-  const entries = state.library
-    .files()
-    .filter((f) => f.randomizer)
-    .map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer )) }));
-  const pictures = await pictureEntries(randomizers);
-  const zip = await createZip([...entries, ...pictures]);
-  downloadBytes("orangey-library.zip", zip);
-  state.toast(
-    `Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}` +
-      `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}`,
-  );
-}
-
-/**
- * Chosen randomizers as one plain-text library file (see
- * `storage/libraryfile.ts`), named each time starting from `defaultName`.
- * `base` is stripped from the front of the chosen paths; `folders` are carried
- * even when empty; linked randomizers come along.
- */
-async function exportLibraryFile(opts   
-                           
-                      
-                
-                              
-                              
- )                {
-  const name = (await askText("Export as a library file", {
-    label: "Name", value: opts.defaultName, confirm: "Export", opener: opts.opener,
-  }))?.trim();
-  if (!name) return;
-  const sources = state.library.files().map((n) => ({ path: n.path, randomizer: n.randomizer ?? undefined }));
-  const plan = planExport(sources, opts.paths, opts.base ?? "");
-  if (plan.entries.length === 0) {
-    state.toast("There is nothing there to export.");
-    return;
-  }
-  // Every folder on the way to a randomizer, and the empty ones asked for.
-  const folders = new Set(opts.folders ?? []);
-  for (const entry of plan.entries) {
-    const parts = segments(parent(entry.path));
-    for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
-  }
-  folders.delete("");
-  const text = serializeLibrary(name, new Date().toISOString(), [...folders].sort(), plan.entries);
-  download(`${slugify(name)}${LIBRARY_FILE_SUFFIX}`, text, "application/json");
-  const count = plan.entries.length;
-  state.toast(
-    `Exported ${count} randomizer${count === 1 ? "" : "s"}` +
-      `${plan.linked ? `, ${plan.linked} of them because something chosen goes to ${plan.linked === 1 ? "it" : "them"}` : ""}.` +
-      `${plan.pictures ? ` ${plan.pictures} picture${plan.pictures === 1 ? " was" : "s were"} left out; the ZIP export keeps pictures.` : ""}`,
-  );
 }
 
 // ---- src/ui/views/board.ts ---------------------------------------
@@ -15049,6 +16148,7 @@ function listCsv(items                     )         {
 
 
 
+
                                        
 
 function createLibraryView()       {
@@ -15311,10 +16411,14 @@ function createLibraryView()       {
       h("span", { class: "glyph", text: expanded ? "▾" : "▸" }),
       h("span", { class: "glyph", text: "📁" }),
       h("span", { class: "name", text: node.name }),
+      node.pack?.installed
+        ? h("span", { class: "pack-badge", title: `${node.pack.title} by ${node.pack.author}`, text: `pack ${node.pack.version}` })
+        : null,
       h("span", { class: "count", text: String(children.length) }),
     );
-    dropTargets(row, node.path);
-    if (depth > 0) draggable(row, node.path);
+    // Nothing is dropped into an installed pack, and nothing inside one is dragged out.
+    if (!state.library.isLocked(node.path)) dropTargets(row, node.path);
+    if (depth > 0 && (!state.library.isLocked(node.path) || node.pack?.installed)) draggable(row, node.path);
 
     const list = h("ul", { class: "tree" },
       ...children.map((child) => h("li", {}, child.kind === "folder" ? renderFolder(child, depth + 1) : renderFile(child))),
@@ -15365,7 +16469,7 @@ function createLibraryView()       {
       node.error ? h("span", { class: "why", text: "unreadable" }) : null,
       favourite ? h("span", { class: "count", text: "★" }) : null,
     );
-    draggable(row, node.path);
+    if (!state.library.isLocked(node.path)) draggable(row, node.path);
     const more = iconButton(`More for ${name}`, "⋯", () => openFileMenu(node, more));
     // Right-click opens the same menu as the ⋯: it is where people reach for
     // "copy the link to this".
@@ -15393,6 +16497,19 @@ function createLibraryView()       {
 
   function openFileMenu(node             , anchor             )       {
     const isFavourite = node.randomizer ? state.prefs.favourites.includes(node.randomizer.id) : false;
+    const inPack = state.library.packOf(node.path);
+    if (inPack?.pack.installed) {
+      // Part of an installed pack: look, roll, share; changing it means a copy.
+      openMenu(anchor, [
+        { label: "Play", onSelect: () => navigate(`#/r/${encodeURIComponent(node.path)}`) },
+        { label: isFavourite ? "Remove from favourites" : "Add to favourites", onSelect: () => node.randomizer && state.toggleFavourite(node.randomizer.id) },
+        ...(node.randomizer ? [{ label: "Copy link", onSelect: () => void copyLinkTo(node.randomizer ) }] : []),
+        // No Export file: a pack is its author's to hand out, as the pack.
+        { label: "About this pack", onSelect: () => aboutPack(inPack.folder, anchor), separator: true },
+        { label: "Make an editable copy of the pack", onSelect: async () => { await editableCopy(inPack.folder.path); render(); } },
+      ], node.randomizer?.name ?? node.name);
+      return;
+    }
     openMenu(anchor, [
       { label: "Play", onSelect: () => navigate(`#/r/${encodeURIComponent(node.path)}`) },
       { label: "Edit", onSelect: () => navigate(`#/edit/${encodeURIComponent(node.path)}`) },
@@ -15421,6 +16538,23 @@ function createLibraryView()       {
   }
 
   function openFolderMenu(node             , anchor             )       {
+    const inPack = state.library.packOf(node.path);
+    if (inPack?.pack.installed) {
+      const root = inPack.folder.path === node.path;
+      openMenu(anchor, [
+        { label: "Select all in this folder", onSelect: () => selectFolder(node) },
+        { label: "About this pack", onSelect: () => aboutPack(inPack.folder, anchor), separator: true },
+        { label: "Make an editable copy", onSelect: async () => { await editableCopy(inPack.folder.path); render(); } },
+        ...(root
+          ? [
+              { label: "Rename…", onSelect: () => void renameNode(node, anchor), separator: true },
+              { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
+              { label: "Uninstall pack…", onSelect: () => void confirmDelete(node, anchor), danger: true, separator: true },
+            ]
+          : []),
+      ], node.name);
+      return;
+    }
     openMenu(anchor, [
       { label: "Select all in this folder", onSelect: () => selectFolder(node) },
       { label: "New wheel here", onSelect: () => void newRandomizer("list", node.path), separator: true },
@@ -15439,6 +16573,10 @@ function createLibraryView()       {
           opener: anchor,
         }),
       },
+      {
+        label: node.pack ? `Publish the next version (after ${node.pack.version})…` : "Publish as a pack…",
+        onSelect: () => publishPack(node, anchor),
+      },
       { label: "Delete folder…", onSelect: () => void confirmDelete(node, anchor), danger: true, separator: true },
     ], node.name);
   }
@@ -15452,7 +16590,7 @@ function createLibraryView()       {
   }
 
   async function moveNode(node             , opener             )                {
-    const folders = state.library.folderList().filter((f) => f.path !== node.path && !f.path.startsWith(`${node.path}/`));
+    const folders = state.library.folderList().filter((f) => f.path !== node.path && !f.path.startsWith(`${node.path}/`) && !state.library.isLocked(f.path));
     const target = await askFolder(`Move “${node.randomizer?.name ?? node.name}” to`, folders, parent(node.path), opener);
     if (target === null) return;
     await state.library.move(node.path, target);
@@ -16304,6 +17442,137 @@ function pictureCell(opts                    )              {
   return holder;
 }
 
+// ---- src/ui/components/refpicker.ts ------------------------------
+/**
+ * Typing `{@` in an outcome opens a list of the library's tables; picking one
+ * writes `{@Name}` there. The editor keeps the table's id behind the name
+ * (model/refs.ts), so this only has to say which table was meant.
+ */
+
+
+
+                               
+             
+               
+                                                           
+                 
+ 
+
+const OPEN_REF = /\{@([^{}|]{0,80})$/;
+const LIMIT = 8;
+
+/**
+ * Watches the text inputs under `host` that match `selector`. `onPick` is told
+ * which table was picked before the input event fires, so the save that
+ * follows knows its id even when two tables share the name.
+ */
+function attachRefPicker(host             , selector        , opts   
+                                   
+                                         
+ )             {
+  let menu                     = null;
+  let input                          = null;
+  let matches                 = [];
+  let active = 0;
+
+  const close = () => {
+    menu?.remove();
+    menu = null;
+    input = null;
+  };
+
+  function open(el                  , query        )       {
+    const q = query.trim().toLowerCase();
+    const all = opts.candidates();
+    const starts = all.filter((c) => c.name.toLowerCase().startsWith(q));
+    const contains = all.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q));
+    matches = [...starts, ...contains].slice(0, LIMIT);
+    if (matches.length === 0) {
+      close();
+      return;
+    }
+    active = Math.min(active, matches.length - 1);
+    input = el;
+    const dupes = new Set(matches.map((m) => m.name.toLowerCase()).filter((n, i, a) => a.indexOf(n) !== i));
+    const list = h("ul", { class: "ref-picker", role: "listbox", "aria-label": "Tables to roll here" },
+      ...matches.map((m, i) =>
+        h("li", {
+          role: "option",
+          class: i === active ? "active" : "",
+          "aria-selected": String(i === active),
+          onmousedown: (e       ) => {
+            e.preventDefault();
+            choose(i);
+          },
+        },
+          h("span", { class: "ref-name", text: m.name }),
+          dupes.has(m.name.toLowerCase()) || m.folder ? h("span", { class: "ref-folder", text: m.folder || "top level" }) : null,
+        )),
+    );
+    const r = el.getBoundingClientRect();
+    list.style.left = `${Math.round(r.left)}px`;
+    list.style.top = `${Math.round(r.bottom + 2)}px`;
+    list.style.minWidth = `${Math.round(Math.max(200, r.width))}px`;
+    menu?.remove();
+    menu = list;
+    document.body.appendChild(list);
+  }
+
+  function choose(i        )       {
+    const el = input;
+    const picked = matches[i];
+    if (!el || !picked) return;
+    const caret = el.selectionStart ?? el.value.length;
+    const before = el.value.slice(0, caret);
+    const m = OPEN_REF.exec(before);
+    if (!m) return close();
+    const start = caret - m[0].length;
+    // A "}" already after the caret (typed by hand) is used, not doubled.
+    const after = el.value.slice(caret).replace(/^[^{}|]*\}/, "");
+    const token = `{@${picked.name.replace(/[{}|]/g, "")}}`;
+    el.value = el.value.slice(0, start) + token + after;
+    const at = start + token.length;
+    el.setSelectionRange(at, at);
+    close();
+    opts.onPick(picked);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  const oninput = (e       ) => {
+    const el = e.target                    ;
+    if (!(el instanceof HTMLInputElement) || !el.matches(selector)) return;
+    const m = OPEN_REF.exec(el.value.slice(0, el.selectionStart ?? el.value.length));
+    if (m) open(el, m[1]);
+    else close();
+  };
+  const onkeydown = (e       ) => {
+    const k = e                 ;
+    if (!menu || e.target !== input) return;
+    if (k.key === "ArrowDown" || k.key === "ArrowUp") {
+      active = (active + (k.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
+      open(input , OPEN_REF.exec(input .value.slice(0, input .selectionStart ?? 0))?.[1] ?? "");
+    } else if (k.key === "Enter" || k.key === "Tab") {
+      choose(active);
+    } else if (k.key === "Escape") {
+      close();
+    } else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const onblur = (e       ) => {
+    if (e.target === input) close();
+  };
+  host.addEventListener("input", oninput);
+  host.addEventListener("keydown", onkeydown, true);
+  host.addEventListener("focusout", onblur);
+  return () => {
+    close();
+    host.removeEventListener("input", oninput);
+    host.removeEventListener("keydown", onkeydown, true);
+    host.removeEventListener("focusout", onblur);
+  };
+}
+
 // ---- src/ui/components/feelpanel.ts ------------------------------
 /**
  * The controls for one section of the Feel settings: wheel, dice or coin. Used
@@ -16408,6 +17677,8 @@ function sectionFor(type        )                                               
 
                                        
                                                             
+
+
 
 
 
@@ -16719,6 +17990,23 @@ function createListEditor(node             , initial                , from      
   };
 
   const tbody = h("tbody");
+  // `{@` in an outcome: pick a table to roll there. The picked one's id is
+  // remembered so the save keeps it, even when another table has its name.
+  const picked = new Map                ();
+  const findByName = (name        ) => {
+    const id = picked.get(name.toLowerCase());
+    return id ? [{ id }] : state.library.refs.byName(name);
+  };
+  const stored = (typed        , previous        ) => keepRefs(typed, previous, findByName);
+  const detachPicker = attachRefPicker(tbody, ".label-cell input, .desc-cell input", {
+    candidates: () => state.library.files().flatMap((f) => {
+      const r = f.randomizer;
+      if (!r || r.id === model.id || r.type === "board" || r.type === "inkblot") return [];
+      const slash = f.path.lastIndexOf("/");
+      return [{ id: r.id, name: r.name, folder: slash < 0 ? "" : f.path.slice(0, slash) }];
+    }),
+    onPick: (c) => picked.set(c.name.replace(/[{}|]/g, "").trim().toLowerCase(), c.id),
+  });
   const footer = h("div", { class: "faint" });
   const bulkBar = h("div", { class: "row tight gap-s" });
 
@@ -16778,12 +18066,12 @@ function createListEditor(node             , initial                , from      
     const where = rowFor(e.target);
     if (!where) return;
     const el = e.target                    ;
-    if (el.closest(".label-cell")) update(where.item.id, (i) => ({ ...i, label: el.value }), false, el);
+    if (el.closest(".label-cell")) update(where.item.id, (i) => ({ ...i, label: stored(el.value, i.label) }), false, el);
     else if (el.closest(".weight-cell")) {
       const v = Number.parseFloat(el.value);
       if (Number.isFinite(v) && v >= 0) update(where.item.id, (i) => ({ ...i, weight: v }), false, el);
     } else if (el.closest(".desc-cell")) {
-      update(where.item.id, (i) => ({ ...i, description: el.value || undefined }), false, el);
+      update(where.item.id, (i) => ({ ...i, description: stored(el.value, i.description ?? "") || undefined }), false, el);
     }
   });
 
@@ -16907,11 +18195,11 @@ function createListEditor(node             , initial                , from      
       "aria-label": item.color ? `Colour, currently ${item.color}` : "Colour, currently automatic",
     });
 
-    const label = h("input", { type: "text", value: item.label, "aria-label": "Outcome" });
+    const label = h("input", { type: "text", value: showRefs(item.label), "aria-label": "Outcome" });
     const weight = h("input", { type: "number", min: "0", step: "any", value: String(item.weight), "aria-label": "Weight" });
     const description = h("input", {
       type: "text",
-      value: item.description ?? "",
+      value: showRefs(item.description ?? ""),
       "aria-label": "Description",
       placeholder: "—",
     });
@@ -17248,6 +18536,7 @@ function createListEditor(node             , initial                , from      
     el,
     destroy() {
       document.removeEventListener("keydown", onKey);
+      detachPicker();
       if (wheelFrame) cancelAnimationFrame(wheelFrame);
       const problem = draftProblem(model);
       if (problem) state.toast(`Your last change to ${model.name} was not saved: ${problem}`);
@@ -17930,6 +19219,8 @@ function itemsFromJson(text        )               {
 
 
 
+
+
                                        
 
 /**
@@ -18010,7 +19301,13 @@ function createImportView(initialText = "")       {
       detection = null;
       outcome = null;
       try {
-        pastedLibrary = { read: parseLibrary(text) };
+        const read = parseLibrary(text);
+        // A pack has its own screen: install or update, with its credit.
+        if (read.pack) {
+          offerPack(read);
+          return;
+        }
+        pastedLibrary = { read };
       } catch (e) {
         pastedLibrary = { problem: (e         ).message };
       }
@@ -18201,12 +19498,13 @@ function createImportView(initialText = "")       {
         `${result.replaced ? `, replaced ${result.replaced}` : ""}` +
         `${result.skipped ? `, skipped ${result.skipped}` : ""}` +
         `${read.failed.length ? `, ${read.failed.length} unreadable` : ""}` +
+        `${result.inPacks ? `, ${result.inPacks} left as ${result.inPacks === 1 ? "it is" : "they are"} in an installed pack` : ""}` +
         `${gaps ? `. ${gaps}` : ""}`,
     );
     if (into && !state.prefs.expandedFolders.includes(into)) {
       void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, into] });
     }
-    navigate("#/library");
+    if (!offerNeeded(read.needs)) navigate("#/library");
   }
 
   function describeLinkType(r            )         {
@@ -18284,6 +19582,9 @@ function createImportView(initialText = "")       {
     if (file.name.toLowerCase().endsWith(".zip")) {
       try {
         const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
+        // The packs it was made without: offered once the rest is in.
+        const list = entries.find((e) => e.path === PACKS_FILE && e.text !== undefined);
+        const needs = list ? parsePackList(list.text ) : [];
         const result = await state.library.importArchive(await absorbArchive(entries), askCollision);
         // Name any board that arrived without one of its randomizers.
         const gaps = missingOnBoards(state.library)
@@ -18294,9 +19595,10 @@ function createImportView(initialText = "")       {
             `${result.replaced ? `, replaced ${result.replaced}` : ""}` +
             `${result.skipped ? `, skipped ${result.skipped}` : ""}` +
             `${result.failed ? `, ${result.failed} unreadable` : ""}` +
+            `${result.inPacks ? `, ${result.inPacks} left as ${result.inPacks === 1 ? "it is" : "they are"} in an installed pack` : ""}` +
             `${gaps ? `. ${gaps}` : ""}`,
         );
-        navigate("#/library");
+        if (!offerNeeded(needs)) navigate("#/library");
       } catch (e) {
         state.toast(`That ZIP could not be read: ${(e         ).message}`);
       }
@@ -18307,7 +19609,9 @@ function createImportView(initialText = "")       {
     // a download from a forum does not always keep its name.
     if (file.name.toLowerCase().endsWith(LIBRARY_FILE_SUFFIX) || isLibraryText(content)) {
       try {
-        await importLibrary(parseLibrary(content), folderSelect.value);
+        const read = parseLibrary(content);
+        if (read.pack) offerPack(read);
+        else await importLibrary(read, folderSelect.value);
       } catch (e) {
         state.toast(`That library file could not be read: ${(e         ).message}`);
       }
@@ -20331,6 +21635,7 @@ class MascotHost {
 
 
 
+
 const SHORTCUTS                     = [
   ["Space or Enter", "Roll (on a board, roll all)"],
   ["Esc", "Skip the animation"],
@@ -20464,6 +21769,25 @@ function mountApp(root             )             {
           setMain({ el: h("div", { class: "card" }, h("p", { text: "This file was made with a newer Orangey, so it is open for reading only." })) });
           break;
         }
+        const inPack = state.library.packOf(node.path);
+        if (inPack?.pack.installed) {
+          const pack = inPack.pack;
+          setMain({
+            el: h("div", { class: "card locked-pack" },
+              h("h2", { text: node.randomizer.name }),
+              h("p", { text: `This is part of the pack “${pack.title}” by ${pack.author}. It stays as its author made it, so an update can replace it without losing anything of yours.` }),
+              h("div", { class: "row gap-s" },
+                button("Make an editable copy of the pack", async () => {
+                  const copy = await editableCopy(inPack.folder.path);
+                  const twin = state.library.find(`${copy}${node.path.slice(inPack.folder.path.length)}`);
+                  navigate(twin ? `#/edit/${encodeURIComponent(twin.path)}` : "#/library");
+                }, { class: "primary" }),
+                button("Play it", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
+              ),
+            ),
+          });
+          break;
+        }
         setMain(createEditorView(node, route.from));
         break;
       }
@@ -20474,6 +21798,9 @@ function mountApp(root             )             {
         break;
       case "import":
         setMain(createImportView());
+        break;
+      case "install":
+        setMain(createInstallView(route.from));
         break;
       case "history":
         setMain(createHistoryView());

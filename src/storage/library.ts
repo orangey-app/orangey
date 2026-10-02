@@ -10,7 +10,9 @@ import { FILE_SUFFIX, fileNameFor, parseFile, serialize, wrap, type OrangeyFile 
 import { newId, type Randomizer } from "../model/randomizer.ts";
 import { ValidationError } from "../model/validate.ts";
 import { basename, join, naturalCompare, parent, sanitizeName, segments } from "./paths.ts";
-import { relink, safeFilePath } from "./libraryfile.ts";
+import { relink, safeFilePath, type ReadLibraryFile } from "./libraryfile.ts";
+import { fillRefIds, renameRefs, refIdsOf, resolverFor, type RefResolver } from "../model/refs.ts";
+import { PACK_FILE, parseManifestFile, publicManifest, serializeManifest, type InstalledPack, type PackManifest } from "../model/pack.ts";
 
 export interface Entry {
   name: string;
@@ -58,6 +60,20 @@ export interface LibraryNode {
    * back smaller than it went in.
    */
   extras?: Record<string, unknown>;
+  /** For folders: the pack this folder is (its `orangey-pack.json`), installed or the author's own. */
+  pack?: InstalledPack;
+  /** For folders: why its `orangey-pack.json` could not be read. */
+  packError?: string;
+}
+
+/** Refused because the place is inside an installed pack. */
+export class LockedError extends Error {
+  readonly pack: PackManifest;
+  constructor(pack: PackManifest) {
+    super(`This is part of the pack “${pack.title}”, which an update would replace: make an editable copy to change it.`);
+    this.name = "LockedError";
+    this.pack = pack;
+  }
 }
 
 export interface SearchHit {
@@ -78,6 +94,9 @@ export class LibraryService {
    */
   #byPath = new Map<string, LibraryNode>();
   #byId = new Map<string, LibraryNode>();
+  #byName = new Map<string, Randomizer[]>();
+  /** Randomizers renamed in the editor since the last flush: references to them get the new name then. */
+  #renamed = new Map<string, string>();
   #pending = new Map<string, string>();
   #timer: ReturnType<typeof setTimeout> | null = null;
   #writeDelayMs: number;
@@ -130,10 +149,15 @@ export class LibraryService {
   #reindex(): void {
     this.#byPath = new Map();
     this.#byId = new Map();
+    this.#byName = new Map();
     const walk = (node: LibraryNode): void => {
       this.#byPath.set(node.path, node);
       const id = node.randomizer?.id;
       if (id && !this.#byId.has(id)) this.#byId.set(id, node);
+      if (node.randomizer) {
+        const key = node.randomizer.name.trim().toLowerCase();
+        this.#byName.set(key, [...(this.#byName.get(key) ?? []), node.randomizer]);
+      }
       for (const child of node.children ?? []) walk(child);
     };
     if (this.#tree) walk(this.#tree);
@@ -189,7 +213,17 @@ export class LibraryService {
     const files = children.filter((c) => c.kind === "file");
     folders.sort((a, b) => naturalCompare(a.name, b.name));
     files.sort((a, b) => naturalCompare(this.#title(a), this.#title(b)));
-    return { kind: "folder", path, name, children: [...folders, ...files] };
+    const node: LibraryNode = { kind: "folder", path, name, children: [...folders, ...files] };
+    // A pack's details sit beside its randomizers; not at the top, which is
+    // the whole library rather than a pack in it.
+    if (path !== "" && entries.some((e) => e.kind === "file" && e.name === PACK_FILE)) {
+      try {
+        node.pack = parseManifestFile(await this.backend.read(join(path, PACK_FILE)));
+      } catch (e) {
+        node.packError = e instanceof ValidationError ? e.issues.map((i) => `${i.path}: ${i.message}`).join("; ") : String(e);
+      }
+    }
+    return node;
   }
 
   #title(node: LibraryNode): string {
@@ -234,6 +268,12 @@ export class LibraryService {
     return this.#byId.get(id) ?? null;
   }
 
+  /** For `{@references}` (model/refs.ts): the library's randomizers by id and by name. */
+  readonly refs: RefResolver = {
+    byId: (id) => this.#byId.get(id)?.randomizer ?? null,
+    byName: (name) => this.#byName.get(name.trim().toLowerCase()) ?? [],
+  };
+
   /** Search names, tags, descriptions and outcome labels. */
   search(query: string): SearchHit[] {
     const q = query.trim().toLowerCase();
@@ -264,9 +304,160 @@ export class LibraryService {
     return hits;
   }
 
+  // ---- packs ---------------------------------------------------------------
+
+  /** The pack a path is in (or is), nearest first: its folder and details. */
+  packOf(path: string): { folder: LibraryNode; pack: InstalledPack } | null {
+    for (let p = path; ; p = parent(p)) {
+      const node = this.find(p);
+      if (node?.kind === "folder" && node.pack) return { folder: node, pack: node.pack };
+      if (p === "") return null;
+    }
+  }
+
+  /** The folder an installed pack with this id was installed into. */
+  findPack(id: string): LibraryNode | null {
+    return this.folders().find((f) => f.pack?.installed && f.pack.id === id) ?? null;
+  }
+
+  /** Every installed pack, with its folder. */
+  installedPacks(): { folder: LibraryNode; pack: InstalledPack }[] {
+    return this.folders().flatMap((f) => (f.pack?.installed ? [{ folder: f, pack: f.pack }] : []));
+  }
+
+  /** Inside an installed pack, so not to be changed by hand. The pack's own folder counts. */
+  isLocked(path: string): boolean {
+    return !!this.packOf(path)?.pack.installed;
+  }
+
+  /**
+   * Throws a LockedError for a change inside an installed pack. The pack's
+   * own folder may still be renamed, moved or deleted (`root`), which is how
+   * a pack is put somewhere else or uninstalled.
+   */
+  #guard(path: string, root = false): void {
+    const found = this.packOf(path);
+    if (!found?.pack.installed) return;
+    if (root && found.folder.path === path) return;
+    throw new LockedError(found.pack);
+  }
+
+  /**
+   * Remembers a folder's publishing details (the author's own folder: no
+   * `installed`, so it stays editable). The folder keeps them for the next version.
+   */
+  async setPackDetails(folder: string, pack: PackManifest): Promise<void> {
+    if (folder === "") throw new Error("the whole library cannot be a pack; choose a folder");
+    this.#guard(folder);
+    await this.backend.write(join(folder, PACK_FILE), serializeManifest(publicManifest(pack)));
+    await this.refresh();
+  }
+
+  /**
+   * Installs a pack into a new folder at the top, named after it ("Title",
+   * "Title 2"…). Its randomizers keep their ids unless one is taken here; those
+   * that cannot are remembered, so an update lands on the same ids.
+   */
+  async installPack(read: ReadLibraryFile, opts: { source?: string; now?: Date } = {}): Promise<{ folder: string; added: number }> {
+    if (!read.pack) throw new Error("that file is not a pack");
+    await this.flush();
+    const base = sanitizeName(read.pack.title) || "Pack";
+    const taken = new Set((await this.backend.list("")).map((e) => e.name.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()) || name.toLowerCase() === IMAGE_DIR; n++) name = `${base} ${n}`;
+    await this.backend.mkdir(name);
+    const added = await this.#writePack(name, read, {}, opts);
+    return { folder: name, added };
+  }
+
+  /**
+   * Replaces an installed pack's randomizers with another version's. Ids the
+   * pack had here are kept, so boards, "goes to" and Storyboard journals that
+   * point at them still work; what the new version dropped goes.
+   */
+  async updatePack(folder: string, read: ReadLibraryFile, opts: { source?: string; now?: Date } = {}): Promise<{ added: number; removed: number; kept: number }> {
+    const node = this.find(folder);
+    if (!node?.pack?.installed || !read.pack) throw new Error("that folder is not an installed pack");
+    if (node.pack.id !== read.pack.id) throw new Error("that file is a different pack");
+    await this.flush();
+    const before = new Map(this.files(node).flatMap((f) => (f.randomizer ? [[f.randomizer.id, f.path] as const] : [])));
+    const oldIds = node.pack.ids ?? {};
+    for (const child of node.children ?? []) await this.backend.remove(child.path);
+    await this.#writePack(folder, read, oldIds, { source: opts.source ?? node.pack.source, now: opts.now });
+    const local = (id: string) => oldIds[id] ?? id;
+    const after = new Set(read.entries.map((e) => local(e.file.randomizer.id)));
+    let kept = 0;
+    for (const id of before.keys()) if (after.has(id)) kept++;
+    return { added: after.size - kept, removed: before.size - kept, kept };
+  }
+
+  async #writePack(folder: string, read: ReadLibraryFile, oldIds: Record<string, string>, opts: { source?: string; now?: Date }): Promise<number> {
+    // Ids that belong to this pack's folder already are its own, not taken.
+    const ownIds = new Set(Object.values(oldIds));
+    const inPack = (id: string) => {
+      const at = this.findById(id);
+      return at ? at.path === folder || at.path.startsWith(`${folder}/`) : false;
+    };
+    const ids = new Map<string, string>();
+    const claimed = new Set<string>();
+    for (const e of read.entries) {
+      const id = e.file.randomizer.id;
+      let local = oldIds[id] ?? id;
+      const clash = (this.findById(local) && !inPack(local) && !ownIds.has(local)) || claimed.has(local);
+      if (clash) local = newId();
+      ids.set(id, local);
+      claimed.add(local);
+    }
+    for (const f of read.folders) await this.backend.mkdir(join(folder, f));
+    // A pack's bare `{@Name}` means a table in the pack, so only those answer.
+    const packNames = resolverFor(read.entries.map((e) => ({ ...e.file.randomizer, id: ids.get(e.file.randomizer.id)! })));
+    for (const e of read.entries) {
+      const path = join(folder, e.path);
+      if (parent(path)) await this.backend.mkdir(parent(path));
+      const r = withRefIds(relink({ ...e.file.randomizer, id: ids.get(e.file.randomizer.id)! }, ids), packNames);
+      await this.backend.write(path, serialize({ ...e.file, randomizer: r }));
+    }
+    const moved: Record<string, string> = {};
+    for (const [from, to] of ids) if (from !== to) moved[from] = to;
+    const installed: InstalledPack = { ...publicManifest(read.pack!), installed: (opts.now ?? new Date()).toISOString() };
+    if (opts.source) installed.source = opts.source;
+    if (Object.keys(moved).length) installed.ids = moved;
+    await this.backend.write(join(folder, PACK_FILE), serializeManifest(installed));
+    await this.refresh();
+    return read.entries.length;
+  }
+
+  /**
+   * A copy of an installed pack that is the user's own: new ids (the links
+   * between its randomizers follow), no pack details, so nothing locks it and
+   * no update touches it.
+   */
+  async copyPack(folder: string): Promise<string> {
+    const node = this.find(folder);
+    if (!node?.pack) throw new Error("that folder is not a pack");
+    await this.flush();
+    const files = this.files(node).filter((f) => f.randomizer);
+    const ids = new Map(files.map((f) => [f.randomizer!.id, newId()] as const));
+    const base = sanitizeName(`${node.name} (copy)`);
+    const taken = new Set((await this.backend.list(parent(folder))).map((e) => e.name.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} ${n}`;
+    const target = join(parent(folder), name);
+    await this.backend.mkdir(target);
+    for (const f of this.folders(node)) if (f !== node) await this.backend.mkdir(join(target, f.path.slice(folder.length + 1)));
+    for (const f of files) {
+      const r = f.randomizer!;
+      const copy = relink({ ...r, id: ids.get(r.id)!, ...(r.type === "list" ? { items: r.items.map((i) => ({ ...i, id: newId() })) } : {}) } as Randomizer, ids);
+      await this.backend.write(join(target, f.path.slice(folder.length + 1)), serialize({ ...wrap(copy), unknown: f.extras }));
+    }
+    await this.refresh();
+    return target;
+  }
+
   // ---- mutations -----------------------------------------------------------
 
   async createFolder(parentPath: string, name: string): Promise<string> {
+    this.#guard(parentPath);
     const clean = sanitizeName(name) || "New folder";
     const existing = (await this.backend.list(parentPath)).map((e) => e.name.toLowerCase());
     let final = clean;
@@ -280,6 +471,7 @@ export class LibraryService {
   }
 
   async create(parentPath: string, randomizer: Randomizer): Promise<string> {
+    this.#guard(parentPath);
     const taken = (await this.backend.list(parentPath)).map((e) => e.name);
     const path = join(parentPath, fileNameFor(randomizer.name, taken));
     await this.backend.write(path, serialize(wrap(randomizer)));
@@ -289,7 +481,9 @@ export class LibraryService {
 
   /** Queue a save. Repeated calls for the same file coalesce. */
   save(path: string, randomizer: Randomizer): void {
+    this.#guard(path);
     const node = this.find(path);
+    if (node?.randomizer && node.randomizer.id === randomizer.id && node.randomizer.name !== randomizer.name) this.#renamed.set(randomizer.id, randomizer.name);
     this.#pending.set(path, serialize({ ...wrap(randomizer), unknown: node?.extras }));
     if (node) node.randomizer = randomizer;
     if (this.#timer) clearTimeout(this.#timer);
@@ -330,12 +524,16 @@ export class LibraryService {
         for (const fn of this.#errorListeners) fn(failures[0]);
         throw failures[0];
       }
+      const renamed = [...this.#renamed];
+      this.#renamed.clear();
+      for (const [id, name] of renamed) await this.#renameRefsTo(id, name);
     });
     this.#flushing = run.catch(() => {});
     await run;
   }
 
   async rename(path: string, newName: string): Promise<string> {
+    this.#guard(path, true);
     await this.flush();
     const node = this.find(path);
     if (!node) throw new Error(`nothing at ${path}`);
@@ -347,6 +545,8 @@ export class LibraryService {
       return target;
     }
     const randomizer = { ...node.randomizer!, name: newName, modified: new Date().toISOString() };
+    // References to it say its new name, so the editor shows the name people now know.
+    if (node.randomizer && node.randomizer.name !== newName) await this.#renameRefsTo(node.randomizer.id, newName);
     const taken = (await this.backend.list(parent(path))).map((e) => e.name).filter((n) => n !== basename(path));
     const target = join(parent(path), fileNameFor(newName, taken));
     await this.backend.write(path, serialize({ ...wrap(randomizer), unknown: node.extras }));
@@ -363,7 +563,25 @@ export class LibraryService {
     return target;
   }
 
+  /** Rewrites `{@Old|id}` to `{@New|id}` in every other randomizer that refers to it. Locked packs are left as their author made them. */
+  async #renameRefsTo(id: string, name: string): Promise<void> {
+    for (const f of this.files()) {
+      const r = f.randomizer;
+      if (r?.type !== "list" || r.id === id || !refIdsOf(r).includes(id) || this.isLocked(f.path)) continue;
+      const items = r.items.map((i) => ({
+        ...i,
+        label: renameRefs(i.label, id, name),
+        ...(i.description === undefined ? {} : { description: renameRefs(i.description, id, name) }),
+      }));
+      const next = { ...r, items };
+      await this.backend.write(f.path, serialize({ ...wrap(next), unknown: f.extras }));
+      f.randomizer = next;
+    }
+  }
+
   async move(path: string, toFolder: string): Promise<string> {
+    this.#guard(path, true);
+    this.#guard(toFolder);
     await this.flush();
     const name = basename(path);
     const taken = (await this.backend.list(toFolder)).map((e) => e.name);
@@ -387,6 +605,7 @@ export class LibraryService {
   }
 
   async duplicate(path: string): Promise<string> {
+    this.#guard(path);
     await this.flush();
     const node = this.find(path);
     if (!node?.randomizer) throw new Error(`nothing to duplicate at ${path}`);
@@ -402,6 +621,7 @@ export class LibraryService {
   }
 
   async remove(path: string): Promise<void> {
+    this.#guard(path, true);
     await this.flush();
     await this.backend.remove(path);
     // Dropping the node drops everything under it, which is what the backend
@@ -423,7 +643,7 @@ export class LibraryService {
   async importArchive(
     entries: { path: string; text: string }[],
     onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
-  ): Promise<{ added: number; replaced: number; skipped: number; failed: number }> {
+  ): Promise<{ added: number; replaced: number; skipped: number; failed: number; inPacks: number }> {
     const parsed: { path: string; file: OrangeyFile; text: string }[] = [];
     let failed = 0;
     for (const entry of entries) {
@@ -453,7 +673,7 @@ export class LibraryService {
     folders: readonly string[],
     into: string,
     onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
-  ): Promise<{ added: number; replaced: number; skipped: number }> {
+  ): Promise<{ added: number; replaced: number; skipped: number; inPacks: number }> {
     return this.#importFiles(entries, folders, into, onCollision);
   }
 
@@ -463,9 +683,11 @@ export class LibraryService {
     folders: readonly string[],
     into: string,
     onCollision: (path: string) => Promise<"replace" | "keep-both" | "skip">,
-  ): Promise<{ added: number; replaced: number; skipped: number }> {
+  ): Promise<{ added: number; replaced: number; skipped: number; inPacks: number }> {
     await this.flush();
-    const result = { added: 0, replaced: 0, skipped: 0 };
+    // `inPacks`: left alone because they would land in an installed pack (an
+    // old backup that still carried its tables); the pack itself is there.
+    const result = { added: 0, replaced: 0, skipped: 0, inPacks: 0 };
     // The image store owns a folder at the top; a library's own folder of
     // that name is moved aside rather than mixed into it.
     const place = (path: string) => {
@@ -485,6 +707,13 @@ export class LibraryService {
     for (const entry of entries) {
       const path = place(entry.path);
       const r = entry.file.randomizer;
+      // Nothing is written into an installed pack by an import: an update would
+      // undo it. Those are passed over, and the rest still comes in.
+      if (this.isLocked(parent(path)) || this.isLocked(path)) {
+        if (this.findById(r.id)) idFor(r.id, r.id);
+        result.inPacks++;
+        continue;
+      }
       const here = this.find(path);
       if (here?.kind === "file" || planned.has(path.toLowerCase())) {
         const answer = await onCollision(path);
@@ -522,10 +751,14 @@ export class LibraryService {
     }
 
     for (const folder of folders) await this.backend.mkdir(place(folder));
+    // A `{@Name}` written by hand gets the id of the one table with that name,
+    // here or arriving with it.
+    const arriving = writes.map((w) => relink(w.file.randomizer, ids));
+    const names = resolverFor([...arriving, ...this.files().flatMap((f) => (f.randomizer ? [f.randomizer] : []))]);
     for (const w of writes) {
       const folder = parent(w.path);
       if (folder) await this.backend.mkdir(folder);
-      const linked = relink(w.file.randomizer, ids);
+      const linked = withRefIds(relink(w.file.randomizer, ids), names);
       // Untouched (its own id, and `relink` returned the same object): write the
       // exact text it arrived with.
       const unchanged = w.text !== undefined && linked === w.file.randomizer;
@@ -544,4 +777,22 @@ export class LibraryService {
   depth(path: string): number {
     return segments(path).length;
   }
+}
+
+/**
+ * The same randomizer with each bare `{@Name}` given the id of the one table
+ * by that name; the very same object when there was nothing to fill in, so an
+ * untouched file is still written as it arrived.
+ */
+function withRefIds(r: Randomizer, names: RefResolver): Randomizer {
+  if (r.type !== "list" || !r.items.some((i) => i.label.includes("{@") || i.description?.includes("{@"))) return r;
+  let changed = false;
+  const items = r.items.map((i) => {
+    const label = fillRefIds(i.label, names);
+    const description = i.description === undefined ? undefined : fillRefIds(i.description, names);
+    if (label === i.label && description === i.description) return i;
+    changed = true;
+    return { ...i, label, ...(description === undefined ? {} : { description }) };
+  });
+  return changed ? { ...r, items } : r;
 }

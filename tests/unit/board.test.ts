@@ -10,6 +10,7 @@ import { LibraryService } from "../../src/storage/library.ts";
 import { MemoryBackend } from "../../src/storage/memory.ts";
 import { boardBundle, missingOnBoards } from "../../src/ui/storage-actions.ts";
 import { emptyRandomizer as anyRandomizer } from "../../src/model/randomizer.ts";
+import { parseLibrary, serializeLibrary } from "../../src/storage/libraryfile.ts";
 
 const board = (entries: { id: string; name: string }[]): BoardRandomizer => ({
   ...(emptyRandomizer("board", "Tonight's table") as BoardRandomizer),
@@ -83,5 +84,28 @@ describe("sharing a board", () => {
     assert.deepEqual(after.missing, ["Attack roll"]);
     assert.equal(after.entries.length, 2);
     assert.deepEqual(missingOnBoards(library), [{ name: "Tonight's table", missing: ["Attack roll"] }]);
+  });
+});
+
+describe("a board's bundle and installed packs", () => {
+  test("leaves a pack's tables out and names the pack", async () => {
+    const at = "2026-10-02T00:00:00.000Z";
+    const list = (id: string, name: string, labels: string[]) => ({
+      id, type: "list" as const, name, view: "wheel" as const, created: at, modified: at,
+      items: labels.map((label, i) => ({ id: `${id}${i}`, label, weight: 1 })),
+    });
+    const library = new LibraryService(new MemoryBackend(), 5);
+    await library.refresh();
+    const text = serializeLibrary("Delve", at, [], [{ path: "theme.orangey.json", randomizer: list("theme", "Theme", ["Ancient"]) }],
+      { id: "pack-delve", title: "Delve", author: "A. Writer", version: "1.0" });
+    await library.installPack(parseLibrary(text), { source: "https://example.org/d.json" });
+    await library.create("", list("mine", "Mine", ["x"]));
+    const b = board([{ id: "mine", name: "Mine" }, { id: "theme", name: "Theme" }]);
+    await library.create("", b);
+    const bundle = boardBundle(library, b);
+    assert.equal(bundle.entries.length, 2, "the board and Mine");
+    assert.ok(!bundle.entries.some((e) => e.path.startsWith("Delve/")), "a pack table went into the bundle");
+    assert.deepEqual(bundle.packs.map((p) => [p.id, p.source]), [["pack-delve", "https://example.org/d.json"]]);
+    assert.deepEqual(library.installedPacks().map((p) => p.folder.path), ["Delve"]);
   });
 });

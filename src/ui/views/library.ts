@@ -15,6 +15,7 @@ import type { LibraryNode } from "../../storage/library.ts";
 import { basename, parent } from "../../storage/paths.ts";
 import { regrantFolder, rememberedFolderName } from "../../storage/fsdir.ts";
 import { LibraryService } from "../../storage/library.ts";
+import { aboutPack, editableCopy, publishPack } from "../packs.ts";
 import { canUseFolder, describeStorage, exportBoardZip, exportLibraryFile, exportLibraryZip, portableRandomizer, stopUsingFolder, useFolder } from "../storage-actions.ts";
 import { askConfirm, askFolder, askText, button, download, h, iconButton, openMenu, setChildren, type MenuItem } from "../dom.ts";
 import { state } from "../state.ts";
@@ -282,10 +283,14 @@ export function createLibraryView(): View {
       h("span", { class: "glyph", text: expanded ? "▾" : "▸" }),
       h("span", { class: "glyph", text: "📁" }),
       h("span", { class: "name", text: node.name }),
+      node.pack?.installed
+        ? h("span", { class: "pack-badge", title: `${node.pack.title} by ${node.pack.author}`, text: `pack ${node.pack.version}` })
+        : null,
       h("span", { class: "count", text: String(children.length) }),
     );
-    dropTargets(row, node.path);
-    if (depth > 0) draggable(row, node.path);
+    // Nothing is dropped into an installed pack, and nothing inside one is dragged out.
+    if (!state.library.isLocked(node.path)) dropTargets(row, node.path);
+    if (depth > 0 && (!state.library.isLocked(node.path) || node.pack?.installed)) draggable(row, node.path);
 
     const list = h("ul", { class: "tree" },
       ...children.map((child) => h("li", {}, child.kind === "folder" ? renderFolder(child, depth + 1) : renderFile(child))),
@@ -336,7 +341,7 @@ export function createLibraryView(): View {
       node.error ? h("span", { class: "why", text: "unreadable" }) : null,
       favourite ? h("span", { class: "count", text: "★" }) : null,
     );
-    draggable(row, node.path);
+    if (!state.library.isLocked(node.path)) draggable(row, node.path);
     const more = iconButton(`More for ${name}`, "⋯", () => openFileMenu(node, more));
     // Right-click opens the same menu as the ⋯: it is where people reach for
     // "copy the link to this".
@@ -364,6 +369,19 @@ export function createLibraryView(): View {
 
   function openFileMenu(node: LibraryNode, anchor: HTMLElement): void {
     const isFavourite = node.randomizer ? state.prefs.favourites.includes(node.randomizer.id) : false;
+    const inPack = state.library.packOf(node.path);
+    if (inPack?.pack.installed) {
+      // Part of an installed pack: look, roll, share; changing it means a copy.
+      openMenu(anchor, [
+        { label: "Play", onSelect: () => navigate(`#/r/${encodeURIComponent(node.path)}`) },
+        { label: isFavourite ? "Remove from favourites" : "Add to favourites", onSelect: () => node.randomizer && state.toggleFavourite(node.randomizer.id) },
+        ...(node.randomizer ? [{ label: "Copy link", onSelect: () => void copyLinkTo(node.randomizer!) }] : []),
+        // No Export file: a pack is its author's to hand out, as the pack.
+        { label: "About this pack", onSelect: () => aboutPack(inPack.folder, anchor), separator: true },
+        { label: "Make an editable copy of the pack", onSelect: async () => { await editableCopy(inPack.folder.path); render(); } },
+      ], node.randomizer?.name ?? node.name);
+      return;
+    }
     openMenu(anchor, [
       { label: "Play", onSelect: () => navigate(`#/r/${encodeURIComponent(node.path)}`) },
       { label: "Edit", onSelect: () => navigate(`#/edit/${encodeURIComponent(node.path)}`) },
@@ -392,6 +410,23 @@ export function createLibraryView(): View {
   }
 
   function openFolderMenu(node: LibraryNode, anchor: HTMLElement): void {
+    const inPack = state.library.packOf(node.path);
+    if (inPack?.pack.installed) {
+      const root = inPack.folder.path === node.path;
+      openMenu(anchor, [
+        { label: "Select all in this folder", onSelect: () => selectFolder(node) },
+        { label: "About this pack", onSelect: () => aboutPack(inPack.folder, anchor), separator: true },
+        { label: "Make an editable copy", onSelect: async () => { await editableCopy(inPack.folder.path); render(); } },
+        ...(root
+          ? [
+              { label: "Rename…", onSelect: () => void renameNode(node, anchor), separator: true },
+              { label: "Move to folder…", onSelect: () => void moveNode(node, anchor) },
+              { label: "Uninstall pack…", onSelect: () => void confirmDelete(node, anchor), danger: true, separator: true },
+            ]
+          : []),
+      ], node.name);
+      return;
+    }
     openMenu(anchor, [
       { label: "Select all in this folder", onSelect: () => selectFolder(node) },
       { label: "New wheel here", onSelect: () => void newRandomizer("list", node.path), separator: true },
@@ -410,6 +445,10 @@ export function createLibraryView(): View {
           opener: anchor,
         }),
       },
+      {
+        label: node.pack ? `Publish the next version (after ${node.pack.version})…` : "Publish as a pack…",
+        onSelect: () => publishPack(node, anchor),
+      },
       { label: "Delete folder…", onSelect: () => void confirmDelete(node, anchor), danger: true, separator: true },
     ], node.name);
   }
@@ -423,7 +462,7 @@ export function createLibraryView(): View {
   }
 
   async function moveNode(node: LibraryNode, opener: HTMLElement): Promise<void> {
-    const folders = state.library.folderList().filter((f) => f.path !== node.path && !f.path.startsWith(`${node.path}/`));
+    const folders = state.library.folderList().filter((f) => f.path !== node.path && !f.path.startsWith(`${node.path}/`) && !state.library.isLocked(f.path));
     const target = await askFolder(`Move “${node.randomizer?.name ?? node.name}” to`, folders, parent(node.path), opener);
     if (target === null) return;
     await state.library.move(node.path, target);

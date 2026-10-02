@@ -29,6 +29,8 @@ const results = [];
 const TEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS ?? 45000);
 
 async function test(name, fn) {
+  // ONLY=AM runs just the tests whose names start with that, while working on one.
+  if (process.env.ONLY && !name.startsWith(process.env.ONLY)) return;
   // On CI, print the name first so a hang can be attributed from the log.
   if (process.env.CI) console.log(`# → ${name}`);
   const page = await browser.newPage();
@@ -2854,6 +2856,217 @@ async function main() {
     await page.waitForFunction(`document.querySelector(".cell-roll")?.textContent === "Generate"`);
     await page.click(".cell-roll");
     await page.waitForFunction(`(() => { const i = document.querySelector(".cell .inkblot-picture"); return i && !i.hidden; })()`);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AM a folder is published as a pack, installed locked with its credit, copied to edit, and updated from a link", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.setViewport(1280, 800);
+    await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const delve = await state.library.createFolder("", "Delve");
+      await state.library.create(delve, { id: "theme", type: "list", name: "Theme", view: "wheel", created: now, modified: now,
+        items: [{ id: "a", label: "Ancient", weight: 1, goesTo: "feature" }, { id: "b", label: "Hallowed", weight: 1 }] });
+      await state.library.create(delve, { id: "feature", type: "list", name: "Feature", view: "list", created: now, modified: now,
+        items: [{ id: "c", label: "Altar", weight: 1 }] });
+      await state.library.flush();
+    `);
+    await open(page, "#/");
+    await page.evaluate(`
+      window.__saved = [];
+      HTMLAnchorElement.prototype.click = function () {
+        const href = this.href;
+        window.__saved.push(fetch(href).then((r) => r.text()).then((text) => ({ name: this.download, text })));
+      };`);
+    await page.waitForFunction(`document.querySelector(".library .folder-row")`);
+    const folderMenu = (name) => page.evaluate(`[...document.querySelectorAll(".library .folder-row")].find((r) => r.textContent.includes(${JSON.stringify(name)}))
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
+    const menu = async (label) => {
+      await page.waitForFunction(`[...document.querySelectorAll(".menu-item")].some((m) => m.textContent === ${JSON.stringify(label)})`);
+      await page.evaluate(`[...document.querySelectorAll(".menu-item")].find((m) => m.textContent === ${JSON.stringify(label)}).click()`);
+    };
+    await folderMenu("Delve");
+    await menu("Publish as a pack…");
+    await page.waitForFunction(`document.querySelector("dialog.pack-dialog[open]")`);
+    // Without an author it says so, and stays open.
+    await page.click("dialog.pack-dialog[open] button[type=submit]");
+    await page.waitForFunction(`/author is needed/.test(document.querySelector(".form-problem").textContent)`);
+    await page.evaluate(`
+      const f = document.querySelector("dialog.pack-dialog[open] form");
+      f.author.value = "A. Writer";
+      f.licence.value = "CC BY 4.0";
+      f.homepage.value = "https://example.org/delve";
+      f.querySelector("button[type=submit]").click();`);
+    await page.waitForFunction(`window.__saved.length === 1`);
+    const [packFile] = await page.evaluate(`return await Promise.all(window.__saved)`);
+    assert.equal(packFile.name, "delve-1.0.orangey-library.json");
+    const doc = JSON.parse(packFile.text);
+    assert.deepEqual([doc.pack.title, doc.pack.author, doc.pack.version, doc.pack.licence], ["Delve", "A. Writer", "1.0", "CC BY 4.0"]);
+    assert.deepEqual(doc.randomizers.map((r) => r.path).sort(), ["feature.orangey.json", "theme.orangey.json"]);
+    // The author's folder keeps the details, stays editable, and offers the next version.
+    assert.equal(await page.evaluate(`return window.orangey.state.library.isLocked("Delve")`), false);
+    await folderMenu("Delve");
+    await page.waitForFunction(`[...document.querySelectorAll(".menu-item")].some((m) => m.textContent === "Publish the next version (after 1.0)…")`);
+    await page.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+
+    // A player's library: the file dropped on Import shows the pack, and installs it.
+    await open(page, "#/import", { fresh: true });
+    await page.waitForFunction(`document.querySelector(".importer textarea")`);
+    await page.evaluate(`
+      const data = new DataTransfer();
+      data.items.add(new File([${JSON.stringify(packFile.text)}], ${JSON.stringify(packFile.name)}, { type: "application/json" }));
+      document.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));`);
+    await page.waitForFunction(`location.hash === "#/install" && document.querySelector(".install-button")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".install-pack .pack-credit").textContent`), "Delve by A. Writer · v1.0 · CC BY 4.0 · web page");
+    await page.click(".install-button");
+    await page.waitForFunction(`location.hash === "#/library" && document.querySelector(".pack-badge")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".pack-badge").textContent`), "pack 1.0");
+    const themePath = await page.evaluate(`return window.orangey.state.library.findById("theme").path`);
+    assert.equal(themePath, "Delve/theme.orangey.json");
+
+    // Playing it shows the credit and no Edit; the editor offers an editable copy instead.
+    await open(page, `#/r/${encodeURIComponent(themePath)}`);
+    await page.waitForFunction(`document.querySelector(".pack-credit")`);
+    assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".edit-link")).display`), "none");
+    await open(page, `#/edit/${encodeURIComponent(themePath)}`);
+    await page.waitForFunction(`document.querySelector(".locked-pack")`);
+    await page.evaluate(`[...document.querySelectorAll(".locked-pack button")].find((b) => b.textContent.startsWith("Make an editable copy")).click()`);
+    await page.waitForFunction(`location.hash.startsWith("#/edit/Delve%20(copy)")`);
+    const copy = await page.evaluate(`
+      const { state } = window.orangey;
+      const t = state.library.find("Delve (copy)/theme.orangey.json").randomizer;
+      return [t.id !== "theme", state.library.findById(t.items[0].goesTo).path, state.library.isLocked("Delve (copy)")];`);
+    assert.deepEqual(copy, [true, "Delve (copy)/feature.orangey.json", false]);
+
+    // Version 1.1, put on a web page: the install link offers the update, with what changes.
+    const v2 = JSON.parse(packFile.text);
+    v2.pack.version = "1.1";
+    v2.randomizers.find((r) => r.randomizer.id === "feature").randomizer.items.push({ id: "pit", label: "Pit", weight: 1 });
+    v2.randomizers.push({ path: "danger.orangey.json", randomizer: { id: "danger", type: "list", name: "Danger", view: "list", created: "2026-10-02T00:00:00.000Z", modified: "2026-10-02T00:00:00.000Z", items: [{ id: "trap", label: "Trap", weight: 1 }] } });
+    writeFileSync(join(dist, "test-delve.orangey-library.json"), JSON.stringify(v2));
+    try {
+      await open(page, `#/install?from=${encodeURIComponent(`${server.origin}/test-delve.orangey-library.json`)}`);
+      await page.waitForFunction(`document.querySelector(".update-button")`);
+      assert.equal(await page.evaluate(`return document.querySelector(".update-button").textContent`), "Update to 1.1");
+      assert.match(await page.evaluate(`return document.querySelector(".install-pack").textContent`), /You have version 1\.0 in “Delve”\. This is 1\.1\.New: Danger\./);
+      await page.click(".update-button");
+      await page.waitForFunction(`location.hash === "#/library" && document.querySelector(".pack-badge")?.textContent === "pack 1.1"`);
+      const after = await page.evaluate(`
+        const { state } = window.orangey;
+        return [state.library.findById("feature").randomizer.items.length, !!state.library.findById("danger"), state.library.findPack(${JSON.stringify(doc.pack.id)}).pack.source.endsWith("test-delve.orangey-library.json")];`);
+      assert.deepEqual(after, [2, true, true]);
+    } finally {
+      rmSync(join(dist, "test-delve.orangey-library.json"), { force: true });
+    }
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AN {@ in an outcome picks a table to roll there; the editor shows names, the file keeps ids, and a roll fills it in", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.setViewport(1280, 800);
+    const path = await page.evaluate(`
+      const { state } = window.orangey;
+      const now = new Date().toISOString();
+      const list = (id, name, labels) => ({ id, type: "list", name, view: "list", created: now, modified: now,
+        items: labels.map((label, i) => ({ id: id + i, label, weight: 1 })) });
+      await state.library.create("", list("w1", "Weather", ["fog", "rain"]));
+      const beasts = await state.library.createFolder("", "Beasts");
+      await state.library.create(beasts, list("b1", "Beast", ["wolf", "bear"]));
+      const path = await state.library.create("", list("m1", "Morning", ["A {@Weather|w1} morning", "Quiet"]));
+      await state.library.flush();
+      return path;`);
+    await open(page, `#/edit/${encodeURIComponent(path)}`);
+    await page.waitForFunction(`document.querySelectorAll(".label-cell input").length === 2`);
+    assert.equal(await page.evaluate(`return document.querySelector(".label-cell input").value`), "A {@Weather} morning");
+    await page.evaluate(`
+      const input = document.querySelectorAll(".label-cell input")[1];
+      input.focus();
+      input.value = "Quiet, then {@bea";
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.dispatchEvent(new Event("input", { bubbles: true }));`);
+    await page.waitForFunction(`document.querySelector(".ref-picker li")`);
+    assert.equal(await page.evaluate(`return document.querySelector(".ref-picker .ref-name").textContent`), "Beast");
+    await page.evaluate(`document.querySelectorAll(".label-cell input")[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))`);
+    await page.waitForFunction(`document.querySelectorAll(".label-cell input")[1].value === "Quiet, then {@Beast}"`);
+    await page.evaluate(`await window.orangey.state.library.flush()`);
+    assert.equal(await page.evaluate(`return (await window.orangey.state.library.backend.read(${JSON.stringify(path)})).includes('"Quiet, then {@Beast|b1}"')`), true, "the file does not keep the id");
+
+    // Rolled, the references are filled in.
+    await open(page, `#/r/${encodeURIComponent(path)}`);
+    for (let i = 0; i < 4; i++) {
+      await page.waitForFunction(`document.querySelector(".roll-button") && !document.querySelector(".roll-button").disabled`);
+      await page.click(".roll-button");
+      await page.waitForFunction(`window.orangey.state.history.length === ${i + 1}`);
+    }
+    const texts = await page.evaluate(`return window.orangey.state.history.map((h) => h.resultText)`);
+    for (const t of texts) assert.match(t, /^(A (fog|rain) morning|Quiet, then (wolf|bear))$/);
+    assert.deepEqual(page.consoleErrors, []);
+  });
+
+  await test("AO a backup leaves installed packs out and lists them; restoring it offers to install them again", async (page) => {
+    await open(page, "", { fresh: true });
+    await page.setViewport(1280, 800);
+    const at = "2026-10-02T00:00:00.000Z";
+    const packFile = JSON.stringify({
+      format: "orangey-library", version: 1, name: "Delve", exported: at, folders: [],
+      pack: { id: "pack-delve", title: "Delve", author: "A. Writer", version: "1.0" },
+      randomizers: [{ path: "theme.orangey.json", randomizer: { id: "theme", type: "list", name: "Theme", view: "list", created: at, modified: at, items: [{ id: "t0", label: "Ancient", weight: 1 }] } }],
+    });
+    writeFileSync(join(dist, "test-backup-delve.orangey-library.json"), packFile);
+    const source = `${server.origin}/test-backup-delve.orangey-library.json`;
+    try {
+      // Installed through the app itself: the install screen, from its link.
+      await open(page, `#/install?from=${encodeURIComponent(source)}`);
+      await page.waitForFunction(`document.querySelector(".install-button")`);
+      await page.click(".install-button");
+      await page.waitForFunction(`location.hash === "#/library" && document.querySelector(".pack-badge")`);
+      await page.evaluate(`
+        const { state } = window.orangey;
+        const now = new Date().toISOString();
+        await state.library.create("", { id: "mine", type: "list", name: "Mine", view: "list", created: now, modified: now,
+          items: [{ id: "m0", label: "Into the delve", weight: 1, goesTo: "theme" }] });
+        await state.library.flush();`);
+
+      await open(page, "#/settings");
+      await page.waitForFunction(`document.querySelector(".export-library")`);
+      await page.evaluate(`
+        window.__downloads = [];
+        const real = URL.createObjectURL.bind(URL);
+        URL.createObjectURL = (blob) => { window.__downloads.push(blob); return real(blob); };`);
+      await page.click(".export-library");
+      await page.waitForFunction(`window.__downloads.length === 1`);
+      const zip = await page.evaluate(`
+        const bytes = new Uint8Array(await window.__downloads[0].arrayBuffer());
+        let s = ""; for (const b of bytes) s += String.fromCharCode(b);
+        return btoa(s);`);
+      const raw = Buffer.from(zip, "base64").toString("latin1");
+      assert.ok(raw.includes("orangey-packs.json"), "the backup does not list the pack");
+      assert.ok(raw.includes("mine.orangey.json"), "the backup lost my own table");
+      assert.ok(!raw.includes("Delve/theme.orangey.json"), "the pack's table went into the backup");
+
+      // A new computer: restoring offers the pack, from its link.
+      await open(page, "#/import", { fresh: true });
+      await page.waitForFunction(`document.querySelector(".importer textarea")`);
+      await page.evaluate(`
+        const bin = atob(${JSON.stringify(zip)});
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const data = new DataTransfer();
+        data.items.add(new File([bytes], "orangey-library.zip", { type: "application/zip" }));
+        document.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));`);
+      await page.waitForFunction(`document.querySelector(".needed-packs .install-needed")`);
+      assert.match(await page.evaluate(`return document.querySelector(".needed-packs").textContent`), /Delve by A\. Writer · v1\.0/);
+      assert.equal(await page.evaluate(`return !!window.orangey.state.library.findById("mine")`), true);
+      await page.click(".install-needed");
+      await page.waitForFunction(`document.querySelector(".install-button")`);
+      await page.click(".install-button");
+      await page.waitForFunction(`location.hash === "#/library" && document.querySelector(".pack-badge")`);
+      // The same id as before, so my table's link works again.
+      assert.equal(await page.evaluate(`return window.orangey.state.library.findById("theme")?.path`), "Delve/theme.orangey.json");
+    } finally {
+      rmSync(join(dist, "test-backup-delve.orangey-library.json"), { force: true });
+    }
     assert.deepEqual(page.consoleErrors, []);
   });
 

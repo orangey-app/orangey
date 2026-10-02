@@ -6,6 +6,8 @@
  * the screen.
  */
 
+import { showRefs } from "../../model/refs.ts";
+
 import type { ListItem } from "../../model/randomizer.ts";
 import { displayPercents, isRollable } from "../../core/weighted.ts";
 import { h, setChildren } from "../dom.ts";
@@ -40,7 +42,7 @@ export function createOutcomeList(opts: {
         title: live ? `Pick ${item.label}` : "Cannot come up now",
         onclick: () => opts.onPick(i),
       },
-        h("span", { class: "outcome-label", text: item.label }),
+        h("span", { class: "outcome-label", text: showRefs(item.label) }),
         h("span", { class: "outcome-odds", text: live ? `${percents[i].toFixed(1)}%` : "—" }),
       ) as HTMLButtonElement;
       pick.disabled = !live;

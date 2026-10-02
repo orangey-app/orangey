@@ -126,7 +126,7 @@ export function createRoller(opts: RollerOptions): Roller {
     const item = randomizer.items[itemIndex];
     const bag = randomizer.withoutReplacement ? bagDrawn(randomizer.id) : null;
     if (!item || !isRollable(item) || bag?.has(item.id)) return;
-    await land(randomizer, pickedOutcome(randomizer, itemIndex, state.source()), bag, false);
+    await land(randomizer, pickedOutcome(randomizer, itemIndex, state.source(), state.library.refs), bag, false);
   }
 
   function skip(): void {
@@ -188,7 +188,7 @@ export function createRoller(opts: RollerOptions): Roller {
     if (rollable.type === "list" && randomizer.type === "list" && randomizer.offer !== undefined && randomizer.offer >= 2) {
       let outcomes: Outcome[];
       try {
-        outcomes = offerFromList(rollable, randomizer.offer, state.source());
+        outcomes = offerFromList(rollable, randomizer.offer, state.source(), state.library.refs);
       } catch (e) {
         const reason = (e as Error).message;
         opts.result.clear(reason);
@@ -224,8 +224,8 @@ export function createRoller(opts: RollerOptions): Roller {
     try {
       const many = Math.max(1, Math.trunc(opts.count?.() ?? 1));
       outcome = many > 1 && rollable.type === "list"
-        ? rollListMany(rollable, many, state.source(), bag ?? undefined)
-        : rollRandomizer(rollable, state.source());
+        ? rollListMany(rollable, many, state.source(), bag ?? undefined, state.library.refs)
+        : rollRandomizer(rollable, state.source(), state.library.refs);
     } catch (e) {
       const reason = (e as Error).message;
       opts.result.clear(reason);

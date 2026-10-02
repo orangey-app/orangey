@@ -11,6 +11,7 @@ import { imageBytes, imageDataUrl, imageStoredName, putImageData } from "../stor
 import { createZip, type ZipEntry } from "../storage/zip.ts";
 import { parent, segments } from "../storage/paths.ts";
 import { LIBRARY_FILE_SUFFIX, planExport, serializeLibrary } from "../storage/libraryfile.ts";
+import { neededFrom, PACKS_FILE, serializePackList, type NeededPack } from "../model/pack.ts";
 import { askConfirm, askText, download, downloadBytes } from "./dom.ts";
 import { state } from "./state.ts";
 
@@ -152,6 +153,29 @@ export function usedImageIds(randomizers: Randomizer[]): Set<string> {
 }
 
 /**
+ * Installed packs stay out of every export: they are their authors' to hand
+ * out, with their credit and licence, and installing one again keeps its ids,
+ * so whatever of yours points at it works again. These say which pack a path
+ * is in (null when none, or when it is the author's own folder) and turn the
+ * packs left out into the list an export carries instead.
+ */
+export function installedPackOf(library: LibraryService, path: string): string | null {
+  const found = library.packOf(path);
+  return found?.pack.installed ? found.pack.id : null;
+}
+
+export function neededPacks(library: LibraryService, ids: Iterable<string>): NeededPack[] {
+  return [...ids].flatMap((id) => {
+    const pack = library.findPack(id)?.pack;
+    return pack ? [neededFrom(pack)] : [];
+  });
+}
+
+/** "Delve Oracles and Ruins": for a toast. */
+const packNames = (packs: readonly NeededPack[]) =>
+  packs.length <= 2 ? packs.map((p) => p.title).join(" and ") : `${packs.slice(0, 2).map((p) => p.title).join(", ")} and ${packs.length - 2} more`;
+
+/**
  * The pictures for an archive, as files: packed once however many wheels use
  * them, and viewable when the ZIP is opened.
  */
@@ -174,9 +198,10 @@ async function pictureEntries(randomizers: Randomizer[]): Promise<ZipEntry[]> {
 export function boardBundle(
   library: LibraryService,
   board: BoardRandomizer,
-): { entries: { path: string; text: string }[]; missing: string[] } {
+): { entries: { path: string; text: string }[]; missing: string[]; packs: NeededPack[] } {
   const entries: { path: string; text: string }[] = [];
   const missing: string[] = [];
+  const packIds = new Set<string>();
   const boardNode = library.findById(board.id);
   if (boardNode) entries.push({ path: boardNode.path, text: serialize(wrap(board)) });
   for (const entry of board.entries) {
@@ -185,9 +210,14 @@ export function boardBundle(
       missing.push(entry.name);
       continue;
     }
+    const pack = installedPackOf(library, node.path);
+    if (pack !== null) {
+      packIds.add(pack);
+      continue;
+    }
     entries.push({ path: node.path, text: serialize(wrap(node.randomizer)) });
   }
-  return { entries, missing };
+  return { entries, missing, packs: neededPacks(library, packIds) };
 }
 
 /**
@@ -207,33 +237,38 @@ export function missingOnBoards(library: LibraryService): { name: string; missin
 }
 
 export async function exportBoardZip(board: BoardRandomizer): Promise<void> {
-  const { entries, missing } = boardBundle(state.library, board);
+  const { entries, missing, packs } = boardBundle(state.library, board);
   const packed = board.entries
-    .map((e) => state.library.findById(e.id)?.randomizer)
-    .filter((r): r is Randomizer => Boolean(r));
-  const zip = await createZip([...entries, ...(await pictureEntries(packed))]);
+    .map((e) => state.library.findById(e.id))
+    .filter((n) => n?.randomizer && installedPackOf(state.library, n.path) === null)
+    .map((n) => n!.randomizer!);
+  const list = packs.length ? [{ path: PACKS_FILE, text: serializePackList(packs) }] : [];
+  const zip = await createZip([...entries, ...list, ...(await pictureEntries(packed))]);
   downloadBytes(`${slugify(board.name)}.zip`, zip);
   const count = `${entries.length} file${entries.length === 1 ? "" : "s"}`;
   state.toast(
-    missing.length
+    (missing.length
       ? `Exported ${count}. Missing from your library: ${missing.join(", ")}.`
-      : `Exported ${count}: the board and everything on it.`,
+      : `Exported ${count}: the board and everything on it.`) +
+      (packs.length ? ` Tables from ${packNames(packs)} stay out; the file names the pack${packs.length === 1 ? "" : "s"} to install.` : ""),
   );
 }
 
 /** The whole tree as a ZIP: the backup that works in every browser. */
 export async function exportLibraryZip(): Promise<void> {
-  const randomizers = state.library.files().map((f) => f.randomizer).filter((r): r is Randomizer => Boolean(r));
-  const entries = state.library
-    .files()
-    .filter((f) => f.randomizer)
-    .map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer!)) }));
+  // Your own work; each installed pack is named in orangey-packs.json instead.
+  const own = state.library.files().filter((f) => f.randomizer && installedPackOf(state.library, f.path) === null);
+  const randomizers = own.map((f) => f.randomizer!);
+  const entries = own.map((f) => ({ path: f.path, text: serialize(wrap(f.randomizer!)) }));
+  const packs = state.library.installedPacks().map((p) => neededFrom(p.pack));
+  const list = packs.length ? [{ path: PACKS_FILE, text: serializePackList(packs) }] : [];
   const pictures = await pictureEntries(randomizers);
-  const zip = await createZip([...entries, ...pictures]);
+  const zip = await createZip([...entries, ...list, ...pictures]);
   downloadBytes("orangey-library.zip", zip);
   state.toast(
     `Exported ${entries.length} randomizer${entries.length === 1 ? "" : "s"}` +
-      `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}`,
+      `${pictures.length ? ` and ${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""}` +
+      `${packs.length ? `. Installed packs (${packNames(packs)}) are not copied: the backup lists them, to install again when you restore it` : ""}`,
   );
 }
 
@@ -255,9 +290,10 @@ export async function exportLibraryFile(opts: {
   }))?.trim();
   if (!name) return;
   const sources = state.library.files().map((n) => ({ path: n.path, randomizer: n.randomizer ?? undefined }));
-  const plan = planExport(sources, opts.paths, opts.base ?? "");
+  const plan = planExport(sources, opts.paths, opts.base ?? "", (p) => installedPackOf(state.library, p));
+  const needs = neededPacks(state.library, plan.leftOut.keys());
   if (plan.entries.length === 0) {
-    state.toast("There is nothing there to export.");
+    state.toast(needs.length ? `Those are all in the pack ${packNames(needs)}, which is its author's to share: send them its file or link instead.` : "There is nothing there to export.");
     return;
   }
   // Every folder on the way to a randomizer, and the empty ones asked for.
@@ -267,12 +303,13 @@ export async function exportLibraryFile(opts: {
     for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
   }
   folders.delete("");
-  const text = serializeLibrary(name, new Date().toISOString(), [...folders].sort(), plan.entries);
+  const text = serializeLibrary(name, new Date().toISOString(), [...folders].sort(), plan.entries, undefined, needs);
   download(`${slugify(name)}${LIBRARY_FILE_SUFFIX}`, text, "application/json");
   const count = plan.entries.length;
   state.toast(
     `Exported ${count} randomizer${count === 1 ? "" : "s"}` +
       `${plan.linked ? `, ${plan.linked} of them because something chosen goes to ${plan.linked === 1 ? "it" : "them"}` : ""}.` +
-      `${plan.pictures ? ` ${plan.pictures} picture${plan.pictures === 1 ? " was" : "s were"} left out; the ZIP export keeps pictures.` : ""}`,
+      `${plan.pictures ? ` ${plan.pictures} picture${plan.pictures === 1 ? " was" : "s were"} left out; the ZIP export keeps pictures.` : ""}` +
+      `${needs.length ? ` Tables from ${packNames(needs)} stay out; the file names the pack${needs.length === 1 ? "" : "s"} to install.` : ""}`,
   );
 }

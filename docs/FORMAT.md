@@ -85,6 +85,32 @@ field — and rolled when that outcome comes up, as
 [DICE.md](DICE.md) describes. A file read by anything that does not know about
 this still holds a sensible, if literal, label.
 
+**A label or description may roll another table: `{@Name|id}`.** `A {@Weather|5f1c…}
+morning` rolls the randomizer with that id when the outcome comes up and puts
+its answer in its place ("A foggy morning"). The id is what counts, so
+renaming or moving the table, or another table with the same name, breaks
+nothing; the name is there for people. A reference written by hand as
+`{@Weather}`, without an id, works when exactly one table has that name, and
+Orangey writes the id in when the file is imported or edited. The editor
+shows `{@Weather}` and keeps the id out of sight; typing `{@` there offers
+the library's tables. Renaming a table rewrites the name in the references
+to it.
+
+- An answer's own dice and references are rolled in turn, up to 8 tables
+  deep. A reference back to a table already being rolled is a circle and is
+  not followed. What cannot be rolled — a missing table, a board, an inkblot,
+  a circle, past the depth — reads as its name.
+- A table referred to rolls as a plain draw: a bag's memory and an offer
+  belong to rolling that table on its own.
+- Dice and references are rolled in reading order, after the outcome is
+  picked; a text with no references draws exactly as it did before they
+  existed, so seeded rolls still reproduce.
+- History keeps the finished text, and each table referred to with what it
+  gave (`Weather: fog`) in the detail.
+- Exporting, a pack and Storyboard's copy of a journal's folders all bring
+  along the tables referred to, as they do for "Goes to"; an import that
+  gives one a new id rewrites the references to it.
+
 **`reaction`** is what Orangey the mascot does when this outcome comes up:
 `"cheer"` or `"wince"`. Dice and number draws need no tag — a maximum roll is
 a cheer and a minimum a wince by themselves — but a wheel has no natural top or
@@ -211,6 +237,106 @@ pasted into its box.
   both makes a copy under a new id that the file's links follow.
 - **Pictures are never included.** An outcome's `image` and `imageData` are
   removed on export and ignored on import. The ZIP export keeps pictures.
+
+## A pack
+
+A pack is a library file with a `pack` block: a folder of randomizers an
+author publishes, with their name on it. **Publish as a pack…** on a folder's
+menu asks for the details and downloads `<title>-<version>.orangey-library.json`
+for a web page, itch.io or a forum.
+
+```json
+{
+  "format": "orangey-library",
+  "version": 1,
+  "name": "Delve Oracles",
+  "exported": "2026-10-02T09:00:00.000Z",
+  "pack": {
+    "id": "8c3e…",
+    "title": "Delve Oracles",
+    "author": "A. Writer",
+    "version": "1.2",
+    "licence": "CC BY 4.0",
+    "homepage": "https://example.org/delve",
+    "description": "Themes, domains and features for delving.",
+    "allowSnapshots": true
+  },
+  "folders": ["Themes"],
+  "randomizers": [ … ]
+}
+```
+
+- `id`, `title`, `author` and `version` are needed; the rest are optional.
+  `id` is made when the pack is first published and every version keeps it:
+  it is how an update finds the pack it updates. `version` is numbers with
+  dots ("1", "1.2", "2.0.3"), compared number by number, so 1.10 is newer
+  than 1.9. `homepage` must be an `https://` (or `http://`) address.
+- `allowSnapshots: false` asks writing apps such as Storyboard not to keep a
+  copy of the pack's tables inside a player's journal. Left out means yes.
+- The paths are inside the pack. A table outside the folder that something
+  in it goes to or refers to comes along at its own path, and publishing says
+  so, so it can be moved in.
+- A broken `pack` block refuses the whole file, since a pack that cannot say
+  who made it or which version it is cannot be installed or updated. An
+  Orangey older than packs imports the file as an ordinary library file.
+
+**In a library**, a pack is a folder holding `orangey-pack.json`:
+
+```json
+{ "format": "orangey-pack", "version": 1, "pack": { "id": "8c3e…", "title": "Delve Oracles", "…": "…", "installed": "2026-10-02T09:01:00.000Z", "source": "https://example.org/delve.orangey-library.json", "ids": { "feature": "1d9a…" } } }
+```
+
+- In the author's own folder it has no `installed`. It only remembers the
+  details for publishing the next version (offered one higher), and the
+  folder stays editable.
+- In a folder a pack was installed into, `installed` is set and the folder is
+  **locked**: nothing in it can be edited, renamed, moved, duplicated or
+  deleted, and nothing can be moved or imported into it, so an update can
+  replace it without losing anyone's work. The folder itself can be renamed,
+  moved, and deleted (**Uninstall pack…**). **Make an editable copy** gives a
+  copy with new ids, no `orangey-pack.json`, and nothing locked.
+- `source` is the address it was installed from, when that was a link.
+  **About this pack → Check for an update** fetches it again.
+- `ids` lists the pack's randomizer ids that had to take another id here
+  because one was taken already. An update uses it, so every table keeps the
+  id it had: boards, "Goes to", references and Storyboard journals that point
+  at them keep working.
+
+**Installing** opens the Install screen: from a pack file dropped on Import
+(or its text pasted), or from a link `…/#/install?from=<address of the file>`.
+Nothing is written until the person presses **Install pack**. A link is
+fetched over https only, and only from a site that allows it (GitHub Pages
+does; itch.io does not); otherwise the screen says so and points to
+downloading the file and dropping it on Import. A pack installs into a new
+folder at the top named after its title ("Delve Oracles", "Delve Oracles 2").
+
+**Updating**: a pack with the same `id` already installed shows its version
+beside the new one, the tables new in it, and the ones it no longer has
+(which an update removes). A file with tables that cannot be read refuses to
+update, since that would remove them.
+
+**Exports leave installed packs out.** A pack is its author's to hand out,
+with its credit and licence, so no backup or export copies one: not the ZIP
+backup, a library or folder file, a selection, a board's ZIP or Export file.
+Instead an export names the packs it needed — in a ZIP as
+`orangey-packs.json` at the top, in a library file as `needs` — each with its
+details and, when it was installed from a link, that address:
+
+```json
+{ "format": "orangey-packs", "version": 1, "packs": [ { "id": "8c3e…", "title": "Delve Oracles", "author": "A. Writer", "version": "1.2", "source": "https://example.org/delve.orangey-library.json" } ] }
+```
+
+Links into a pack (a "Goes to", a reference, a board entry) stay as they are.
+Bringing such an export in offers the packs this library lacks, with
+**Install from its link** where there is one; installing a pack keeps its
+ids, so whatever pointed at it works again. An older backup that still holds
+a pack's tables restores everything else and leaves an installed pack's
+folder alone, counting what it passed over.
+
+**Credit**: an installed pack's folder carries a *pack 1.2* badge, playing
+one of its tables shows "Delve Oracles by A. Writer · v1.2 · CC BY 4.0"
+under the name, and Storyboard shows the same on a roll's pop-up and at the
+end of an export.
 
 ## A randomizer inside a link
 

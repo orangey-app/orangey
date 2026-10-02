@@ -373,7 +373,7 @@ describe("archives", () => {
       [entry("a.orangey.json", "Old A"), entry("b.orangey.json", "Old B"), entry("c.orangey.json", "Old C")],
       async () => "skip",
     );
-    assert.deepEqual(first, { added: 3, replaced: 0, skipped: 0, failed: 0 });
+    assert.deepEqual(first, { added: 3, replaced: 0, skipped: 0, failed: 0, inPacks: 0 });
 
     const answers: Record<string, "replace" | "keep-both" | "skip"> = {
       "a.orangey.json": "replace",
@@ -384,7 +384,7 @@ describe("archives", () => {
       [entry("a.orangey.json", "New A"), entry("b.orangey.json", "New B"), entry("c.orangey.json", "New C")],
       async (p) => answers[p],
     );
-    assert.deepEqual(again, { added: 1, replaced: 1, skipped: 1, failed: 0 });
+    assert.deepEqual(again, { added: 1, replaced: 1, skipped: 1, failed: 0, inPacks: 0 });
     assert.deepEqual(library.files().map((f) => f.randomizer!.name).sort(), ["New A", "New B", "Old B", "Old C"]);
   });
 
@@ -398,7 +398,7 @@ describe("archives", () => {
       ],
       async () => "skip",
     );
-    assert.deepEqual(result, { added: 1, replaced: 0, skipped: 0, failed: 1 });
+    assert.deepEqual(result, { added: 1, replaced: 0, skipped: 0, failed: 1, inPacks: 0 });
     assert.deepEqual(library.files().map((f) => f.path), ["D&D/Encounters/forest.orangey.json"]);
   });
 });

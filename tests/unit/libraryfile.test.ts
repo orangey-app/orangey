@@ -97,7 +97,7 @@ describe("importing a library file", () => {
       { path: "Treasure/hoard.orangey.json", randomizer: list("hoard", "Hoard", [{ label: "Gold" }]) },
     ], ["Forest", "Treasure", "Later"]);
     const result = await library.importLibrary(file.entries, file.folders, "Shared", async () => "skip");
-    assert.deepEqual(result, { added: 2, replaced: 0, skipped: 0 });
+    assert.deepEqual(result, { added: 2, replaced: 0, skipped: 0, inPacks: 0 });
     assert.deepEqual(library.folders().map((f) => f.path).sort(), ["", "Shared", "Shared/Forest", "Shared/Later", "Shared/Treasure"]);
     const enc = library.find("Shared/Forest/encounters.orangey.json")!.randomizer as ListRandomizer;
     assert.equal(enc.items[0].goesTo, "hoard");
@@ -175,7 +175,7 @@ describe("importing a ZIP", () => {
       { path: "night.orangey.json", text: pretty(board("night", "Night", ["enc", "hoard"])) },
       { path: "Treasure/hoard.orangey.json", text: pretty(list("hoard", "Hoard", [{ label: "Gold" }])) },
     ], async () => "skip");
-    assert.deepEqual(result, { added: 3, replaced: 0, skipped: 0, failed: 0 });
+    assert.deepEqual(result, { added: 3, replaced: 0, skipped: 0, failed: 0, inPacks: 0 });
     const arrived = library.find("Treasure/hoard.orangey.json")!.randomizer!;
     assert.notEqual(arrived.id, "hoard");
     const enc = library.find("Forest/encounters.orangey.json")!.randomizer as ListRandomizer;

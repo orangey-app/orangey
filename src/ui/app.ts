@@ -12,6 +12,7 @@ import { createLibraryView } from "./views/library.ts";
 import { createEditorView } from "./views/editor.ts";
 import type { View } from "./view.ts";
 import { createImportView } from "./views/importer.ts";
+import { createInstallView, editableCopy } from "./packs.ts";
 import { createHistoryView } from "./views/history.ts";
 import { createSettingsView } from "./views/settings.ts";
 import { MascotHost } from "./mascot/host.ts";
@@ -153,6 +154,25 @@ export function mountApp(root: HTMLElement): MascotHost {
           setMain({ el: h("div", { class: "card" }, h("p", { text: "This file was made with a newer Orangey, so it is open for reading only." })) });
           break;
         }
+        const inPack = state.library.packOf(node.path);
+        if (inPack?.pack.installed) {
+          const pack = inPack.pack;
+          setMain({
+            el: h("div", { class: "card locked-pack" },
+              h("h2", { text: node.randomizer.name }),
+              h("p", { text: `This is part of the pack “${pack.title}” by ${pack.author}. It stays as its author made it, so an update can replace it without losing anything of yours.` }),
+              h("div", { class: "row gap-s" },
+                button("Make an editable copy of the pack", async () => {
+                  const copy = await editableCopy(inPack.folder.path);
+                  const twin = state.library.find(`${copy}${node.path.slice(inPack.folder.path.length)}`);
+                  navigate(twin ? `#/edit/${encodeURIComponent(twin.path)}` : "#/library");
+                }, { class: "primary" }),
+                button("Play it", () => navigate(`#/r/${encodeURIComponent(node.path)}`), { class: "ghost" }),
+              ),
+            ),
+          });
+          break;
+        }
         setMain(createEditorView(node, route.from));
         break;
       }
@@ -163,6 +183,9 @@ export function mountApp(root: HTMLElement): MascotHost {
         break;
       case "import":
         setMain(createImportView());
+        break;
+      case "install":
+        setMain(createInstallView(route.from));
         break;
       case "history":
         setMain(createHistoryView());

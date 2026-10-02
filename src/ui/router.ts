@@ -18,6 +18,8 @@ export type Route =
   | { name: "edit"; path: string; from?: string; params: LinkParams }
   | { name: "library"; params: LinkParams }
   | { name: "import"; params: LinkParams }
+  /** Installing a pack: fetched from `from`, or the one just dropped on Import. */
+  | { name: "install"; from: string | null; params: LinkParams }
   | { name: "history"; params: LinkParams }
   | { name: "settings"; params: LinkParams };
 
@@ -84,6 +86,8 @@ export function parseRoute(hash: string): Route {
       return { name: "library", params };
     case "import":
       return { name: "import", params };
+    case "install":
+      return { name: "install", from: new URLSearchParams(query).get("from"), params };
     case "history":
       return { name: "history", params };
     case "settings":

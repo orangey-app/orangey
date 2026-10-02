@@ -9,6 +9,8 @@
  * down at rest; flipping them would turn half of all winners upside down.
  */
 
+import { showRefs } from "../../model/refs.ts";
+
 import { assignWheelColours } from "../../core/palette-assign.ts";
 import { state } from "../state.ts";
 import { isRollable } from "../../core/weighted.ts";
@@ -216,7 +218,7 @@ export function createWheel(opts: WheelOptions): WheelView {
       const room = plan.get(seg.index)?.label;
       if (!room) return [];
       const { ink } = labelFor(colorByIndex[seg.index] ?? "#888888");
-      const text = fitLabelToWidth(item.label, room.length, (t) => measureWheelLabel(t, room.fontSize));
+      const text = fitLabelToWidth(showRefs(item.label), room.length, (t) => measureWheelLabel(t, room.fontSize));
       // Anchored at its outer end and running inwards along the radius,
       // reading outwards — horizontal once the slice is under the pointer.
       const [x, y] = pointOnCircle(cx, cy, room.outer, seg.midAngle);
@@ -331,7 +333,7 @@ export function createWheel(opts: WheelOptions): WheelView {
       "div",
       { class: "ticker-strip" },
       ...items.slice(0, 400).map((item, i) =>
-        h("div", { class: "ticker-row", style: { background: i % 2 ? "var(--bg-raised)" : "transparent" } }, item.label),
+        h("div", { class: "ticker-row", style: { background: i % 2 ? "var(--bg-raised)" : "transparent" } }, showRefs(item.label)),
       ),
     );
     return h(

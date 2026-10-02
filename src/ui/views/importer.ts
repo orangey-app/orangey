@@ -16,6 +16,8 @@ import { imageIdFromName, restoreImage } from "../../storage/images.ts";
 import { basename } from "../../storage/paths.ts";
 import { isLibraryText, LIBRARY_FILE_SUFFIX, parseLibrary, type ReadLibraryFile } from "../../storage/libraryfile.ts";
 import { absorbImages, missingOnBoards } from "../storage-actions.ts";
+import { offerNeeded, offerPack } from "../packs.ts";
+import { parsePackList, PACKS_FILE } from "../../model/pack.ts";
 import { appendChildren, button, h, openDialog, setChildren } from "../dom.ts";
 import { state } from "../state.ts";
 import { navigate } from "../router.ts";
@@ -99,7 +101,13 @@ export function createImportView(initialText = ""): View {
       detection = null;
       outcome = null;
       try {
-        pastedLibrary = { read: parseLibrary(text) };
+        const read = parseLibrary(text);
+        // A pack has its own screen: install or update, with its credit.
+        if (read.pack) {
+          offerPack(read);
+          return;
+        }
+        pastedLibrary = { read };
       } catch (e) {
         pastedLibrary = { problem: (e as Error).message };
       }
@@ -290,12 +298,13 @@ export function createImportView(initialText = ""): View {
         `${result.replaced ? `, replaced ${result.replaced}` : ""}` +
         `${result.skipped ? `, skipped ${result.skipped}` : ""}` +
         `${read.failed.length ? `, ${read.failed.length} unreadable` : ""}` +
+        `${result.inPacks ? `, ${result.inPacks} left as ${result.inPacks === 1 ? "it is" : "they are"} in an installed pack` : ""}` +
         `${gaps ? `. ${gaps}` : ""}`,
     );
     if (into && !state.prefs.expandedFolders.includes(into)) {
       void state.savePrefs({ expandedFolders: [...state.prefs.expandedFolders, into] });
     }
-    navigate("#/library");
+    if (!offerNeeded(read.needs)) navigate("#/library");
   }
 
   function describeLinkType(r: Randomizer): string {
@@ -373,6 +382,9 @@ export function createImportView(initialText = ""): View {
     if (file.name.toLowerCase().endsWith(".zip")) {
       try {
         const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
+        // The packs it was made without: offered once the rest is in.
+        const list = entries.find((e) => e.path === PACKS_FILE && e.text !== undefined);
+        const needs = list ? parsePackList(list.text!) : [];
         const result = await state.library.importArchive(await absorbArchive(entries), askCollision);
         // Name any board that arrived without one of its randomizers.
         const gaps = missingOnBoards(state.library)
@@ -383,9 +395,10 @@ export function createImportView(initialText = ""): View {
             `${result.replaced ? `, replaced ${result.replaced}` : ""}` +
             `${result.skipped ? `, skipped ${result.skipped}` : ""}` +
             `${result.failed ? `, ${result.failed} unreadable` : ""}` +
+            `${result.inPacks ? `, ${result.inPacks} left as ${result.inPacks === 1 ? "it is" : "they are"} in an installed pack` : ""}` +
             `${gaps ? `. ${gaps}` : ""}`,
         );
-        navigate("#/library");
+        if (!offerNeeded(needs)) navigate("#/library");
       } catch (e) {
         state.toast(`That ZIP could not be read: ${(e as Error).message}`);
       }
@@ -396,7 +409,9 @@ export function createImportView(initialText = ""): View {
     // a download from a forum does not always keep its name.
     if (file.name.toLowerCase().endsWith(LIBRARY_FILE_SUFFIX) || isLibraryText(content)) {
       try {
-        await importLibrary(parseLibrary(content), folderSelect.value);
+        const read = parseLibrary(content);
+        if (read.pack) offerPack(read);
+        else await importLibrary(read, folderSelect.value);
       } catch (e) {
         state.toast(`That library file could not be read: ${(e as Error).message}`);
       }
