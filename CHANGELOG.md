@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - **Packs.** A folder can be published as a pack: **Publish as a pack…** on
   its menu asks for a title, author, version, licence, web page and
