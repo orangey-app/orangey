@@ -1254,9 +1254,9 @@ async function main() {
   });
 
   await test("R the worker clears only its own old caches, so an app beside it stays offline", async (page) => {
-    // The Cache API belongs to the whole site, and Storyboard is published beside
+    // The Cache API belongs to the whole site, and Sekwe is published beside
     // Orangey on it. A worker that cleared every cache but its own would wipe
-    // Storyboard's offline copy on each Orangey update.
+    // Sekwe's offline copy on each Orangey update.
     const nest = join(root, ".tmp", "neighbour");
     rmSync(nest, { recursive: true, force: true });
     mkdirSync(nest, { recursive: true });
@@ -1273,8 +1273,8 @@ async function main() {
       await loaded;
       const keys = await page.evaluate(`
         await caches.open("orangey-v0.0.0-00000000");
-        await caches.open("workbox-precache-v2-storyboard");
-        await caches.open("storyboard-journal");
+        await caches.open("workbox-precache-v2-sekwe");
+        await caches.open("sekwe-journal");
         const reg = await navigator.serviceWorker.register("/orangey/sw.js", { scope: "/orangey/" }).catch(() => null);
         if (!reg) return "refused";
         // Raced against a clock, like the subpath test: a runner slow to start
@@ -1291,8 +1291,8 @@ async function main() {
       if (keys === "slow") console.log("    (worker slow to start: cache check skipped)");
       else {
         assert.ok(!keys.includes("orangey-v0.0.0-00000000"), `Orangey's old cache survived: ${keys}`);
-        assert.ok(keys.includes("workbox-precache-v2-storyboard"), `a neighbour's cache was deleted: ${keys}`);
-        assert.ok(keys.includes("storyboard-journal"), `a neighbour's cache was deleted: ${keys}`);
+        assert.ok(keys.includes("workbox-precache-v2-sekwe"), `a neighbour's cache was deleted: ${keys}`);
+        assert.ok(keys.includes("sekwe-journal"), `a neighbour's cache was deleted: ${keys}`);
         assert.equal(keys.filter((k) => k.startsWith("orangey-v")).length, 1, `expected exactly Orangey's current cache: ${keys}`);
       }
       assert.deepEqual(page.consoleErrors, []);

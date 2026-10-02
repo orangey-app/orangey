@@ -28,7 +28,7 @@
 
 `src/core`, `src/model`, `src/import` and `src/storage` never import from
 `src/ui` (`npm run check` enforces it; `src/model/settings-file.ts` is the one
-named exception, and Storyboard leaves it out of its copy). They run under `node --test` with no DOM, which is why the unit
+named exception, and Sekwe leaves it out of its copy). They run under `node --test` with no DOM, which is why the unit
 suite is fast and why the dice and wheel engines could be lifted out into
 their own package later.
 

@@ -372,7 +372,7 @@ export class LibraryService {
 
   /**
    * Replaces an installed pack's randomizers with another version's. Ids the
-   * pack had here are kept, so boards, "goes to" and Storyboard journals that
+   * pack had here are kept, so boards, "goes to" and Sekwe journals that
    * point at them still work; what the new version dropped goes.
    */
   async updatePack(folder: string, read: ReadLibraryFile, opts: { source?: string; now?: Date } = {}): Promise<{ added: number; removed: number; kept: number }> {

@@ -107,7 +107,7 @@ to it.
   existed, so seeded rolls still reproduce.
 - History keeps the finished text, and each table referred to with what it
   gave (`Weather: fog`) in the detail.
-- Exporting, a pack and Storyboard's copy of a journal's folders all bring
+- Exporting, a pack and Sekwe's copy of a journal's folders all bring
   along the tables referred to, as they do for "Goes to"; an import that
   gives one a new id rewrites the references to it.
 
@@ -271,7 +271,7 @@ for a web page, itch.io or a forum.
   it is how an update finds the pack it updates. `version` is numbers with
   dots ("1", "1.2", "2.0.3"), compared number by number, so 1.10 is newer
   than 1.9. `homepage` must be an `https://` (or `http://`) address.
-- `allowSnapshots: false` asks writing apps such as Storyboard not to keep a
+- `allowSnapshots: false` asks writing apps such as Sekwe not to keep a
   copy of the pack's tables inside a player's journal. Left out means yes.
 - The paths are inside the pack. A table outside the folder that something
   in it goes to or refers to comes along at its own path, and publishing says
@@ -299,7 +299,7 @@ for a web page, itch.io or a forum.
   **About this pack → Check for an update** fetches it again.
 - `ids` lists the pack's randomizer ids that had to take another id here
   because one was taken already. An update uses it, so every table keeps the
-  id it had: boards, "Goes to", references and Storyboard journals that point
+  id it had: boards, "Goes to", references and Sekwe journals that point
   at them keep working.
 
 **Installing** opens the Install screen: from a pack file dropped on Import
@@ -335,7 +335,7 @@ folder alone, counting what it passed over.
 
 **Credit**: an installed pack's folder carries a *pack 1.2* badge, playing
 one of its tables shows "Delve Oracles by A. Writer · v1.2 · CC BY 4.0"
-under the name, and Storyboard shows the same on a roll's pop-up and at the
+under the name, and Sekwe shows the same on a roll's pop-up and at the
 end of an export.
 
 ## A randomizer inside a link

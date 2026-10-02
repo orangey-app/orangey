@@ -76,10 +76,10 @@ for (const file of sources) {
 }
 
 // 4. The folders without a DOM never import from src/ui. ARCHITECTURE.md
-// promises it, the unit suite depends on it, and Storyboard copies these four
+// promises it, the unit suite depends on it, and Sekwe copies these four
 // folders and nothing else. One exception, named: the settings file checks a
 // loaded file against the app's own limits, and those are timings, which live
-// only in ui/feel.ts (rule 3). Storyboard leaves that file out of its copy.
+// only in ui/feel.ts (rule 3). Sekwe leaves that file out of its copy.
 const NO_UI = ["core", "model", "import", "storage"];
 const MAY_IMPORT_UI = new Set(["src/model/settings-file.ts"]);
 for (const file of sources) {

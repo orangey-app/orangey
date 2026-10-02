@@ -240,7 +240,7 @@ export async function pickFolder(): Promise<DirectoryBackend | null> {
   return backend;
 }
 
-/** What a caller needs from a folder: Orangey writes, a reader such as Storyboard only reads. */
+/** What a caller needs from a folder: Orangey writes, a reader such as Sekwe only reads. */
 export type FolderAccess = "read" | "readwrite";
 
 /**

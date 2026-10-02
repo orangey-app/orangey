@@ -1,5 +1,5 @@
 /**
- * Where the library is. One rule, used by Orangey and by Storyboard (which
+ * Where the library is. One rule, used by Orangey and by Sekwe (which
  * copies this folder), so the two can never disagree about it.
  *
  * In order: the folder on disk chosen last time, if the browser still lets us
@@ -38,7 +38,7 @@ export interface LibraryLocation {
   folder: "ask" | null;
 }
 
-/** Orangey asks for "readwrite"; a reader such as Storyboard asks for "read". */
+/** Orangey asks for "readwrite"; a reader such as Sekwe asks for "read". */
 export async function locateLibrary(access: FolderAccess = "readwrite"): Promise<LibraryLocation> {
   const remembered = await reopenFolder(access);
   if (remembered && remembered !== "ask") return { backend: remembered, folder: null };

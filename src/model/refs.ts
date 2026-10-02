@@ -31,7 +31,7 @@ export interface RefResolver {
   byName(name: string): readonly Randomizer[];
 }
 
-/** One reference as it was rolled, for history and Storyboard. */
+/** One reference as it was rolled, for history and Sekwe. */
 export interface RefPart {
   id: string;
   name: string;

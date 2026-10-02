@@ -28,7 +28,7 @@ export interface PackManifest {
   homepage?: string;
   description?: string;
   /**
-   * May an app (Storyboard) keep a copy of these tables inside a player's
+   * May an app (Sekwe) keep a copy of these tables inside a player's
    * journal, so it rolls without the pack installed? Yes unless set to false.
    */
   allowSnapshots?: boolean;

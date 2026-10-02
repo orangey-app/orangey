@@ -106,7 +106,7 @@ const hash = createHash("sha256").update(js).update(css).digest("hex").slice(0, 
 /*
  * On activation the worker deletes its own older caches, and only those: the
  * Cache API is shared by the whole site, so another app published beside
- * Orangey (orangey-app.github.io/storyboard/) keeps its offline copy when
+ * Orangey (orangey-app.github.io/sekwe/) keeps its offline copy when
  * Orangey updates. Every cache this worker makes is named "orangey-v…".
  */
 const sw = `// Orangey service worker: precache the shell so the app opens offline.

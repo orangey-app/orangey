@@ -38,12 +38,12 @@
 - **Orangey's offline copy no longer deletes its neighbours'.** When Orangey
   updated, its worker cleared every offline cache on the site, not only its
   own older ones. Nothing else used the site before, so nobody noticed; with
-  Storyboard published beside it at `/storyboard/`, each Orangey update would
-  have wiped Storyboard's offline copy. The worker now deletes only caches
+  Sekwe published beside it at `/sekwe/`, each Orangey update would
+  have wiped Sekwe's offline copy. The worker now deletes only caches
   named `orangey-v…`, and a browser test says so.
 - **The roll engine moved from `src/ui/roll.ts` to `src/model/roll.ts`.** It
   never used the page, and now sits with the rest of the code that has no DOM,
-  which Storyboard copies. Nothing a user sees changes.
+  which Sekwe copies. Nothing a user sees changes.
 - **The folders without a DOM stay that way.** `npm run check` now fails if
   anything in `src/core`, `src/model`, `src/import` or `src/storage` imports
   from `src/ui`, with one named exception (`src/model/settings-file.ts`, which
@@ -54,7 +54,7 @@
   `src/model/colours.ts`, so storage no longer depends on that file either.
 - **Where the library is, decided in `src/storage/locate.ts`.** The rule
   (the folder chosen last time, else the browser's own storage) moved out of
-  `src/ui/state.ts`, so Storyboard, which copies `src/storage`, finds the same
+  `src/ui/state.ts`, so Sekwe, which copies `src/storage`, finds the same
   library Orangey does. `reopenFolder` and `regrantFolder` take the access a
   caller needs: Orangey asks for "readwrite" as before, a reader for "read".
 - **The browser tests' server serves a folder's `index.html`**, as GitHub
