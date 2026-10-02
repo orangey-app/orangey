@@ -2929,6 +2929,17 @@ async function main() {
     await open(page, `#/r/${encodeURIComponent(themePath)}`);
     await page.waitForFunction(`document.querySelector(".pack-credit")`);
     assert.equal(await page.evaluate(`return getComputedStyle(document.querySelector(".edit-link")).display`), "none");
+    // Its link opens it from the library; the wheel itself never goes inside a link.
+    await page.click(".link-button");
+    await page.waitForFunction(`document.querySelector("dialog.link-dialog[open]")`);
+    const shared = await page.evaluate(`return {
+      embedded: !!document.querySelector(".link-kind-embedded"),
+      value: document.querySelector("dialog.link-dialog input").value,
+    }`);
+    assert.equal(shared.embedded, false, "a pack's wheel could go inside a link");
+    assert.match(shared.value, /#\/id\/theme/);
+    assert.doesNotMatch(shared.value, /w=/);
+    await page.evaluate(`document.querySelector("dialog.link-dialog[open]").close()`);
     await open(page, `#/edit/${encodeURIComponent(themePath)}`);
     await page.waitForFunction(`document.querySelector(".locked-pack")`);
     await page.evaluate(`[...document.querySelectorAll(".locked-pack button")].find((b) => b.textContent.startsWith("Make an editable copy")).click()`);

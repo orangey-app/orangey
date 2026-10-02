@@ -35,7 +35,11 @@ export async function openLinkDialog(randomizer: Randomizer, node: LibraryNode |
     payload = null;
   }
   const embeddedLength = payload === null ? Infinity : wheelLink(base, payload, { roll: true, present: true }).length;
-  const canEmbed = payload !== null && embeddedLength <= LINK_HARD_LIMIT;
+  // A table from an installed pack travels only as the pack, with its credit
+  // and licence, as in every export: the link with the wheel inside is not offered.
+  const pack = node ? state.library.packOf(node.path)?.pack : undefined;
+  const inPack = !!pack?.installed;
+  const canEmbed = payload !== null && embeddedLength <= LINK_HARD_LIMIT && !inPack;
   const canLibrary = node?.randomizer != null;
   if (!canEmbed && !canLibrary) {
     state.toast("This randomizer is too big to put in a link, and it is not in your library.");

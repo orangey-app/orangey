@@ -15,6 +15,8 @@
   Installed packs are never copied into a backup or export (they are their
   authors' to hand out): the ZIP and library files list them instead, and
   restoring offers to install each again, from its link where it has one.
+  Their tables' **Link…** offers only the link to your library, never one
+  with the wheel inside.
 - **Tables inside tables.** An outcome can roll another table: type `{@` in
   an outcome and pick one, and "A {@Weather} morning" rolls as "A foggy
   morning". The file keeps the table's id behind the name (`{@Weather|id}`),
